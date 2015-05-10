@@ -1,0 +1,11 @@
+*~
+CMakeFiles
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+*.pb.cc
+*.pb.h
+*.a
+*.so
+Makefile
+moc_*
