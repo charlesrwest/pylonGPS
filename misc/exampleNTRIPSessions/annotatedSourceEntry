@@ -1,0 +1,21 @@
+STR; -> type
+TEST_NMEA; -> mountpoint
+TEST; -> Location
+ZERO; -> Data format
+GGA; -> Format details
+0; -> does not contain carrier information
+GPS; -> NAV system type
+BARD; -> Source network ID
+USA; -> country of origin
+37.8743; -> latitude
+237.7403; -> longitude
+0; -> client should not send nmea message
+0; -> Solution generated from single base
+TPS NET-G3A; -> Hardware/software generating stream identifier
+none; -> compression method
+B; -> Uses password for authentication
+N; -> no user fee associated with this stream
+5000; -> bitrate (5000 bits per second)
+none; misc
+UCSD PBO RT17 streams -> additional info
+

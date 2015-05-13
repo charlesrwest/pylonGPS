@@ -1,0 +1,5 @@
+GET CARH_RT17 HTTP/1.0
+User-Agent: NTRIP
+Accept: */* 
+Connection: close 
+
