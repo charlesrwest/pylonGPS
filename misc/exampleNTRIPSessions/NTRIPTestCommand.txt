@@ -1,4 +1,4 @@
-GET CARH_RT17 HTTP/1.0
+GET NCGS HTTP/1.0
 User-Agent: NTRIP
 Accept: */* 
 Connection: close 
