@@ -4,10 +4,16 @@ PROJECT(pylonGPS)
 #Get c++11
 ADD_DEFINITIONS(-std=c++11)
 
-#Tell compiler where to find required libraries
-link_directories(/usr/lib/x86_64-linux-gnu/ lib/)
+find_package(Protobuf REQUIRED)
 
-include_directories(./src/library/ )
+#Generate the C++ for the messages from the libprotobuf markup
+add_subdirectory(./messages)
+
+
+#Tell compiler where to find required libraries
+link_directories(/usr/lib/x86_64-linux-gnu/ lib/ ./messages)
+
+include_directories(./src/library/ ./messages ./cppzmq-master)
 
 find_package(Threads)
 
@@ -20,12 +26,14 @@ FILE(GLOB UNIT_TESTS_EXECUTABLE_SOURCE ./src/executables/unitTests/*.cpp ./src/e
 
 FILE(GLOB NTRIP_CASTER_EXECUTABLE_SOURCE ./src/executables/ntripCaster/*.cpp ./src/executables/ntripCaster/*.c)
 
+
 #Set the binaries to be placed in the ./bin/ directory
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "bin/")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "lib/")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "lib/")
 
 
-#Create a static library of the common source files so they are not built twice
+#Create a libraries
 add_library(pylongps SHARED  ${SOURCEFILES})
 
 
@@ -36,13 +44,13 @@ ADD_EXECUTABLE(unitTests ${UNIT_TESTS_EXECUTABLE_SOURCE})
 
 ADD_EXECUTABLE(ntripCaster ${NTRIP_CASTER_EXECUTABLE_SOURCE})
 
-target_link_libraries(pylongps PocoFoundation PocoNet PocoUtil ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(pylongps PocoFoundation PocoNet PocoUtil pylonGPSMessages zmq ${PROTOBUF_LIBRARY} ${CMAKE_THREAD_LIBS_INIT})
 
 #link libraries to executable PocoNetd
-target_link_libraries(clientExample pylongps PocoFoundation PocoNet  PocoUtil ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(clientExample pylongps)
 
 #link libraries to executable
-target_link_libraries(unitTests pylongps ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(unitTests pylongps )
 
 #link libraries to executable
-target_link_libraries(ntripCaster pylongps PocoFoundation PocoNet PocoUtil ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(ntripCaster pylongps )
