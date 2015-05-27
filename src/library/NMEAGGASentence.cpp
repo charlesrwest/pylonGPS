@@ -367,7 +367,7 @@ checksum = checksum ^ nmeaString[i]; //XOR with all characters between $ and * (
 snprintf(buffer, 80, "%X", checksum);
 nmeaString += std::string("*") + std::string(buffer);
 
-printf("%s\n", nmeaString.c_str());
+//printf("%s\n", nmeaString.c_str());
 
 return nmeaString; //Return the generated string
 }

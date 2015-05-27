@@ -1,13 +1,15 @@
 #ifndef  CASTERAPPLICATIONHPP
 #define CASTERAPPLICATIONHPP
 
-#include<Poco/Net/HTTPServer.h>
+#include<Poco/Net/TCPServer.h>
 #include<Poco/Util/ServerApplication.h>
-#include "casterRequestHandlerFactory.hpp"
+#include<Poco/Net/TCPServerConnectionFactory.h>
+#include "casterTCPConnectionHandler.hpp"
 #include<iostream>
 #include<cstdio>
 #include<vector>
 #include<string>
+
 
 /*
 This object enables the cross platform creation of long running processes (such as a webserver) by running the "main" member function in a new process with the daemon flags enabled.

@@ -1,0 +1,8 @@
+//This message is used by a thread associated with the TCP connection to a NTRIP server.  It is sent to the stream manager object to either try to register the new correction stream (failure possible if the mountpoint is already taken) or notify the manager that the connection was closed and the entry should be removed.
+message ntrip_server_registration_or_deregistraton_request
+{
+required string mountpoint = 1; //A string identifying the mountpoint stream to register or deregister
+required bool registering = 2; //True if registering the mountpoint and false is deregistering it
+optional string server_source_table_string = 3; //A string to reconstruct the source table entry from  
+optional string connection_address = 4; //The string to use for a ZMQ subscriber to connect to the stream
+} 

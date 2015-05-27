@@ -1,0 +1,11 @@
+ntrip_server_registration_or_deregistraton_request:
+This message is used by a thread associated with the TCP connection to a NTRIP server.  It is sent to the stream manager object to either try to register the new correction stream (failure possible if the mountpoint is already taken) or notify the manager that the connection was closed and the entry should be removed.
+
+ntrip_server_registration_or_deregistraton_reply:
+This message is sent by the stream manager object in response to a ntrip_server_registration_or_deregistraton_request.  It tells the sender if the mountpoint registration/deregistration was successful and gives any other details that may later be nessisary.
+
+ntrip_source_table_request:
+This message is sent by a thread associated with the TCP connection to a NTRIP client.  It can have a mountpoint and optionally some restrictions on what results are returned (defined by the accepts http field?).  If the mountpoint is empty, a sourcetable is expected in the response.  Otherwise, the inproc address associated with the mountpoint's information stream is expected.
+
+ntrip_source_table_reply:
+This message is sent by the stream manager object in response to a ntrip_source_table_request.  It contains either the full source table, a filtered subset of the source table or the inproc address associated with a given mountpoint's information stream.

@@ -1,0 +1,5 @@
+//This message is sent by the stream manager object in response to a ntrip_server_registration_or_deregistraton_request.  It tells the sender if the mountpoint registration/deregistration was successful and gives any other details that may later be nessisary.
+message ntrip_server_registration_or_deregistraton_reply
+{
+required bool request_succeeded = 1; //True if the desired action with the associated request was successful
+} 

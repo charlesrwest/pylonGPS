@@ -8,19 +8,20 @@ This function is run as the main of a daemon (or windows service), basically rep
 int casterApplication::main(const std::vector<std::string> &inputArguments)
 {
 Poco::UInt16 port = 9998;
-Poco::Net::HTTPServerParams *serverParams = new Poco::Net::HTTPServerParams; //HTTPServer takes ownership
+Poco::Net::TCPServerParams *serverParams = new Poco::Net::TCPServerParams; //TCPServer takes ownership
 serverParams->setMaxQueued(100);
 serverParams->setMaxThreads(16);
 
 Poco::Net::ServerSocket serverSocket(port); //Create a server socket
-Poco::Net::HTTPServer httpServer(new casterRequestHandlerFactory(), serverSocket, serverParams);
+auto variable = new Poco::Net::TCPServerConnectionFactoryImpl<casterTCPConnectionHandler>();
+Poco::Net::TCPServer tcpServer(variable, serverSocket, serverParams);
 
 //Start the HTTPServer
-httpServer.start();
+tcpServer.start();
 
 //Wait for a kill signal, I think
 waitForTerminationRequest(); 
 
 //Stop the HTTPServer/clean up
-httpServer.stop();
+tcpServer.stop();
 }

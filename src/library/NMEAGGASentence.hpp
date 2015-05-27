@@ -6,8 +6,7 @@
 #include<cstdint>
 #include<cmath>
 #include<tuple>
-
-#include<cstdio> //For debugging
+#include<cstdio> 
 
 enum GPSQualityType
 {

@@ -1,0 +1,12 @@
+I live!
+Received 146 bytes data
+Delimiters not found
+Received: SOURCE /VRS_RTCM3 HTTP/1.0
+Accept: */*
+Authorization: Basic bmdhdDAxOm5leHRnZW4=
+Connection: Close
+Host: localhost:9998
+User-Agent: NTRIP
+
+
+Connection timed out
