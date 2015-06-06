@@ -8,6 +8,9 @@
 #include<tuple>
 #include<cstdio> 
 
+namespace pylongps
+{
+
 enum GPSQualityType
 {
 INVALID = 0,
@@ -62,5 +65,5 @@ std::string differentialBasestationID; //ID of the basestation that is sending u
 
 
 
-
+}
 #endif 

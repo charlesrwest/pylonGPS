@@ -1,5 +1,7 @@
 #include "casterSourceTableEntry.hpp"
 
+using namespace pylongps; //Use pylongps classes without alteration for now
+
 /**
 This function reads in a serialized caster entry entry from the given stream and uses it to set the values of the object.
 @param inputSerializedCasterSourceEntry: The string to deserialize from

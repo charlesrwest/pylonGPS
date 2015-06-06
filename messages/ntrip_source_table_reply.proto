@@ -1,3 +1,5 @@
+package pylongps; //Put in pylongps namespace
+
 //This message is sent by the stream manager object in response to a ntrip_source_table_request.  It contains either the full source table, a filtered subset of the source table or the inproc address associated with a given mountpoint's information stream.
 
 message ntrip_source_table_reply

@@ -1,5 +1,7 @@
 #include "NMEAGGASentence.hpp"
 
+using namespace pylongps; //Use pylongps classes without alteration for now
+
 /**
 This function initializes the object with sensible defaults where possible and expects the rest to be set after the fact.
 */

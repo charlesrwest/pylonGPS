@@ -5,6 +5,9 @@
 #include "event_message.pb.h"
 #include "possible_metadata_timeout_event.pb.h"
 
+namespace pylongps
+{
+
 /**
 \ingroup Events
 This class represents an event that is scheduled to happen at a particular point in time.  In an attempt to make it easy to extend the event queue processing to addition event types, the details concerning any given set of events are defined as optional protobuf messages inside a this container.  
@@ -37,5 +40,5 @@ bool operator>(const event &inputLeftEvent, const event &inputRightEvent);
 
 
 
-
+}
 #endif

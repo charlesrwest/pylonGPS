@@ -6,8 +6,8 @@
 #include "commonEnums.hpp"
 #include<cstdio> //For debugging
 
-
-
+namespace pylongps
+{
 
 /**
 \ingroup Serialization
@@ -56,5 +56,5 @@ std::string misc;
 
 
 
-
+}
 #endif

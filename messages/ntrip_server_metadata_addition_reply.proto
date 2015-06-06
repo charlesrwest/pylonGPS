@@ -1,3 +1,5 @@
+package pylongps; //Put in pylongps namespace
+
  //This message indicates if the metadata request was successful and if not, why not.  It also returns a password string which can be used to connect using NTRIP to provide the information stream.  The server's entry will only appear in the source table once the NTRIP connection has been made.
 
 enum reasonForRequestFailure

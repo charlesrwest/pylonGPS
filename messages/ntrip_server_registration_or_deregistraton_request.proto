@@ -1,3 +1,5 @@
+package pylongps; //Put in pylongps namespace
+
 //This message is used by a thread associated with the TCP connection to a NTRIP server.  It is sent to the stream manager object to either try to register the new correction stream or notify the manager that the connection was closed and the entry should be removed.  Since the NTRIP 1.0 standard doesn't support automatic metadata registration, the request is expected to have the password that was provided when the metadata was originally registered.
 message ntrip_server_registration_or_deregistraton_request
 {

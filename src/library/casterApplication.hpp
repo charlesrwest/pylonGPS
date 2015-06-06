@@ -10,6 +10,8 @@
 #include<vector>
 #include<string>
 
+namespace pylongps
+{
 
 /**
 \ingroup Server
@@ -31,5 +33,5 @@ int main(const std::vector<std::string> &inputArguments);
 };
 
 
-
+}
 #endif 

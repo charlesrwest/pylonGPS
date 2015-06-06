@@ -7,6 +7,8 @@
 #include "sourceManager.hpp"
 #include<chrono>
 
+using namespace pylongps; //Use pylongps classes without alteration for now
+
 TEST_CASE( "NMEA GGA Sentences are parsed", "[NMEAGGASentence]")
 {
 NMEAGGASentence testSentence;

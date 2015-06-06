@@ -1,3 +1,5 @@
+package pylongps; //Put in pylongps namespace
+
 import "event_message.proto";
 
 //This message is used as part of an event_message in a event queue.  It indicates that it might be time to delete the metadata associated with a particular mountpoint, due to it being inactive for too long.

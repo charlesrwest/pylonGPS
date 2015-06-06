@@ -1,5 +1,7 @@
 #include "casterTCPConnectionHandler.hpp"
 
+using namespace pylongps; //Use pylongps classes without alteration for now
+
 /**
 This constructor just passes the given socket to the base class
 @param inputConnectionSocket: The socket associated with the connection this object is processing

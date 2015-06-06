@@ -1,5 +1,7 @@
 #include "networkSourceTableEntry.hpp"
 
+using namespace pylongps; //Use pylongps classes without alteration for now
+
 /**
 This function reads in a serialized network entry entry from the given stream and uses it to set the values of the object.
 @param inputSerializedNetworkSourceEntry: The string to deserialize from

@@ -5,6 +5,9 @@
 #include<vector>
 #include<cstdio> //For debugging
 
+namespace pylongps
+{
+
 /**
 \ingroup Serialization
 This class is meant to allow easy serialization of source table entries to and from ASCII characters.
@@ -47,5 +50,5 @@ std::string misc;
 
 
 
-
+}
 #endif 

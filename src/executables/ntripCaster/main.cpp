@@ -1,5 +1,6 @@
 #include "casterApplication.hpp"
 
+using namespace pylongps; //Use pylongps classes without alteration for now
 
 int main(int argc, char **argv)
 {

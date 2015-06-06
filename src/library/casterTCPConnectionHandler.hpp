@@ -12,6 +12,9 @@
 #include<iostream> //For debugging
 #include<Poco/StreamCopier.h>
 
+namespace pylongps
+{
+
 const std::string serverResponseString = "ICY 200 OK\r\n";
 
 #define HEADER_RECEIVE_TIMEOUT 1 //How long to wait for header before dropping the connection
@@ -41,5 +44,5 @@ void run();
 };
 
 
-
+}
 #endif 

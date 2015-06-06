@@ -5,7 +5,7 @@ This function generates a random, non-deterministic alphanumeric string.
 @param inputStringLength: The number of characters in the returned string
 @return: The returned string
 */
-std::string generateRandomString(unsigned int inputStringLength)
+std::string pylongps::generateRandomString(unsigned int inputStringLength)
 {
 const char characterArray[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const size_t maxIndex = (sizeof(characterArray) - 1);

@@ -1,6 +1,9 @@
 #ifndef  COMMONENUMSHPP
 #define COMMONENUMSHPP
 
+namespace pylongps
+{
+
 enum carrierOptionsType
 {
 NO_PHASE_INFO = 0,
@@ -28,4 +31,5 @@ FEE_REQUIRED = 'Y'
 };
 
 
+}
 #endif

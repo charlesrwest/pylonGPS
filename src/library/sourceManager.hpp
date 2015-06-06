@@ -29,7 +29,8 @@
 #include "ntrip_source_table_reply.pb.h"
 #include "event.hpp"
 
-//TODO: Eliminate polling, which is currently used to manage object lifetime (via a flag) and checking if softstate entries have expired
+namespace pylongps
+{
 
 enum sourceConnectionStatus
 {
@@ -173,4 +174,5 @@ This function compactly allows binding a ZMQ socket to inproc address without ne
 */
 std::tuple<std::string, int> bindZMQSocketWithAutomaticAddressGeneration(zmq::socket_t &inputSocket, const std::string &inputBaseString = "", int inputExtensionNumber = 0, unsigned int inputMaximumNumberOfTries = 1000);
 
+}
 #endif 

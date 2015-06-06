@@ -1,3 +1,5 @@
+package pylongps; //Put in pylongps namespace
+
 //This message is sent by a thread associated with the TCP connection to a NTRIP client.  It can have a mountpoint and optionally some restrictions on what results are returned (defined by the accepts http field?).  If the mountpoint is empty, a source table is expected in the response.  Otherwise, the inproc address associated with the mountpoint's information stream is expected.
 
 message ntrip_source_table_request

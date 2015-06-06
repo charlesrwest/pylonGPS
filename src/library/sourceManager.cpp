@@ -1,5 +1,7 @@
 #include "sourceManager.hpp"
 
+using namespace pylongps; //Use pylongps classes without alteration for now
+
 /**
 This function initializes the object and starts a thread that conducts the operations of the router.  It does not return until all initialization in the thread is completed and all of the public members are safe to read.
 
@@ -616,7 +618,7 @@ This function compactly allows binding a ZMQ socket to inproc address without ne
 
 @throws: This function can throw exceptions if the bind call throws something besides "address taken" or the number of tries are exceeded
 */
-std::tuple<std::string, int> bindZMQSocketWithAutomaticAddressGeneration(zmq::socket_t &inputSocket, const std::string &inputBaseString, int inputExtensionNumber, unsigned int inputMaximumNumberOfTries)
+std::tuple<std::string, int> pylongps::bindZMQSocketWithAutomaticAddressGeneration(zmq::socket_t &inputSocket, const std::string &inputBaseString, int inputExtensionNumber, unsigned int inputMaximumNumberOfTries)
 {
 bool socketBindSuccessful = false;
 std::string connectionString;

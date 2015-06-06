@@ -1,5 +1,7 @@
 #include "casterApplication.hpp"
 
+using namespace pylongps; //Use pylongps classes without alteration for now
+
 /**
 This function is run as the main of a daemon (or windows service), basically replacing the normal main to add crossplatform compatibility for long running processes.
 @param inputArguments: The arguments passed to the program (excluding those meant for the ServerApplication base object), stored as strings in a vector
