@@ -1,6 +1,6 @@
 #include "SOMException.hpp"
 
-/*
+/**
 This function initializes the exception object with the required information.
 @param inputErrorMessage: A message specific to this error instance
 @param inputExceptionClass: What class of error this is (so different types of processing can be done)
@@ -21,7 +21,7 @@ sourceLineNumber = std::to_string(inputSourceLineNumber);
 
 }
 
-/*
+/**
 This function initializes the exception object with an error message that is the concatenation of the given error message and the given exception.
 @param inputErrorMessage: A message specific to this error instance
 @param inputExceptionClass: What class of error this is (so different types of processing can be done)
@@ -41,7 +41,7 @@ sourceFileName = std::string(inputSourceFileName);
 sourceLineNumber = std::to_string(inputSourceLineNumber);
 }
 
-/*
+/**
 This function initializes the exception object with an error message that is the concatenation of the given error message and the given exception with an unknown exception class.
 @param inputErrorMessage: A message specific to this error instance
 @param inputException: The exception received from a lower level that we are rethrowing as a SOMException with more detail
@@ -60,7 +60,7 @@ sourceFileName = std::string(inputSourceFileName);
 sourceLineNumber = std::to_string(inputSourceLineNumber);
 }
 
-/*
+/**
 This function initializes the exception object with an error message that is the concatenation of the given error message and the given SOMException with the given SOMException's error class.
 @param inputErrorMessage: A message specific to this error instance
 @param inputSOMException: The SOMException received from a lower level that we are rethrowing as a SOMException with more detail
@@ -79,7 +79,7 @@ sourceFileName = std::string(inputSourceFileName);
 sourceLineNumber = std::to_string(inputSourceLineNumber);
 }
 
-/*
+/**
 This function initializes the exception object with an error message that is the concatenation of the given error message and the given SOMException with the given SOMException's error class.
 @param inputErrorMessage: A message specific to this error instance
 @param inputExceptionClass: What class of error this is (so different types of processing can be done)
@@ -101,7 +101,7 @@ sourceLineNumber = std::to_string(inputSourceLineNumber);
 
 
 
-/*
+/**
 This function returns a string that is a summary of the error that caused the exception
 @return: The string summary of the error
 */
@@ -110,7 +110,7 @@ std::string SOMException::toString() const
 return "Error of type " + exceptionClassToString(exceptionType) + " occurred in file " + sourceFileName + " at line " + sourceLineNumber + ": " + errorMessage;
 }
 
-/*
+/**
 This function overrides the virtual function that was defined in std::exception and returns the result of toString() as a const string
 @return: The string summary of the error
 */
@@ -120,7 +120,7 @@ return toString().c_str();
 }
 
 
-/*
+/**
 This function converts the exceptionClass enum into a string
 @param inputExceptionType: The type of exception
 @return: The string equivalent

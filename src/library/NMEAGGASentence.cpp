@@ -1,6 +1,6 @@
 #include "NMEAGGASentence.hpp"
 
-/*
+/**
 This function initializes the object with sensible defaults where possible and expects the rest to be set after the fact.
 */
 NMEAGGASentence::NMEAGGASentence() : talkerID("GP")
@@ -18,7 +18,7 @@ geoidalSeparation = 0.0;
 differentialUpdateAge = -1.0;
 }
 
-/*
+/**
 This function parses the given string and sets the values of this object to reflect those in the string.
 @param inputNMEAStringToParse: The string to read values from
 @return: false if the parse failed, possibly leaving the object with some values from the parse
@@ -276,7 +276,7 @@ return false;
 return true;
 }
 
-/*
+/**
 This function serializes this object the returned NMEA string.
 @return: The nmea GGA sentence string representing this object
 */

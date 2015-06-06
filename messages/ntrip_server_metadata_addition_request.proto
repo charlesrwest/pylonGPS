@@ -1,0 +1,7 @@
+ //This message is used by a corrections server to register its metadata with the server in anticipate of making a NTRIP request to start streaming data.  If the mountpoint string is empty, then the caster will assign the source a new mountpoint and return the mountpoint in the reply.  The server_source_table_string would still need to be valid, but the mountpoint would be replaced internally
+
+message ntrip_server_metadata_addition_request
+{
+required string mountpoint = 1; //A string identifying the mountpoint stream to register or deregister
+required string server_source_table_entry = 2; //A string to reconstruct the source table entry from
+} 

@@ -1,6 +1,6 @@
 #include "casterSourceTableEntry.hpp"
 
-/*
+/**
 This function reads in a serialized caster entry entry from the given stream and uses it to set the values of the object.
 @param inputSerializedCasterSourceEntry: The string to deserialize from
 @return: How many characters were read from the string (negative if the string was invalid)
@@ -100,7 +100,7 @@ misc = tokens[9];
 return next+2;
 }
 
-/*
+/**
 This function returns a string representing the serialized version of this table entry.
 @return: The serialized table entry
 */

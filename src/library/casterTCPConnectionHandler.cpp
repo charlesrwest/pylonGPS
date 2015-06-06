@@ -1,20 +1,20 @@
 #include "casterTCPConnectionHandler.hpp"
 
-/*
+/**
 This constructor just passes the given socket to the base class
 @param inputConnectionSocket: The socket associated with the connection this object is processing
 
-@exceptions: This function can throw exceptions
+@throws: This function can throw exceptions
 */
 casterTCPConnectionHandler::casterTCPConnectionHandler(const Poco::Net::StreamSocket &inputConnectionSocket) : Poco::Net::TCPServerConnection(inputConnectionSocket)
 {
 
 }
 
-/*
+/**
 This function is called to handle the TCP connection that is owned by the base TCPServerConnection object.
 
-@exceptions: This function can throw exceptions
+@throws: This function can throw exceptions
 */
 void casterTCPConnectionHandler::run()
 {

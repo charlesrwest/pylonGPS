@@ -1,0 +1,5 @@
+//This message contains no fields but has a large extension option range so that any new "event" messages can add its definition to it as an optional or repeated message member.  It is meant to be used with a std::tuple<std::chrono::timepoint, event_message> to allow easy construction of an event queue.  Which messages the event_message has embedded can be checked with the has_ member functions.
+message event_message
+{
+extensions 10 to max; //Numbers 19000 to 19999 are reserved for internal use by libprotobuf
+}

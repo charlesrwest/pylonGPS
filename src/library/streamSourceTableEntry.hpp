@@ -9,20 +9,21 @@
 
 
 
-/*
+/**
+\ingroup Serialization
 This class is meant to allow easy serialization of source table entries to and from ASCII characters.
 */
 class streamSourceTableEntry
 {
 public:
-/*
+/**
 This function reads in a serialized stream source entry from the given stream and uses it to set the values of the object.
 @param inputSerializedStreamSourceEntry: The string to deserialize from
 @return: How many characters were read from the string (negative if the string was invalid)
 */
 int parse(const std::string &inputSerializedStreamSourceEntry);
 
-/*
+/**
 This function returns a string representing the serialized version of this table entry.
 @return: The serialized table entry
 */

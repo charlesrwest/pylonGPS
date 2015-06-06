@@ -1,6 +1,17 @@
 cmake_minimum_required (VERSION 2.8.3)
 PROJECT(pylonGPS)
 
+#Enable doxygen documentation generation
+find_package(Doxygen)
+if(DOXYGEN_FOUND)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile @ONLY)
+add_custom_target(doc
+${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile
+WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+COMMENT "Generating API documentation with Doxygen" VERBATIM
+)
+endif(DOXYGEN_FOUND)
+
 #Get c++11
 ADD_DEFINITIONS(-std=c++11)
 
@@ -54,3 +65,5 @@ target_link_libraries(unitTests pylongps )
 
 #link libraries to executable
 target_link_libraries(ntripCaster pylongps )
+
+

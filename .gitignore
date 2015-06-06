@@ -10,3 +10,5 @@ CTestTestfile.cmake
 Makefile
 moc_*
 /bin/*
+/doc/*
+Doxyfile

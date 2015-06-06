@@ -15,25 +15,26 @@ GPS_FIX = 1,
 DIFFERENTIAL_GPS_FIX = 2
 };
 
-/*
+/**
+\ingroup Serialization
 This class represents a NMEA GGA sentence, which records information from a single GPS reading.  It supports serialization to and from a string and can be used as part of a NTRIP request.
 */
 class NMEAGGASentence
 {
 public:
-/*
+/**
 This function initializes the object with sensible defaults where possible and expects the rest to be set after the fact.
 */
 NMEAGGASentence();
 
-/*
+/**
 This function parses the given string and sets the values of this object to reflect those in the string.
 @param inputNMEAStringToParse: The string to read values from
 @return: false if the parse failed, possibly leaving the object with some values from the parse
 */
 bool parse(const std::string &inputNMEAStringToParse);
 
-/*
+/**
 This function serializes this object the returned NMEA string.
 @return: The nmea GGA sentence string representing this object
 */

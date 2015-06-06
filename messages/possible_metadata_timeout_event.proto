@@ -1,0 +1,13 @@
+import "event_message.proto";
+
+//This message is used as part of an event_message in a event queue.  It indicates that it might be time to delete the metadata associated with a particular mountpoint, due to it being inactive for too long.
+message possible_metadata_timeout_event
+{
+required string mountpoint = 1; //The mountpoint associated with the stream metadata that may have timed out
+
+//Add to message container to allow simulated polymorphism
+extend event_message
+{
+optional possible_metadata_timeout_event instance = 10;
+}
+}

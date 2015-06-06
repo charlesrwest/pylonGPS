@@ -1,9 +1,11 @@
 #include "casterApplication.hpp"
 
-/*
+/**
 This function is run as the main of a daemon (or windows service), basically replacing the normal main to add crossplatform compatibility for long running processes.
 @param inputArguments: The arguments passed to the program (excluding those meant for the ServerApplication base object), stored as strings in a vector
 @return: The exit code for the program (should be one of the ExitCode enum values)
+
+@throws: This function can throw exceptions
 */
 int casterApplication::main(const std::vector<std::string> &inputArguments)
 {

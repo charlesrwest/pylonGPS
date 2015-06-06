@@ -1,6 +1,6 @@
 #include "networkSourceTableEntry.hpp"
 
-/*
+/**
 This function reads in a serialized network entry entry from the given stream and uses it to set the values of the object.
 @param inputSerializedNetworkSourceEntry: The string to deserialize from
 @return: How many characters were read from the string (negative if the string was invalid)
@@ -77,7 +77,7 @@ misc = tokens[8];
 return next+2;
 }
 
-/*
+/**
 This function returns a string representing the serialized version of this table entry.
 @return: The serialized table entry
 */

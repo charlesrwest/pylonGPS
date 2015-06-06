@@ -7,8 +7,10 @@
 #include<chrono>
 #include<map>
 #include<vector>
+#include<queue>
 #include<string>
 #include<tuple>
+#include<functional>
 #include<cstdio> //For debugging
 
 #include "zmq.hpp"
@@ -17,13 +19,34 @@
 #include "streamSourceTableEntry.hpp"
 #include "casterSourceTableEntry.hpp"
 #include "networkSourceTableEntry.hpp"
+#include "randomStringGenerator.hpp"
 
+#include "ntrip_server_metadata_addition_request.pb.h"
+#include "ntrip_server_metadata_addition_reply.pb.h"
 #include "ntrip_server_registration_or_deregistraton_request.pb.h"
 #include "ntrip_server_registration_or_deregistraton_reply.pb.h"
 #include "ntrip_source_table_request.pb.h"
 #include "ntrip_source_table_reply.pb.h"
+#include "event.hpp"
 
-/*
+//TODO: Eliminate polling, which is currently used to manage object lifetime (via a flag) and checking if softstate entries have expired
+
+enum sourceConnectionStatus
+{
+PENDING = 1, //Metadata received, but source has not yet connected
+CONNECTED = 2,
+DISCONNECTED = 3,
+PERMANENT = 4 //Manually added and should never timeout
+};
+
+#define MANAGER_OPERATE_TIMEOUT_TIME_MILLISECONDS 100 //How long the manager thread should block before checking on things it is polling
+#define MILLISECONDS_TO_WAIT_BEFORE_DROPPING_METADATA_PENDING 500 //How long to wait before dropping the metadata associated with pending connection
+#define MILLISECONDS_TO_WAIT_BEFORE_DROPPING_METADATA_DISCONNECTED 500 //How long to wait before dropping the metadata associated with a connection that has disconnected
+#define RANDOM_MOUNTPOINT_SIZE 10
+#define RANDOM_PASSWORD_SIZE 10
+
+/**
+\ingroup Server
 This class starts its own thread and is responsible for serverTCPConnections being able to register/deregister their data streams and clientTCPConnections being able to retrieve the source table and find what address (full connection string) to subscribe to for the stream associated with a particular mount point.
 
 It carries out these roles by establishing 3 ZMQ socket endpoints (with inproc connection strings available as members of the object):
@@ -37,70 +60,108 @@ sourceTableAccessSocket: a  REP socket which expects a ntrip_source_table_reques
 class sourceManager
 {
 public:
-/*
+/**
 This function initializes the object and starts a thread that conducts the operations of the router.  It does not return until all initialization in the thread is completed and all of the public members are safe to read.
 
 @param inputZMQContext: The ZMQ context to use for inproc communications
+@param inputPortNumber: The port number to bind for TCP based ZMQ requests to register source metadata with a dynamic port bound if the port number is negative (the resulting port number stored as a public variable).
 
-@exceptions: This function can throw exceptions
+@throws: This function can throw exceptions
 */
-sourceManager(zmq::context_t *inputZMQContext);
+sourceManager(zmq::context_t *inputZMQContext, int inputPortNumber = -1);
+
+//String for shutdown socket
+std::string shutdownSocketConnectionString;
 
 //Strings to use to connect to the ZMQ interfaces
 std::string serverRegistrationDeregistrationSocketConnectionString;
 std::string mountpointDisconnectSocketConnectionString;
 std::string sourceTableAccessSocketConnectionString;
 
-/*
+int serverMetadataAdditionSocketPortNumber;
+
+/**
 This function signals for the thread to shut down and then waits for it to do so.
 */
 ~sourceManager();
 
 private:
-/*
+/**
 This function is run in a thread to perform the necessary operations to allow the 3 interfaces to process messages as they are suppose to and keep the source table up to date.  It is normally called in a thread created in the object constructor.
 */
 void operate();
 
-/*
+/**
 This function (typically called by operate), checks to see if there is a request and takes the appropriate action (such as generating and sending a response), if there is.
 
-@exceptions: This function can throw exceptions
+@throws: This function can throw exceptions
+*/
+void handlePossibleNtripServerMetadataAdditionRequest();
+
+/**
+This function (typically called by operate), checks to see if there is a request and takes the appropriate action (such as generating and sending a response), if there is.
+
+@throws: This function can throw exceptions
 */
 void handlePossibleNtripServerRegistrationOrDeregistratonRequest();
 
-/*
+/**
 This function (typically called by operate), checks to see if there is a request and takes the appropriate action (such as generating and sending a response), if there is.
 
-@exceptions: This function can throw exceptions
+@throws: This function can throw exceptions
 */
 void handlePossibleNtripSourceTableRequest();
 
-/*
+/**
+This function processes any events that are scheduled to have occurred by now and returns when the next event is scheduled to occur.
+@return: The time point associated with the soonest event timeout (1 minute from now if no events are waiting)
+
+@throws: This function can throw exceptions
+*/
+std::chrono::steady_clock::time_point handleEvents();
+
+/**
+This function schedules the potential timeout of the associated metadata entry.  If the entry is not in a connected state when the timeout is processed, the metadata will be dropped.
+
+@throws: This function can throw exceptions
+*/
+void scheduleMetadataTimeout(const std::string &inputMountpoint);
+
+/**
 This function generates a string that is the ascii serialization (NTRIP format) of the source table.
 @return: The ascii serialized source table
 */
 std::string generateSerializedSourceTable();
 
-zmq::context_t *context;
-bool timeToShutdownFlag;  //Flag to indicate if the thread should return
 
-//Thread for opertations and ZMQ sockets for interfaces
-std::unique_ptr<std::thread> operationsThread; 
+zmq::context_t *context;
+
+//Thread for operations
+std::unique_ptr<std::thread> operationsThread;
+std::unique_ptr<zmq::socket_t> shutdownSocket; //This inproc PULL socket expects an empty message, which it takes as a indication that the thread should shut down. 
+
+
+//Interfaces
+std::unique_ptr<zmq::socket_t> serverMetadataAdditionSocket;
 std::unique_ptr<zmq::socket_t> serverRegistrationDeregistrationSocket;
 std::unique_ptr<zmq::socket_t> mountpointDisconnectSocket;
 std::unique_ptr<zmq::socket_t> sourceTableAccessSocket;
 std::unique_ptr<zmq::pollitem_t[]> pollItems; //The poll object used to poll the REP sockets
 int numberOfPollItems; //Should always be 2
 
-//Source table and ZMQ information source strings
-std::map<std::string, streamSourceTableEntry> mountpointToStreamSourceTableEntry;
+std::priority_queue<event, std::vector<event>, std::greater<event> > eventQueue;  //TODO: Finish implementing event queue functionality
+
+
+//Metadata, source table and ZMQ information source strings
+std::map<std::string, std::tuple<streamSourceTableEntry, sourceConnectionStatus, std::chrono::steady_clock::time_point > > mountpointToStreamSourceMetadata; //Softstate entries, info/connection-status/time of last update
+std::map<std::string, std::string> mountpointToStreamSourcePassword; //Password a source must have to be able to start streaming as that mountpoint
+std::map<std::string, streamSourceTableEntry> mountpointToStreamSourceTableEntry; //List of currently connected entries
 std::map<std::string, std::string> mountpointToZMQConnectionString;
 std::vector<casterSourceTableEntry> casterEntries;
 std::vector<networkSourceTableEntry> networkEntries;
 };
 
-/*
+/**
 This function compactly allows binding a ZMQ socket to inproc address without needing to specify an exact address.  The function will try binding to addresses in the format: inproc://inputBaseString.inputExtensionNumberAsString and will try repeatedly while incrementing inputExtensionNumber until it succeeds or the maximum number of tries has been exceeded.
 @param inputSocket: The ZMQ socket to bind
 @param inputBaseString: The base string to use
@@ -108,7 +169,7 @@ This function compactly allows binding a ZMQ socket to inproc address without ne
 @param inputMaximumNumberOfTries: How many times to try binding before giving up
 @return: A tuple of form <connectionString ("inproc://etc"), extensionNumberThatWorked>
 
-@exceptions: This function can throw exceptions if the bind call throws something besides "address taken" or the number of tries are exceeded
+@throws: This function can throw exceptions if the bind call throws something besides "address taken" or the number of tries are exceeded
 */
 std::tuple<std::string, int> bindZMQSocketWithAutomaticAddressGeneration(zmq::socket_t &inputSocket, const std::string &inputBaseString = "", int inputExtensionNumber = 0, unsigned int inputMaximumNumberOfTries = 1000);
 
