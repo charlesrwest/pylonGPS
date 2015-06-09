@@ -743,7 +743,7 @@ WARN_LOGFILE           =
 # spaces.
 # Note: If this tag is empty the current directory is searched.
 
-INPUT = @CMAKE_CURRENT_SOURCE_DIR@/src/library/ @CMAKE_CURRENT_SOURCE_DIR@/src/exectables/clientExample/  @CMAKE_CURRENT_SOURCE_DIR@/src/exectables/ntripCaster/ @CMAKE_CURRENT_SOURCE_DIR@/src/exectables/unitTests/
+INPUT = @CMAKE_CURRENT_SOURCE_DIR@/src/library/ @CMAKE_CURRENT_SOURCE_DIR@/src/executables/clientExample/  @CMAKE_CURRENT_SOURCE_DIR@/src/executables/ntripCaster/ @CMAKE_CURRENT_SOURCE_DIR@/src/executables/unitTests/
 
 # This tag can be used to specify the character encoding of the source files
 # that doxygen parses. Internally doxygen uses the UTF-8 encoding. Doxygen uses

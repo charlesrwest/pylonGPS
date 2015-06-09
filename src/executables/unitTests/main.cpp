@@ -4,6 +4,7 @@
 #include "streamSourceTableEntry.hpp"
 #include "casterSourceTableEntry.hpp"
 #include "networkSourceTableEntry.hpp"
+#include "sourceRegistrationRequestHeader.hpp"
 #include "sourceManager.hpp"
 #include<chrono>
 
@@ -209,6 +210,42 @@ REQUIRE(entry1.misc == "none");
 
 }
 
+TEST_CASE( "SOURCE registration request headers are parsed", "[sourceRegistrationRequestHeader]")
+{
+sourceRegistrationRequestHeader header;
+
+SECTION( "Example1 Parse")
+{
+std::string example1 = "SOURCE password mountpoint\r\nSource-Agent: NTRIP product comment\r\ntest: field\r\n\r\n";
+int numberOfCharactersUsed = header.parse(example1);
+
+REQUIRE(numberOfCharactersUsed == example1.size());
+REQUIRE(header.password == "password");
+REQUIRE(header.mountpoint == "mountpoint");
+REQUIRE(header.productComment == "product comment");
+REQUIRE(header.extraFields.size() == 1);
+REQUIRE(header.extraFields[0].first == "test");
+REQUIRE(header.extraFields[0].second == "field");
+
+//Serialize and then parse
+SECTION( "Example1 serialization/reparse")
+{
+std::string serializedVersion = header.serialize();
+sourceRegistrationRequestHeader header1;
+
+REQUIRE(header1.parse(serializedVersion) == serializedVersion.size());
+REQUIRE(header1.password == "password");
+REQUIRE(header1.mountpoint == "mountpoint");
+REQUIRE(header1.productComment == "product comment");
+REQUIRE(header1.extraFields.size() == 1);
+REQUIRE(header1.extraFields[0].first == "test");
+REQUIRE(header1.extraFields[0].second == "field");
+
+}
+
+}
+}
+
 
 TEST_CASE( "sourceManager is created/destroyed and sent requests", "[sourceManager]")
 {
@@ -223,11 +260,64 @@ sourceManager mySourceManager1(&context);
 REQUIRE(true == true);
 }
 
-SECTION("Test server registration")
+SECTION("Test server metadata registration")
 {
 sourceManager mySourceManager(&context);
+std::string sourceMountpoint = "NCStateBasestation";
 
-//Connect to source manager
+//Attempt to register source metadata
+//Make socket
+std::unique_ptr<zmq::socket_t> metaDataRequestSocket;
+SOM_TRY
+metaDataRequestSocket.reset(new zmq::socket_t(context, ZMQ_REQ));
+SOM_CATCH("Error initializing metadata request socket\n")
+
+//Connect to sourceManager tcp port
+SOM_TRY
+metaDataRequestSocket->connect(("tcp://127.0.0.1:" + std::to_string(mySourceManager.serverMetadataAdditionSocketPortNumber)).c_str());
+SOM_CATCH("Error connecting to socket\n")
+
+//Create request message
+std::string serializedMetadataRegistrationRequest;
+pylongps::ntrip_server_metadata_addition_request metadataRegistrationRequest;
+
+metadataRegistrationRequest.set_mountpoint(sourceMountpoint);
+metadataRegistrationRequest.set_server_source_table_entry("STR;NCStateBasestation;CAND;ZERO;0;2;GPS;PBO;USA;35.93935;239.56631;0;0;TRIMBLE NETRS;none;B;N;5000;none\r\n");
+
+//Serialize request
+metadataRegistrationRequest.SerializeToString(&serializedMetadataRegistrationRequest);
+
+//Send request to register metadata for source (and get generated password)
+SOM_TRY
+metaDataRequestSocket->send(serializedMetadataRegistrationRequest.c_str(), serializedMetadataRegistrationRequest.size());
+SOM_CATCH("Error sending metadata registration request message\n")
+
+//Sleep to give the server time to process
+std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+std::unique_ptr<zmq::message_t> messageBuffer0;
+
+SOM_TRY
+messageBuffer0.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+REQUIRE(metaDataRequestSocket->recv(messageBuffer0.get(), ZMQ_DONTWAIT) == true);  //Server should have sent response
+
+pylongps::ntrip_server_metadata_addition_reply metadataReply;
+
+metadataReply.ParseFromArray(messageBuffer0->data(), messageBuffer0->size());
+REQUIRE(metadataReply.IsInitialized() == true);
+
+//Check if metadata request succeeded
+REQUIRE(metadataReply.has_request_failure_reason() == false);
+REQUIRE(metadataReply.has_password() == true);
+REQUIRE(metadataReply.has_mountpoint() == true);
+REQUIRE(metadataReply.password().size() != 0);
+REQUIRE(metadataReply.mountpoint() == sourceMountpoint);
+
+SECTION("Test server source registration")
+{
+//Connect to source manager to send source registration message
 std::unique_ptr<zmq::socket_t> socket;
 SOM_TRY
 socket.reset(new zmq::socket_t(context, ZMQ_REQ));
@@ -237,12 +327,14 @@ SOM_TRY
 socket->connect(mySourceManager.serverRegistrationDeregistrationSocketConnectionString.c_str());
 SOM_CATCH("Error connecting to socket\n")
 
+std::string sourceConnectionString = std::string("inproc://InfoSource.")+sourceMountpoint;
+
 ntrip_server_registration_or_deregistraton_request request;
 std::string serializedRequest;
-request.set_mountpoint("NCStateBasestation");
+request.set_mountpoint(sourceMountpoint);
 request.set_registering(true);
-request.set_server_source_table_string("STR;NCStateBasestation;CAND;ZERO;0;2;GPS;PBO;USA;35.93935;239.56631;0;0;TRIMBLE NETRS;none;B;N;5000;none\r\n");
-request.set_connection_address("inproc://InfoSource.NCStateBasestation");
+request.set_password(metadataReply.password());
+request.set_connection_address(sourceConnectionString);
 request.SerializeToString(&serializedRequest);
 
 
@@ -280,7 +372,7 @@ socket1->connect(mySourceManager.sourceTableAccessSocketConnectionString.c_str()
 SOM_CATCH("Error connecting to socket\n")
 
 ntrip_source_table_request request1;
-request1.set_mountpoint("NCStateBasestation");
+request1.set_mountpoint(sourceMountpoint);
 
 std::string serializedRequest1;
 request1.SerializeToString(&serializedRequest1);
@@ -305,8 +397,9 @@ reply1.ParseFromArray(messageBuffer1->data(), messageBuffer1->size());
 REQUIRE(reply1.IsInitialized() == true);
 REQUIRE(reply1.has_stream_inproc_address() == true);
 REQUIRE(reply1.has_source_table() == false);
-REQUIRE(reply1.stream_inproc_address() == "inproc://InfoSource.NCStateBasestation");
+REQUIRE(reply1.stream_inproc_address() == sourceConnectionString);
 
+}
 }
 }
 

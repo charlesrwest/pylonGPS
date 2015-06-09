@@ -39,7 +39,7 @@ Poco::Net::StreamSocket connection(Poco::Net::SocketAddress(uri.getHost(), uri.g
 
 
 //Make request
-Poco::Net::HTTPRequest request(std::string("SOURCE"), uri.getPath(), Poco::Net::HTTPMessage::HTTP_1_0);
+Poco::Net::HTTPRequest request(std::string("SOURCE password mountpoint"), "", "");
 //Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, uri.getPath(), Poco::Net::HTTPMessage::HTTP_1_0);
 //request.setCredentials("Basic", "ngat01:nextgen"); 
 request.setCredentials("Basic", "bmdhdDAxOm5leHRnZW4=");
@@ -47,8 +47,13 @@ request.add("User-Agent", "NTRIP"); //Add required HTTP fields
 request.add("Accept", "*/*");
 request.add("Connection", "close");
 
+//Write request header to stdout
+request.write(std::cout);
+
 //Add request to stringstream
 std::stringstream stringStream;
+request.write(stringStream);
+
 //Add body
 std::ifstream ifs("./README");
 Poco::StreamCopier::copyStream(ifs, stringStream);

@@ -16,8 +16,20 @@ Poco::Net::TCPServerParams *serverParams = new Poco::Net::TCPServerParams; //TCP
 serverParams->setMaxQueued(100);
 serverParams->setMaxThreads(16);
 
+//Create ZMQ context
+std::unique_ptr<zmq::context_t> context;
+SOM_TRY
+context.reset(new zmq::context_t);
+SOM_CATCH("Error initializing ZMQ context\n")
+
+//Create source manager
+std::unique_ptr<pylongps::sourceManager> manager;
+SOM_TRY
+manager.reset(new pylongps::sourceManager(context.get(), port+1));
+SOM_CATCH("Error initializing source manager\n")
+
 Poco::Net::ServerSocket serverSocket(port); //Create a server socket
-auto variable = new Poco::Net::TCPServerConnectionFactoryImpl<casterTCPConnectionHandler>();
+auto variable = new TCPServerConnectionFactoryImplementation(context.get(), manager->serverRegistrationDeregistrationSocketConnectionString, manager->mountpointDisconnectSocketConnectionString, manager->sourceTableAccessSocketConnectionString, manager->serverMetadataAdditionSocketPortNumber);
 Poco::Net::TCPServer tcpServer(variable, serverSocket, serverParams);
 
 //Start the HTTPServer

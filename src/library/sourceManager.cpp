@@ -39,7 +39,7 @@ size_t endpointStringSize = 256;
 SOM_TRY
 if(inputPortNumber < 0)
 {
-serverMetadataAdditionSocket->bind("tcp://**:*");
+serverMetadataAdditionSocket->bind("tcp://*:*");
 serverMetadataAdditionSocket->getsockopt(ZMQ_LAST_ENDPOINT, (void *) endpointString, &endpointStringSize);
 std::string stdEndpointString(endpointString);
 auto portDelimiterPosition = stdEndpointString.rfind(":");
@@ -53,7 +53,7 @@ serverMetadataAdditionSocketPortNumber = std::stoi(stdEndpointString.substr(port
 else
 {
 serverMetadataAdditionSocketPortNumber = inputPortNumber;
-serverMetadataAdditionSocket->bind((std::string("tcp://**:")+std::to_string(serverMetadataAdditionSocketPortNumber)).c_str());
+serverMetadataAdditionSocket->bind((std::string("tcp://*:")+std::to_string(serverMetadataAdditionSocketPortNumber)).c_str());
 }
 SOM_CATCH("Error binding serverMetadataAdditionSocket tcp socket\n")
 

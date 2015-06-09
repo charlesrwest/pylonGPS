@@ -4,11 +4,14 @@
 #include<Poco/Net/TCPServer.h>
 #include<Poco/Util/ServerApplication.h>
 #include<Poco/Net/TCPServerConnectionFactory.h>
+#include "TCPServerConnectionFactoryImplementation.hpp"
 #include "casterTCPConnectionHandler.hpp"
+#include "sourceManager.hpp"
 #include<iostream>
 #include<cstdio>
 #include<vector>
 #include<string>
+#include<memory>
 
 namespace pylongps
 {
