@@ -124,7 +124,10 @@ operationsThread->join();
 This function is run in a thread to perform the necessary operations to allow the 3 interfaces to process messages as they are suppose to and keep the source table up to date.  It is normally called in a thread created in the object constructor.
 */
 void sourceManager::operate()
-{ //TODO: Deal with metadata timeouts
+{ 
+try
+{
+
 while(true)
 {
 //Process any events that have timed out (time to occur has passed) and determine time to next event timeout
@@ -141,10 +144,18 @@ if(pollWaitTime < 0)
 pollWaitTime = 0; //Make sure that we don't have negative wait
 }
 
+
 SOM_TRY //Wait until either a event is scheduled to occur or a message is received 
-if(zmq::poll(pollItems.get(), numberOfPollItems, pollWaitTime) == 0)
+try
 {
+if(zmq::poll(pollItems.get(), numberOfPollItems, pollWaitTime+1) == 0)
+{ //Add 1 millisecond for margin of error
 continue; //Poll returned without items to check, so loop again (checking flag)
+}
+}
+catch(const std::exception &inputException)
+{
+fprintf(stderr, "ZMQ error: %s\n", inputException.what());
 }
 SOM_CATCH("Error occurred listening for activity on ports\n")
 
@@ -178,8 +189,12 @@ handlePossibleNtripSourceTableRequest();
 SOM_CATCH("Error handing source table request\n")
 }
 
+}
 
-
+}
+catch(const std::exception &inputException)
+{
+fprintf(stderr, "Error: %s\n", inputException.what());
 }
 }
 
@@ -494,9 +509,15 @@ std::chrono::steady_clock::time_point sourceManager::handleEvents()
 {
 //Define lambdas to handle different event types
 
+
 //possible_metadata_timeout_event
 auto handlePossibleMetadataTimeout = [&] ()
 { //Delete metadata if the timeout time has not been extended or the status is not connected or permanent
+if(eventQueue.size() == 0)
+{
+return;
+}
+
 //Get event data
 std::string mountpoint = eventQueue.top().GetExtension(possible_metadata_timeout_event::instance).mountpoint();
 //Remove the event from the queue
@@ -538,9 +559,10 @@ handlePossibleMetadataTimeout();
 
 if(eventQueue.size() == 0)
 {
-std::chrono::steady_clock::now() + std::chrono::minutes(1); //No events to process
+return std::chrono::steady_clock::now() + std::chrono::minutes(1); //No events to process
 }
 }
+
 
 return eventQueue.top().time;
 }
@@ -608,50 +630,4 @@ return stringToReturn;
 }
 
 
-/**
-This function compactly allows binding a ZMQ socket to inproc address without needing to specify an exact address.  The function will try binding to addresses in the format: inproc://inputBaseString.inputExtensionNumberAsString and will try repeatedly while incrementing inputExtensionNumber until it succeeds or the maximum number of tries has been exceeded.
-@param inputSocket: The ZMQ socket to bind
-@param inputBaseString: The base string to use
-@param inputExtensionNumber: The extension number to start with
-@param inputMaximumNumberOfTries: How many times to try binding before giving up
-@return: A tuple of form <connectionString ("inproc://etc"), extensionNumberThatWorked>
-
-@throws: This function can throw exceptions if the bind call throws something besides "address taken" or the number of tries are exceeded
-*/
-std::tuple<std::string, int> pylongps::bindZMQSocketWithAutomaticAddressGeneration(zmq::socket_t &inputSocket, const std::string &inputBaseString, int inputExtensionNumber, unsigned int inputMaximumNumberOfTries)
-{
-bool socketBindSuccessful = false;
-std::string connectionString;
-int extensionNumber = inputExtensionNumber;
-
-for(int i=0; i<inputMaximumNumberOfTries; i++)
-{
-try //Attempt to bind the socket
-{
-connectionString = std::string("inproc://") + inputBaseString + std::string(".") + std::to_string(extensionNumber);
-inputSocket.bind(connectionString.c_str());
-socketBindSuccessful = true; //Got this far without throwing
-break;
-}
-catch(const zmq::error_t &inputZMQError)
-{
-if(inputZMQError.num() == EADDRINUSE)
-{
-extensionNumber++; //Increment so the next attempted address won't conflict
-}
-else
-{
-throw SOMException(std::string("Error binding socket") + connectionString + std::string("\n"), ZMQ_ERROR, __FILE__, __LINE__);
-}
-}
-
-}
-
-if(!socketBindSuccessful)
-{
-throw SOMException(std::string("Socket bind did not succeed in ") + std::to_string(inputMaximumNumberOfTries) + std::string(" attempts\n"), UNKNOWN, __FILE__, __LINE__);
-}
-
-return make_tuple(connectionString, extensionNumber);
-}
 

@@ -7,11 +7,14 @@
 #include<string>
 #include<chrono>
 #include<cstring>
+#include<cstdlib>
 #include<sstream>  //Stringstream
+#include<memory>
 #include "SOMException.hpp"
 #include<cstdio> //For debugging
 #include<iostream> //For debugging
 #include<Poco/StreamCopier.h>
+#include "utilityFunctions.hpp"
 
 #include "zmq.hpp"
 #include "ntrip_server_metadata_addition_request.pb.h"
@@ -21,13 +24,14 @@
 #include "ntrip_source_table_request.pb.h"
 #include "ntrip_source_table_reply.pb.h"
 
+#include "sourceRegistrationRequestHeader.hpp"
+
 namespace pylongps
 {
 
-const std::string serverResponseString = "ICY 200 OK\r\n";
-
 #define HEADER_RECEIVE_TIMEOUT 500 //How long to wait for header before dropping the connection (milliseconds)
 #define HEADER_BUFFER_SIZE 512 //How big header can be before we drop the connection
+#define SOURCE_BUFFER_SIZE 512 //Size of receiving buffer before forwarding data from a source
 
 /**
 \ingroup Server
@@ -52,8 +56,6 @@ casterTCPConnectionHandler(const Poco::Net::StreamSocket &inputConnectionSocket,
 
 /**
 This function is called to handle the TCP connection that is owned by the base TCPServerConnection object.
-
-@throws: This function can throw exceptions
 */
 void run();
 
@@ -66,6 +68,14 @@ This function is called to handle serving a SOURCE request.
 */
 void handleSourceRequest(const std::string &inputHeaderString, Poco::Net::StreamSocket &inputSocket);
 
+/**
+This function is called to handle serving a HTTP request.
+@param inputHeaderStream: A stringstream containing the http request and possibly some body data
+@param inputSocket: The socket to use to get/send data over the associated connection
+
+@throws: This function can throw exceptions
+*/
+void handleHTTPRequest(std::stringstream &inputHeaderStream, Poco::Net::StreamSocket &inputSocket);
 
 //ZMQ context
 zmq::context_t *context;

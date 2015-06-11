@@ -12,6 +12,8 @@ COMMENT "Generating API documentation with Doxygen" VERBATIM
 )
 endif(DOXYGEN_FOUND)
 
+
+
 #Get c++11
 ADD_DEFINITIONS(-std=c++11)
 
