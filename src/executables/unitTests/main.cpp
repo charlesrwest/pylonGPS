@@ -621,6 +621,43 @@ break;
 }
 
 REQUIRE(receivedReply.find("ICY 200 OK") == 0);
+
+SECTION("Test source is broadcasted to client")
+{
+std::this_thread::sleep_for(std::chrono::milliseconds(10));  //Wait for things to settle down so messages aren't missed
+std::string testString = "GPS CORRECTIONS\n";
+//Send a message via the source connection and see if it is received on the client connection
+REQUIRE(sourceSocket->sendBytes(testString.c_str(), testString.size()));
+
+int numberOfBytesReceived1 = 0;
+char buffer1[512];
+int bufferSize1 = 512;
+std::string receivedReply1;
+clientSocket->setReceiveTimeout(Poco::Timespan(5,0)); //Max 5 second wait
+for(int i=0; i<5; i++)//Up to 5 message received
+{
+SOM_TRY
+try
+{
+numberOfBytesReceived1 = clientSocket->receiveBytes(buffer1, bufferSize1);
+}
+catch(const Poco::TimeoutException &inputException)
+{//Don't do anything
+}
+SOM_CATCH("Error getting reply from server\n")
+
+receivedReply1 += std::string(buffer1, numberOfBytesReceived1);
+if(receivedReply1.find(testString) != std::string::npos)
+{
+break;
+}
+}
+
+REQUIRE(receivedReply1 == testString);
+
+}
+
+
 }
 
 

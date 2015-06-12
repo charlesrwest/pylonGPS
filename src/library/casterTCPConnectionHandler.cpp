@@ -128,7 +128,7 @@ void casterTCPConnectionHandler::handleSourceRequest(const std::string &inputHea
 {
 std::string illFormedHeaderRejectionString = "400 Bad Request\r\n\r\n";
 std::string badPasswordRejectionString = "ERROR - Bad Password\r\n\r\n";
-std::string OKMessageString = "ICY 200 OK\r\n\r\na"; 
+std::string OKMessageString = "ICY 200 OK\r\n\r\n"; 
 
 //Check header. If invalid, send rejection message
 sourceRegistrationRequestHeader header;
@@ -235,6 +235,8 @@ SOM_CATCH("Error sending deregistration request\n")
 
 int receivedDataSize = 0;
 char dataBuffer[SOURCE_BUFFER_SIZE];
+//Wait for data 
+inputSocket.setReceiveTimeout(Poco::Timespan(365,0,0,0,0)); 
 while(true)
 {
 try
@@ -259,6 +261,7 @@ break;
 
 //Publish information from source table
 SOM_TRY
+printf("It is said that I am publishing data\n");
 sourcePublisher->send(dataBuffer, receivedDataSize);
 SOM_CATCH("Error publishing source data\n")
 }
@@ -409,12 +412,17 @@ SOM_TRY
 messageBuffer->rebuild(); //Rebuild so the message buffer can be used again
 SOM_CATCH("Error reinitializing message buffer\n")
 
-SOM_TRY //Wait until for updates to send or a disconnect event 
+try
+{ //Wait until for updates to send or a disconnect event 
 if(zmq::poll(pollItems.get(), numberOfPollItems) == 0)
 {
 continue; //Poll returned without items to check, so loop again
 }
-SOM_CATCH("Error occurred listening for activity on ports\n")
+}
+catch(const std::exception &inputException)
+{
+return; //If something goes wrong here, it is likely unrecoverable, so exit silently (otherwise unit tests will tend to make lots of noisy output)
+}
 
 if(pollItems[1].revents & ZMQ_POLLIN)
 {//Received data from source, so forward over connection
