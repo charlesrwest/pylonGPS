@@ -576,6 +576,7 @@ break;
 }
 
 REQUIRE(receivedReply.find("SOURCETABLE 200 OK") == 0);
+REQUIRE(receivedReply.find("STR;NCStateBasestation;CAND;ZERO;0;2;GPS;PBO;USA;35.939350;239.566310;0;0;TRIMBLE NETRS;none;B;N;5000;none") != std::string::npos);
 }
 
 SECTION("Test retrieving source table\n")

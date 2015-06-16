@@ -261,7 +261,6 @@ break;
 
 //Publish information from source table
 SOM_TRY
-printf("It is said that I am publishing data\n");
 sourcePublisher->send(dataBuffer, receivedDataSize);
 SOM_CATCH("Error publishing source data\n")
 }
@@ -367,8 +366,16 @@ throw SOMException("Source manager sent invalid reply message\n", UNKNOWN, __FIL
 
 if(sourceTableReply.has_source_table())
 {
+//Construct part of http response that ID's source table characteristics
+std::string sourceTableCharacteristics;
+
+sourceTableCharacteristics += "ntripCasterID/NtripV1.0\r\n";
+sourceTableCharacteristics += "Content-Type: text/plain\r\n";
+sourceTableCharacteristics += "Content-Length: " + std::to_string(sourceTableReply.source_table().size()) + "\r\n\r\n";
+
 //Send OK message and source table
 inputSocket.sendBytes(sourceOKMessageString.c_str(), sourceOKMessageString.size());
+inputSocket.sendBytes(sourceTableCharacteristics.c_str(), sourceTableCharacteristics.size());
 inputSocket.sendBytes(sourceTableReply.source_table().c_str(), sourceTableReply.source_table().size());
 
 return;

@@ -11,10 +11,64 @@ This function is run as the main of a daemon (or windows service), basically rep
 */
 int casterApplication::main(const std::vector<std::string> &inputArguments)
 {
-Poco::UInt16 port = 9998;
+try
+{
+//Expect:
+//Port number to bind (binds port number and port number+1)
+//Maximum number of threads to use (optional)
+//Maximum number of connections to queue before rejecting new ones (optional)
+
+//Make sure there is at least a port number
+if(inputArguments.size() < 1)
+{
+std::cerr << "Error: insufficient arguments" << std::endl << "Usage: ntripServer portNumberToBind optionalMaximumNumberOfThreads optionalMaximumNumberOfConnectionsToQueue" << std::endl;
+return 1;
+}
+
+//Attempt convert to number
+std::vector<int> numericArguments;
+for(int i=0; i<inputArguments.size() && i < 3; i++)
+{
+try
+{
+numericArguments.push_back(stoi(inputArguments[i]));
+}
+catch(const std::exception &inputException)
+{//Conversion failed
+std::cerr << "Error, argument " << i << " is invalid."  << std::endl << "Usage: ntripServer portNumberToBind optionalMaximumNumberOfThreads optionalMaximumNumberOfConnectionsToQueue" << std::endl;
+return 1;
+}
+
+if(numericArguments.back() < 0)
+{ //No negative values permitted
+std::cerr << "Error, argument " << i << " is invalid."  << std::endl << "Usage: ntripServer portNumberToBind optionalMaximumNumberOfThreads optionalMaximumNumberOfConnectionsToQueue" << std::endl;
+return 1;
+}
+
+}
+
+
+Poco::UInt16 port = numericArguments[0];
 Poco::Net::TCPServerParams *serverParams = new Poco::Net::TCPServerParams; //TCPServer takes ownership
-serverParams->setMaxQueued(100);
-serverParams->setMaxThreads(16);
+if(numericArguments.size() >= 2)
+{//Determine the size of the thread pool
+serverParams->setMaxThreads(numericArguments[1]);
+}
+else
+{
+serverParams->setMaxThreads(pylongps::DEFAULT_MAX_NUMBER_OF_SERVER_THREADS);
+}
+
+if(numericArguments.size() >= 3)
+{ //Determine how many connections can be waiting to be serviced before they are just dropped
+serverParams->setMaxQueued(numericArguments[1]);
+}
+else
+{
+serverParams->setMaxThreads(pylongps::DEFAULT_MAX_NUMBER_OF_QUEUED_CONNECTIONS);
+}
+
+
 
 //Create ZMQ context
 std::unique_ptr<zmq::context_t> context;
@@ -40,4 +94,10 @@ waitForTerminationRequest();
 
 //Stop the HTTPServer/clean up
 tcpServer.stop();
+}
+catch(const std::exception &inputException)
+{//Print out exceptions and return gracefully
+std::cerr << inputException.what() << std::endl;
+return 1;
+}
 }

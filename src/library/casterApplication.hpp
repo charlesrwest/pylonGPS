@@ -16,9 +16,17 @@
 namespace pylongps
 {
 
+const int DEFAULT_MAX_NUMBER_OF_SERVER_THREADS = 1000;
+const int DEFAULT_MAX_NUMBER_OF_QUEUED_CONNECTIONS = 100;
+
 /**
 \ingroup Server
 This object enables the cross platform creation of long running processes (such as a webserver) by running the "main" member function in a new process with the daemon flags enabled.
+
+//Expects arguments:
+//Port number to bind (binds port number and port number+1)
+//Maximum number of threads to use (optional)
+//Maximum number of connections to queue before rejecting new ones (optional)
 */
 class casterApplication : public Poco::Util::ServerApplication
 {
@@ -31,7 +39,6 @@ This function is run as the main of a daemon (or windows service), basically rep
 @throws: This function can throw exceptions
 */
 int main(const std::vector<std::string> &inputArguments);
-
 
 };
 
