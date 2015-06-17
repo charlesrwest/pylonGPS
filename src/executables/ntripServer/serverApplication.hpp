@@ -1,12 +1,13 @@
-#ifndef  CASTERAPPLICATIONHPP
-#define CASTERAPPLICATIONHPP
+#ifndef  SERVERAPPLICATIONHPP
+#define SERVERAPPLICATIONHPP
 
 #include<Poco/Net/TCPServer.h>
 #include<Poco/Util/ServerApplication.h>
 #include<Poco/Net/TCPServerConnectionFactory.h>
-#include "TCPServerConnectionFactoryImplementation.hpp"
-#include "casterTCPConnectionHandler.hpp"
-#include "sourceManager.hpp"
+#include<Poco/URI.h>
+#include<Poco/Net/DNS.h>
+#include "serverTCPServerConnectionFactoryImplementation.hpp"
+#include "serverTCPConnectionHandler.hpp"
 #include<iostream>
 #include<cstdio>
 #include<vector>
@@ -16,8 +17,6 @@
 namespace pylongps
 {
 
-const int DEFAULT_MAX_NUMBER_OF_SERVER_THREADS = 1000;
-const int DEFAULT_MAX_NUMBER_OF_QUEUED_CONNECTIONS = 100;
 
 /**
 \ingroup Server
@@ -25,10 +24,10 @@ This object enables the cross platform creation of long running processes (such 
 
 //Expects arguments:
 //Port number to bind (binds port number and port number+1)
-//Maximum number of threads to use (optional)
-//Maximum number of connections to queue before rejecting new ones (optional)
+//URI of the caster to forward the data to
+//NTRIP format source metadata
 */
-class casterApplication : public Poco::Util::ServerApplication
+class serverApplication : public Poco::Util::ServerApplication
 {
 protected:
 /**
@@ -43,5 +42,17 @@ int main(const std::vector<std::string> &inputArguments);
 };
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 }
-#endif 
+#endif

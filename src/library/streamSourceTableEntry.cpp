@@ -5,9 +5,10 @@ using namespace pylongps; //Use pylongps classes without alteration for now
 /**
 This function reads in a serialized stream source entry from the given stream and uses it to set the values of the object.
 @param inputSerializedStreamSourceEntry: The string to deserialize from
+@param inputExpectTerminationCharacters: True if an entry should have a trailing \r\n and false if the whole string should be used without expecting end characters
 @return: How many characters were read from the string (negative if the string was invalid)
 */
-int streamSourceTableEntry::parse(const std::string &inputSerializedStreamSourceEntry)
+int streamSourceTableEntry::parse(const std::string &inputSerializedStreamSourceEntry, bool inputExpectTerminationCharacters)
 {
 int buffer;
 //Tokenize
@@ -21,12 +22,19 @@ last = next + 1;
 } 
 
 next = inputSerializedStreamSourceEntry.find("\r\n", last);
-if(next == std::string::npos)
+if(next == std::string::npos && inputExpectTerminationCharacters)
 {
 return -1; //Couldn't find end of entry
 }
+if(inputExpectTerminationCharacters)
+{
 tokens.push_back(inputSerializedStreamSourceEntry.substr(last, next-last));
-
+}
+else
+{ //Grab till the end
+tokens.push_back(inputSerializedStreamSourceEntry.substr(last));
+next = last + tokens.back().size() - 2;
+}
 
 if(tokens.size() != 19)
 {

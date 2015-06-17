@@ -19,9 +19,10 @@ public:
 /**
 This function reads in a serialized stream source entry from the given stream and uses it to set the values of the object.
 @param inputSerializedStreamSourceEntry: The string to deserialize from
+@param inputExpectTerminationCharacters: True if an entry should have a trailing \r\n and false if the whole string should be used without expecting end characters
 @return: How many characters were read from the string (negative if the string was invalid)
 */
-int parse(const std::string &inputSerializedStreamSourceEntry);
+int parse(const std::string &inputSerializedStreamSourceEntry, bool inputExpectTerminationCharacters = true);
 
 /**
 This function returns a string representing the serialized version of this table entry.

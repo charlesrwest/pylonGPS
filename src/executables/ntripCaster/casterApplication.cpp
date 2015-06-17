@@ -11,6 +11,8 @@ This function is run as the main of a daemon (or windows service), basically rep
 */
 int casterApplication::main(const std::vector<std::string> &inputArguments)
 {
+static const std::string usage = "Usage: ntripCaster portNumberToBind optionalMaximumNumberOfThreads optionalMaximumNumberOfConnectionsToQueue";
+
 try
 {
 //Expect:
@@ -21,7 +23,7 @@ try
 //Make sure there is at least a port number
 if(inputArguments.size() < 1)
 {
-std::cerr << "Error: insufficient arguments" << std::endl << "Usage: ntripServer portNumberToBind optionalMaximumNumberOfThreads optionalMaximumNumberOfConnectionsToQueue" << std::endl;
+std::cerr << "Error: insufficient arguments" << std::endl << usage << std::endl;
 return 1;
 }
 
@@ -35,13 +37,13 @@ numericArguments.push_back(stoi(inputArguments[i]));
 }
 catch(const std::exception &inputException)
 {//Conversion failed
-std::cerr << "Error, argument " << i << " is invalid."  << std::endl << "Usage: ntripServer portNumberToBind optionalMaximumNumberOfThreads optionalMaximumNumberOfConnectionsToQueue" << std::endl;
+std::cerr << "Error, argument " << i << " is invalid."  << std::endl << usage << std::endl;
 return 1;
 }
 
 if(numericArguments.back() < 0)
 { //No negative values permitted
-std::cerr << "Error, argument " << i << " is invalid."  << std::endl << "Usage: ntripServer portNumberToBind optionalMaximumNumberOfThreads optionalMaximumNumberOfConnectionsToQueue" << std::endl;
+std::cerr << "Error, argument " << i << " is invalid."  << std::endl << usage << std::endl;
 return 1;
 }
 
@@ -56,7 +58,7 @@ serverParams->setMaxThreads(numericArguments[1]);
 }
 else
 {
-serverParams->setMaxThreads(pylongps::DEFAULT_MAX_NUMBER_OF_SERVER_THREADS);
+serverParams->setMaxThreads(pylongps::CASTER_DEFAULT_MAX_NUMBER_OF_SERVER_THREADS);
 }
 
 if(numericArguments.size() >= 3)
@@ -65,7 +67,7 @@ serverParams->setMaxQueued(numericArguments[1]);
 }
 else
 {
-serverParams->setMaxThreads(pylongps::DEFAULT_MAX_NUMBER_OF_QUEUED_CONNECTIONS);
+serverParams->setMaxThreads(pylongps::CASTER_DEFAULT_MAX_NUMBER_OF_QUEUED_CONNECTIONS);
 }
 
 
@@ -83,7 +85,7 @@ manager.reset(new pylongps::sourceManager(context.get(), port+1));
 SOM_CATCH("Error initializing source manager\n")
 
 Poco::Net::ServerSocket serverSocket(port); //Create a server socket
-auto variable = new TCPServerConnectionFactoryImplementation(context.get(), manager->serverRegistrationDeregistrationSocketConnectionString, manager->mountpointDisconnectSocketConnectionString, manager->sourceTableAccessSocketConnectionString, manager->serverMetadataAdditionSocketPortNumber);
+auto variable = new casterTCPServerConnectionFactoryImplementation(context.get(), manager->serverRegistrationDeregistrationSocketConnectionString, manager->mountpointDisconnectSocketConnectionString, manager->sourceTableAccessSocketConnectionString, manager->serverMetadataAdditionSocketPortNumber);
 Poco::Net::TCPServer tcpServer(variable, serverSocket, serverParams);
 
 //Start the HTTPServer

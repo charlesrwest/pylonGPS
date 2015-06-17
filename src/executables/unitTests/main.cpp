@@ -10,8 +10,10 @@
 #include<Poco/Net/TCPServer.h>
 #include<Poco/Util/ServerApplication.h>
 #include<Poco/Net/TCPServerConnectionFactory.h>
-#include "TCPServerConnectionFactoryImplementation.hpp"
+#include "casterTCPServerConnectionFactoryImplementation.hpp"
 #include "sourceManager.hpp"
+#include "serverTCPServerConnectionFactoryImplementation.hpp"
+#include "serverTCPConnectionHandler.hpp"
 
 using namespace pylongps; //Use pylongps classes without alteration for now
 
@@ -431,7 +433,7 @@ manager.reset(new pylongps::sourceManager(context.get(), port+1));
 SOM_CATCH("Error initializing source manager\n")
 
 Poco::Net::ServerSocket serverSocket(port); //Create a server socket
-auto variable = new TCPServerConnectionFactoryImplementation(context.get(), manager->serverRegistrationDeregistrationSocketConnectionString, manager->mountpointDisconnectSocketConnectionString, manager->sourceTableAccessSocketConnectionString, manager->serverMetadataAdditionSocketPortNumber);
+auto variable = new casterTCPServerConnectionFactoryImplementation(context.get(), manager->serverRegistrationDeregistrationSocketConnectionString, manager->mountpointDisconnectSocketConnectionString, manager->sourceTableAccessSocketConnectionString, manager->serverMetadataAdditionSocketPortNumber);
 Poco::Net::TCPServer tcpServer(variable, serverSocket, serverParams);
 
 //Start the NTRIP HTTPServer
@@ -664,4 +666,155 @@ REQUIRE(receivedReply1 == testString);
 
 tcpServer.stop();
 }
+
+
+TEST_CASE( "ntripServer is created and ntripSourceIsCreated", "[casterAndServer]")
+{
+//Create ZMQ context
+std::unique_ptr<zmq::context_t> context;
+SOM_TRY
+context.reset(new zmq::context_t);
+SOM_CATCH("Error initializing ZMQ context\n")
+
+//Create server for later tests
+Poco::UInt16 port = 9998;
+Poco::Net::TCPServerParams *serverParams = new Poco::Net::TCPServerParams; //TCPServer takes ownership
+serverParams->setMaxQueued(10000);
+serverParams->setMaxThreads(10000);
+
+//Create source manager
+std::unique_ptr<pylongps::sourceManager> manager;
+SOM_TRY
+manager.reset(new pylongps::sourceManager(context.get(), port+1));
+SOM_CATCH("Error initializing source manager\n")
+
+Poco::Net::ServerSocket serverSocket(port); //Create a server socket
+auto variable = new casterTCPServerConnectionFactoryImplementation(context.get(), manager->serverRegistrationDeregistrationSocketConnectionString, manager->mountpointDisconnectSocketConnectionString, manager->sourceTableAccessSocketConnectionString, manager->serverMetadataAdditionSocketPortNumber);
+Poco::Net::TCPServer tcpServer(variable, serverSocket, serverParams);
+
+//Start the NTRIP HTTPServer
+tcpServer.start();
+
+//Create source server and have it register
+std::unique_ptr<Poco::URI> casterAddress;
+SOM_TRY
+std::string URIString = "ntrip://127.0.0.1:" + std::to_string(port);
+casterAddress.reset(new Poco::URI(URIString));
+SOM_CATCH("Error creating URI\n")
+
+std::string sourceMountpoint = "NCStateBasestation0";
+std::string metadataString = "STR;"+sourceMountpoint+";CAND;ZERO;0;2;GPS;PBO;USA;35.93935;239.56631;0;0;TRIMBLE NETRS;none;B;N;5000;none";
+streamSourceTableEntry metadata;
+
+REQUIRE(metadata.parse(metadataString, false) == metadataString.size());
+
+
+Poco::Net::TCPServerParams *serverParams0 = new Poco::Net::TCPServerParams; //TCPServer takes ownership
+serverParams0->setMaxThreads(1); //One connection at a time
+serverParams0->setMaxQueued(1);
+Poco::UInt16 port0 = 10010;
+
+Poco::Net::ServerSocket serverSocket0(port0); //Create a server socket
+auto variable0 = new serverTCPServerConnectionFactoryImplementation(*casterAddress, metadata);
+Poco::Net::TCPServer tcpServer0(variable0, serverSocket0, serverParams0);
+
+//Start the source server
+tcpServer0.start();
+
+SECTION("Test source is broadcasted to client")
+{//Unit test output easier with bit of sleep
+std::this_thread::sleep_for(std::chrono::milliseconds(100));
+//Connect source to source server
+std::unique_ptr<Poco::Net::StreamSocket> sourceSocket;
+SOM_TRY
+sourceSocket.reset(new Poco::Net::StreamSocket(Poco::Net::SocketAddress("127.0.0.1:" + std::to_string(port0))));
+SOM_CATCH("Error initializing POCO socket\n")
+
+int bufferSize0 = 512;
+char buffer0[512];
+
+//Create client which gets a source list
+std::unique_ptr<Poco::Net::StreamSocket> clientSocket;
+SOM_TRY
+clientSocket.reset(new Poco::Net::StreamSocket(Poco::Net::SocketAddress("127.0.0.1:" + std::to_string(port))));
+SOM_CATCH("Error initializing POCO socket\n")
+
+std::string testString = "GPS CORRECTIONS\n";
+//Send a message via the source connection and see if it is received on the client connection
+std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+//Make ntrip request
+std::string clientRequest0;
+clientRequest0 += "GET " + sourceMountpoint + " HTTP/1.0\r\n";
+//clientRequest0 += "GET btty HTTP/1.0\r\n";
+clientRequest0 += "User-Agent: NTRIP product|comment\r\n";
+clientRequest0 += "Accept: */*\r\n";
+clientRequest0 += "Connection: close\r\n\r\n";
+
+
+REQUIRE(clientSocket->sendBytes(clientRequest0.c_str(), clientRequest0.size()) == clientRequest0.size());
+
+int numberOfBytesReceived = 0;
+std::string receivedReply5;
+clientSocket->setReceiveTimeout(Poco::Timespan(5,0)); //Max 5 second wait
+for(int i=0; i<5; i++)//Up to 5 message received
+{
+SOM_TRY
+try
+{
+numberOfBytesReceived = clientSocket->receiveBytes(buffer0, bufferSize0);
+}
+catch(const Poco::TimeoutException &inputException)
+{//Don't do anything
+}
+SOM_CATCH("Error getting reply from server\n")
+
+receivedReply5+= std::string(buffer0, numberOfBytesReceived);
+if(receivedReply5.find("\r\n\r\n") != std::string::npos)
+{
+break;
+}
+}
+
+REQUIRE(receivedReply5.find("ICY 200 OK") == 0);
+
+//Send data and see if it is broadcasted
+REQUIRE(sourceSocket->sendBytes(testString.c_str(), testString.size()) == testString.size()); 
+
+int numberOfBytesReceived1 = 0;
+char buffer1[512];
+int bufferSize1 = 512;
+std::string receivedReply1;
+clientSocket->setReceiveTimeout(Poco::Timespan(5,0)); //Max 5 second wait
+for(int i=0; i<5; i++)//Up to 5 message received
+{
+SOM_TRY
+try
+{
+numberOfBytesReceived1 = clientSocket->receiveBytes(buffer1, bufferSize1);
+}
+catch(const Poco::TimeoutException &inputException)
+{//Don't do anything
+}
+SOM_CATCH("Error getting reply from server\n")
+
+receivedReply1 += std::string(buffer1, numberOfBytesReceived1);
+if(receivedReply1.find(testString) != std::string::npos)
+{
+break;
+}
+}
+
+REQUIRE(receivedReply1 == testString);
+
+}
+
+tcpServer.stop();
+tcpServer0.stop();
+}
+
+
+
+
+
 

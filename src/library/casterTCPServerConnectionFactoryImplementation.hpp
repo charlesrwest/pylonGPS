@@ -1,5 +1,5 @@
-#ifndef  TCPSERVERCONNECTIONFACTORYIMPLEMENTATIONHPP
-#define TCPSERVERCONNECTIONFACTORYIMPLEMENTATIONHPP
+#ifndef  CASTERTCPSERVERCONNECTIONFACTORYIMPLEMENTATIONHPP
+#define CASTERTCPSERVERCONNECTIONFACTORYIMPLEMENTATIONHPP
 
 #include<Poco/Net/TCPServerConnectionFactory.h>
 #include<string>
@@ -14,7 +14,7 @@ namespace pylongps
 \ingroup Server
 This class is  used to create new casterTCPConnectionHandler objects to deal with incoming connections.  It passes all of the information required (inproc connection strings and tcp port numbers) for the connection objects to be able to communicate with the source manager.
 */
-class TCPServerConnectionFactoryImplementation : public Poco::Net::TCPServerConnectionFactory
+class casterTCPServerConnectionFactoryImplementation : public Poco::Net::TCPServerConnectionFactory
 {
 public:
 /**
@@ -27,7 +27,7 @@ This function initializes the factory and stores all of the passed information s
 
 @throws: This function can throw exceptions
 */
-TCPServerConnectionFactoryImplementation(zmq::context_t *inputZMQContext, const std::string &inputServerRegistrationDeregistrationSocketConnectionString, const std::string &inputMountpointDisconnectSocketConnectionString, const std::string &inputSourceTableAccessSocketConnectionString, int inputServerMetadataAdditionSocketPortNumber);
+casterTCPServerConnectionFactoryImplementation(zmq::context_t *inputZMQContext, const std::string &inputServerRegistrationDeregistrationSocketConnectionString, const std::string &inputMountpointDisconnectSocketConnectionString, const std::string &inputSourceTableAccessSocketConnectionString, int inputServerMetadataAdditionSocketPortNumber);
 
 /**
 This function overrides the base class implementation and is called whenever a new TCPConnection handler needs to be made for the server.  Each connection is passed the information needed to connect to the source manager

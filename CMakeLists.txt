@@ -33,7 +33,7 @@ find_package(Threads)
 #Get lists of the source files
 FILE(GLOB SOURCEFILES ./src/library/*.cpp ./src/library/*.c)
 
-FILE(GLOB CLIENT_EXAMPLE_EXECUTABLE_SOURCE ./src/executables/clientExample/*.cpp ./src/executables/clientExample/*.c)
+FILE(GLOB NTRIP_SERVER_EXECUTABLE_SOURCE ./src/executables/ntripServer/*.cpp ./src/executables/ntripServer/*.c)
 
 FILE(GLOB UNIT_TESTS_EXECUTABLE_SOURCE ./src/executables/unitTests/*.cpp ./src/executables/unitTests/*.c)
 
@@ -51,7 +51,7 @@ add_library(pylongps SHARED  ${SOURCEFILES})
 
 
 #Tell CMake what executables to make
-ADD_EXECUTABLE(clientExample ${CLIENT_EXAMPLE_EXECUTABLE_SOURCE}) 
+ADD_EXECUTABLE(ntripServer  ${NTRIP_SERVER_EXECUTABLE_SOURCE}) 
 
 ADD_EXECUTABLE(unitTests ${UNIT_TESTS_EXECUTABLE_SOURCE}) 
 
@@ -60,7 +60,7 @@ ADD_EXECUTABLE(ntripCaster ${NTRIP_CASTER_EXECUTABLE_SOURCE})
 target_link_libraries(pylongps PocoFoundation PocoNet PocoUtil pylonGPSMessages zmq ${PROTOBUF_LIBRARY} ${CMAKE_THREAD_LIBS_INIT})
 
 #link libraries to executable PocoNetd
-target_link_libraries(clientExample pylongps)
+target_link_libraries(ntripServer pylongps)
 
 #link libraries to executable
 target_link_libraries(unitTests pylongps )

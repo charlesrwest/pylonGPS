@@ -1,4 +1,4 @@
-#include "TCPServerConnectionFactoryImplementation.hpp" 
+#include "casterTCPServerConnectionFactoryImplementation.hpp" 
 
 using namespace pylongps;
 
@@ -12,7 +12,7 @@ This function initializes the factory and stores all of the passed information s
 
 @throws: This function can throw exceptions
 */
-TCPServerConnectionFactoryImplementation::TCPServerConnectionFactoryImplementation(zmq::context_t *inputZMQContext, const std::string &inputServerRegistrationDeregistrationSocketConnectionString, const std::string &inputMountpointDisconnectSocketConnectionString, const std::string &inputSourceTableAccessSocketConnectionString, int inputServerMetadataAdditionSocketPortNumber)
+casterTCPServerConnectionFactoryImplementation::casterTCPServerConnectionFactoryImplementation(zmq::context_t *inputZMQContext, const std::string &inputServerRegistrationDeregistrationSocketConnectionString, const std::string &inputMountpointDisconnectSocketConnectionString, const std::string &inputSourceTableAccessSocketConnectionString, int inputServerMetadataAdditionSocketPortNumber)
 {
 context = inputZMQContext;
 serverRegistrationDeregistrationSocketConnectionString = inputServerRegistrationDeregistrationSocketConnectionString;
@@ -36,7 +36,7 @@ This function overrides the base class implementation and is called whenever a n
 
 @throws: This function can throw exceptions
 */
-Poco::Net::TCPServerConnection *TCPServerConnectionFactoryImplementation::createConnection(const Poco::Net::StreamSocket &inputConnectionSocket)
+Poco::Net::TCPServerConnection *casterTCPServerConnectionFactoryImplementation::createConnection(const Poco::Net::StreamSocket &inputConnectionSocket)
 {
 SOM_TRY
 return new casterTCPConnectionHandler(inputConnectionSocket, context, serverRegistrationDeregistrationSocketConnectionString, mountpointDisconnectSocketConnectionString, sourceTableAccessSocketConnectionString, serverMetadataAdditionSocketPortNumber);
