@@ -6,9 +6,9 @@
 
 /**
 \mainpage
-***************INTRODUCTION
-
-Hello and welcome.
+Introduction
+---------------------
+_______________
 
 We are just starting to see the deployment of robots in a commercial setting and most of the pieces are in place for Robotics as a Service. This project is dedicated to making it even easier to do interesting and useful robotics applications using inexpensive differential GPS.
 
@@ -18,7 +18,9 @@ Pylon GPS makes it easy to share GPS updates from your basestation and allows mo
 
 The first draft of this code focused on providing an NTRIP 1.0 (http://www.wsrn3.org/CONTENT/Reference/Reference_NTRIP-V1-Tech-paper.pdf) compatible caster and server that can be used with RTKLIB.  During development of the first draft, it was discovered that the NTRIP 1.0 protocol doesn't support automatic registration of basestation sources (information about the sources are assumed to be entered manually by the owners of the NTRIP Caster server).  To enable easy sharing, a second interface was added to the PylonGPS caster which enable automatic addition of the basestation source "metadata" that was expected to be manually added.  As the software is currently implemented, this interface will be bound to a port number one higher than the one assigned to the PylonGPS NTRIP caster.  If the PylonGPS server software is used to forward basestation data, this registration will be carried out automatically.
 
-***************Compilation
+Compilation
+--------------------
+_____________
 
 The next few minor releases will focus on making it easier to install the software by providing Debian packages and Windows installers.  For now, the preferred method is building from source.  So far, building and running has been tested on Ubuntu Linux and the instructions focus on that accordingly.
 
@@ -59,7 +61,9 @@ The "make doc" command is only nessesary if access to nice documentation is desi
 
 The integrity of the code can be checked via running the ./bin/unitTests executable.  If some of the unit tests fail on your platform, please email crwest@ncsu.edu with a screenshot of your error and a description of your operating enviroment.
 
-***************Using PylonGPS
+Using PylonGPS
+---------------------------
+_________________
 
 PylonGPS currently generates 3 executables, one shared library and one static library.  One of the executables is meant to unit test the code and will probably not be used by most people.  The static library is integrated into the shared library and isn't really used outside of the build process.
 
@@ -153,7 +157,9 @@ approximate position when trying to get information from this source (currently 
 19. MISC: Any other information to include (arbitrary length)
 
 
-***************Future Versions
+Future Versions
+---------------------------
+_________________
 
 RTKLIB supports streaming differential GPS updates to and from arbitrary TCP sockets.  This means that it would be possible to transport these updates without needing to use the HTTP based NTRIP protocol for registration/other functions if a PylonGPS program is the source/destination of these streams.  In the next major release, it is likely that PylonGPS will switch to a interface using ZMQ/Protobuf for communication and serialization while allowing access via both NTRIP and the open PylonGPS format at the caster (a model/view pattern).  This would allow new features, such as searching and proxying, to be added without having to redefine a standard every time (since Protobuf allows addition of new fields without breaking backwards compatibility).
 
