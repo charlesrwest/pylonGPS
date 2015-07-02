@@ -23,9 +23,10 @@ namespace pylongps
 This object enables the cross platform creation of long running processes (such as a webserver) by running the "main" member function in a new process with the daemon flags enabled.
 
 //Expects arguments:
-//Port number to bind (binds port number and port number+1)
+//Port number to bind
 //URI of the caster to forward the data to
 //NTRIP format source metadata
+//Optional metadata registration port of caster (if not caster ntrip port number + 1)
 */
 class serverApplication : public Poco::Util::ServerApplication
 {

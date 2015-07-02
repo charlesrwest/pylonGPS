@@ -24,9 +24,10 @@ const int CASTER_DEFAULT_MAX_NUMBER_OF_QUEUED_CONNECTIONS = 100;
 This object enables the cross platform creation of long running processes (such as a webserver) by running the "main" member function in a new process with the daemon flags enabled.
 
 //Expects arguments:
-//Port number to bind (binds port number and port number+1)
+//Port number to bind (binds port number and port number+1 by default)
 //Maximum number of threads to use (optional)
 //Maximum number of connections to queue before rejecting new ones (optional)
+//Optional port to use for meta
 */
 class casterApplication : public Poco::Util::ServerApplication
 {
