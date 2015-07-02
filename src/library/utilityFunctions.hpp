@@ -3,6 +3,7 @@
 
 #include "zmq.hpp"
 #include "SOMException.hpp"
+#include <tuple>
 
 namespace pylongps
 {
