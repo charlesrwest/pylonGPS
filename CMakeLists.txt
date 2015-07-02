@@ -26,7 +26,7 @@ add_subdirectory(./messages)
 #Tell compiler where to find required libraries
 link_directories(/usr/lib/x86_64-linux-gnu/ lib/ ./messages)
 
-include_directories(./src/library/ ./messages ./cppzmq-master)
+include_directories(./src/library/ ./messages ./cppzmq-master ./src/executables/unitTests)
 
 find_package(Threads)
 
