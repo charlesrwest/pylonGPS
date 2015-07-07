@@ -151,7 +151,7 @@ std::unique_ptr<zmq::socket_t> sourceTableAccessSocket;
 std::unique_ptr<zmq::pollitem_t[]> pollItems; //The poll object used to poll the REP sockets
 int numberOfPollItems; //Should always be 2
 
-std::priority_queue<event, std::vector<event>, std::greater<event> > eventQueue;  //TODO: Finish implementing event queue functionality
+std::priority_queue<event, std::vector<event>, std::greater<event> > eventQueue;  
 
 
 //Metadata, source table and ZMQ information source strings
