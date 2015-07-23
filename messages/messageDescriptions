@@ -1,22 +1,57 @@
 /////////////////Messages used with ZMQ /////////////////////////////
+transmitter_registration_request:
+This message is used by a PylonGPS transmitter to submit any required credentials and give the required metadata for the stream to the caster (lat/long, expected update rate, basestation tech, message protocol).  The caster should reply with a transmitter_registration_reply.
 
-ntrip_server_metadata_addition_request:
-This message is used by a corrections server to register its metadata with the server in anticipate of making a NTRIP request to start streaming data.
+transmitter_registration_reply:
+This message used used by a caster to reply to a transmitter_registration_request.  It indicates if the registration succeeded and if not, then why it failed.
 
-ntrip_server_metadata_addition_reply:
-This message indicates if the metadata request was successful and if not, why not.  It also returns a password string which can be used to connect using NTRIP to provide the information stream.  The server's entry will only appear in the source table once the NTRIP connection has been made.
+client_query_request:
+This message is used by a PylonGPS client to request a list of available sources from a caster.  It allows filtering based on lat/long (entries within a certain distance of a point, sorted by distance or in a grid), limiting the number of entries returned to a certain number, uptime (> certain amount), update rate (> certain amount), expected update rate (> certain amount), base station technology (in a list of different types) and protocol (in a list of different types).
 
-ntrip_server_registration_or_deregistraton_request:
-This message is used by a thread associated with the TCP connection to a NTRIP server.  It is sent to the stream manager object to either try to register the new correction stream or notify the manager that the connection was closed and the entry should be removed.  Since the NTRIP 1.0 standard doesn't support automatic metadata registration, the request is expected to have the password that was provided when the metadata was originally registered.
+Alternatively, the request can be formatted to ask the caster for information about itself, such as version.
 
-ntrip_server_registration_or_deregistraton_reply:
-This message is sent by the stream manager object in response to a ntrip_server_registration_or_deregistraton_request.  It tells the sender if the mountpoint registration/deregistration was successful and gives any other details that may later be nessisary.
+client_query_reply:
+This message contains either an error message indicating the request was invalid, a list (sometimes sorted) of base station information structures or a message containing the details about the caster.
 
-ntrip_source_table_request:
-This message is sent by a thread associated with the TCP connection to a NTRIP client.  It can have a mountpoint and optionally some restrictions on what results are returned (defined by the accepts http field?).  If the mountpoint is empty, a sourcetable is expected in the response.  Otherwise, the inproc address associated with the mountpoint's information stream is expected.
+stream_status_update:
+This message is published by a caster to inform proxies or interested clients if a stream has been added or has been removed from the caster's list of information sources.  This allows clients and proxies to be aware of when their subscribed source disconnects and allow for waiting until a source comes online.  The registrations notifications include a  base_station_stream_information message with all of the details associated with the new source.
 
-ntrip_source_table_reply:
-This message is sent by the stream manager object in response to a ntrip_source_table_request.  It contains either the full source table, a filtered subset of the source table or the inproc address associated with a given mountpoint's information stream.
+submessages:
+base_station_stream_information:
+This message contains all of the details related to a basestation stream (including public key/organization, if there is one and lat/long, expected update rate, basestation tech and message protocol).
+
+caster_information:
+This message contains all the details regarding a pylonGPS caster instance, including version.
+
+base_station_radius_sub_request:
+A message used in client_query_request messages to define a request for base stations that are within a given radius from a lattitude/longitude.
+
+client_subquery:
+A collection of conditions on what basestations are considered acceptable "ANDed" together.
+
+sql_double_condition:
+A condition on a double field: "<,<=, ==, >, =>" value 
+
+sql_integer_condition:
+A condition on a integer field: "<,<=, ==, >, =>" value
+
+sql_string_condition:
+A condition on a string field: "==, LIKE" value
+
+database_request:
+This message is used to request an operation on the database be completed.  So far this includes adding or removing a base station entry or updating the reported update rate.
+
+database_reply:
+This message is sent in response to a database request and indicates the success or failure of the request.
+
+Enums are defined in a shared .proto file for inclusion.
+
+Credentials:
+
+Credentials are suppose to grant the owner of a certain public key some rights in the system.  In this case, it is suppose to allow official or registered GPS base station owning organizations to assure ownership to a given stream.  This is done by passing a credentials message along with a registration to prove that the stream being used to provide updates is using a key that was authorized by one or more known organizations.  Currently credentials are set to have limited lifetimes and blacklist capability is expected to be added at some point in the future.
+
+Credential messages are implemented as follows:
+A credentials message contains a serialized authorized_permissions message which contains fields defining what the key owner is allowed to do and what key the permissions are for.  It also contains one or more signature messages.  The signature messages contain a signed hash of the serialized authorized_permissions field and the key of the signer.  This allows for an arbitrary number of key holders (organizations or individuals) to attest that the authorized_permissions are upheld by their authority.
 
 /////////////////Messages used with event queue /////////////////////////////
 

@@ -1,0 +1,12 @@
+package pylongps; //Put in pylongps namespace
+
+import "base_station_stream_information.proto";
+import "credentials.proto";
+
+//This message is used by a PylonGPS transmitter to submit any required credentials and give the required metadata for the stream to the caster (lat/long, expected update rate, basestation tech, message protocol).  The caster should reply with a transmitter_registration_reply.
+message transmitter_registration_request
+{
+optional base_station_stream_information stream_info = 10; //The metadata associated with the stream we are attempting to register
+optional credentials transmitter_credentials = 20; //This is any credentials (such as signatures of its key via an organization key) used to authenticate this transmitter's key (if it is attempting to authenticate) as a representative of a particular organization.
+
+}

@@ -1,0 +1,12 @@
+package pylongps; //Put in pylongps namespace
+
+import "base_station_stream_information.proto";
+
+//This message is used to request an operation on the database be completed.  So far this includes adding or removing a base station entry or updating the reported update rate.
+message database_request
+{
+optional base_station_stream_information base_station_to_register = 10; //The information about a basestation to register
+optional uint64 delete_base_station_id = 20; //The ID of a basestation to remove
+optional uint64 base_station_to_update_id = 30; //The ID of a basestation to update
+optional double real_update_rate = 40; //The real update rate to update in the table
+}

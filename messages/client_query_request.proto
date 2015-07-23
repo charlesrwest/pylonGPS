@@ -1,0 +1,11 @@
+package pylongps; //Put in pylongps namespace
+
+import "client_subquery.proto";
+
+
+//This message is used by a PylonGPS client to request a list of available sources from a caster.  It allows filtering based on lat/long (entries within a certain distance of a point, sorted by distance or in a grid), limiting the number of entries returned to a certain number, uptime (> certain amount), update rate (> certain amount), expected update rate (> certain amount) and protocol (in a list of different types).
+message client_query_request
+{
+optional uint32 max_number_of_results = 10; //The maximum number of base station entries that should be returned
+repeated client_subquery subqueries = 20; //One or more subqueries, with the results from each subquery "ORed" together
+}

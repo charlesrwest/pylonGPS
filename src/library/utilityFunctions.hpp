@@ -25,7 +25,5 @@ std::tuple<std::string, int> bindZMQSocketWithAutomaticAddressGeneration(zmq::so
 
 
 
-
-
 }
 #endif

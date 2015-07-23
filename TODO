@@ -1,5 +1,0 @@
-Current implementation design does not support sources that require clients to have a password to access or digest based authentication of clients.  Given the intent of the program, this isn't nessisarily an issue, but should probably be included for completeness.
-
-Add caster ID to classes so it is returned with the source table. 
-
-

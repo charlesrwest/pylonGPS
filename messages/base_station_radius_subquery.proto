@@ -1,0 +1,8 @@
+package pylongps; //Put in pylongps namespace
+
+message base_station_radius_subquery
+{
+required double latitude = 1; //Latitude of the center of the circle
+required double longitude = 2; //Longitude of the center of the circle
+required double radius = 3; //Radius in meters of the circle
+}

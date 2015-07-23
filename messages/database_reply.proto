@@ -1,0 +1,13 @@
+package pylongps; //Put in pylongps namespace
+
+enum database_request_failure_reason
+{
+DATABASE_REQUEST_DESERIALIZATION_FAILED = 10;
+DATABASE_CONSTRAINTS_VIOLATED = 20;
+}
+
+//This message is sent in response to a database request and indicates the success or failure of the request.
+message database_reply
+{
+optional database_request_failure_reason reason = 10; //Why the request failed (success if not there)
+} 

@@ -6,10 +6,11 @@ using namespace pylongps; //Use pylongps classes without alteration for now
 Constructs the object without any submessages, set to occur/expire at the given time
 @param inputTime: The time that the event times out or occurs
 */
-event::event(const std::chrono::steady_clock::time_point &inputTime)
+event::event(const Poco::Timestamp &inputTime)
 {
 time = inputTime;
 } 
+
 
 
 /**
@@ -18,7 +19,7 @@ This function returns left.time > right.time
 @param inputRightEvent: The right side of >
 @return: inputLeftEvent > inputRightEvent
 */
-bool pylongps::operator>(const event &inputLeftEvent, const event &inputRightEvent)
+bool pylongps::operator<(const event &inputLeftEvent, const event &inputRightEvent)
 {
 return inputLeftEvent.time > inputRightEvent.time;
 }

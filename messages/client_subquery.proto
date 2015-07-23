@@ -1,0 +1,24 @@
+package pylongps; //Put in pylongps namespace
+
+import "common_enums.proto";
+import "base_station_radius_subquery.proto";
+import "sql_double_condition.proto";
+import "sql_integer_condition.proto";
+import "sql_string_condition.proto";
+
+//This message defines several "AND" clauses together to form a complex set of conditions.  Multiple messages of this type can be "ORed" placed in a client_query_request message to enable complex queries.
+message client_subquery
+{
+repeated base_station_class acceptable_classes= 10; //One or more acceptable types of base station classes
+repeated corrections_message_format acceptable_formats = 20; //One or more acceptable message types.  If zero types are defined, it is assumed any type is acceptable. 
+repeated sql_double_condition latitude_condition = 30; //Conditions on the value of the latitude
+repeated sql_double_condition longitude_condition = 40; //Conditions on the value of the longitude
+repeated sql_double_condition uptime_condition = 50;  //Conditions on how long base stations have been active in seconds (potentially allowing only long running basestations to be used)
+repeated sql_double_condition real_update_rate_condition = 60; //Conditions on the real update rate (ZMQ messages per second)
+repeated sql_double_condition expected_update_rate_condition = 70; //A condition on the expected update rate (GPS format messages/second), defined at registration
+optional sql_string_condition informal_name_condition = 80; //A condition on the informal name to search for
+repeated sql_integer_condition base_station_id_condition = 90; //Conditions on the assigned base station ID
+repeated string source_public_key = 100; //Acceptable signing public keys
+
+optional base_station_radius_subquery circular_search_region = 110; //A central point and radius to search for base stations around
+}

@@ -1,0 +1,46 @@
+package pylongps; //Put in pylongps namespace
+
+//Define enums to use in many different messages
+
+//Types of message formats
+enum corrections_message_format
+{
+RTCM_V1 = 1; //RTCM version 1.0
+RTCM_V2 = 2; //RTCM version 2.0
+RTCM_V2_1 = 3; //RTCM version 2.1
+RTCM_V2_2 = 4; //RTCM version 2.2
+RTCM_V2_3 = 5; //RTCM version 2.3
+RTCM_V3 = 6; //RTCM version 3.0
+RTCM_V3_1 = 7; //RTCM version 3.1
+RTCM_PP = 100; //RTCM++
+RTCM_ADV = 101; //RTCM-AdV
+RTCM_ADV_FKP = 102; //RTCM-AdV FKP
+RINEX = 200; //RINEX
+PIKSI_V1 = 300; //Piksi's format version 1
+CMR = 400; //Compact Measurement Record (CMR)
+RAW = 500; //Raw data from a receiver
+} 
+
+//Classes of base stations (official, community, etc)
+enum base_station_class
+{
+OFFICIAL = 1; //Base stations that are run by trusted entities (such as governments) and use authentication so that injecting bad data is difficult
+REGISTERED_COMMUNITY = 2; //Base stations run by private individuals or organizations that have registered and gotten a signing key for their organization
+COMMUNITY = 3; //Base stations run by anonymous individuals
+}
+
+//Relational operators for SQL operations
+enum sql_relational_operator
+{
+LESS_THAN = 10;
+LESS_THAN_EQUAL_TO = 20;
+EQUAL_TO = 30;
+GREATER_THAN = 40;
+GREATER_THAN_EQUAL_TO = 50;
+}
+
+enum sql_string_relational_operator
+{
+IDENTICAL = 10;
+LIKE = 20;
+}

@@ -1,0 +1,10 @@
+package pylongps; //Put in pylongps namespace
+
+import "common_enums.proto";
+
+//This message is used as part of a subquery message to specify conditions on one or more parts of stream base station results that are returned.  It specifies a constraint on the value of a particular field of the stream base station entry.
+message sql_integer_condition
+{
+required int64 value = 10; //The value the condition is in relation to
+required sql_relational_operator relation = 20; //The relation to the value (<,<=, ==, >=, >)
+} 
