@@ -4,6 +4,7 @@ enum database_request_failure_reason
 {
 DATABASE_REQUEST_DESERIALIZATION_FAILED = 10;
 DATABASE_CONSTRAINTS_VIOLATED = 20;
+DATABASE_REQUEST_FORMAT_INVALID = 30; //Missing "optional" fields required for a valid transaction
 }
 
 //This message is sent in response to a database request and indicates the success or failure of the request.

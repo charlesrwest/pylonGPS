@@ -1,6 +1,7 @@
 #include "caster.hpp"
 
 using namespace pylongps;
+using namespace Poco::Data::Keywords;
 
 /**
 This function initializes the class, creates the associated database, and starts the two threads associated with it.
@@ -47,18 +48,19 @@ casterSecretKey = inputCasterSecretKey;
 if(inputCasterSQLITEConnectionString == "")
 {
 //Generate random 64 bit unsigned int
-//std::random_device randomnessSource;
-//std::uniform_int_distribution<uint64_t> distribution;
-//uint64_t connectionInteger = distribution(randomnessSource);
+std::random_device randomnessSource;
+std::uniform_int_distribution<uint64_t> distribution;
+uint64_t connectionInteger = distribution(randomnessSource);
 
-//databaseConnectionString = "file:" + std::to_string(connectionInteger) + "?mode=memory&cache=shared";  //Apparently Ubuntu has Poco 1.3 in its repositories, which doesn't support the more recent versions of SQLite which permit URI connection strings, so the default must be an actual file name or else mutiple connections cannot be made, which prevents more than one instance of this object being active at a time, so an alternate string and architecture must be used
-databaseConnectionString = ":memory:";
+databaseConnectionString = "file:" + std::to_string(connectionInteger) + "?mode=memory&cache=shared";  //Apparently Ubuntu has Poco 1.3 in its repositories, which doesn't support the more recent versions of SQLite which permit URI connection strings, so the default must be an actual file name or else mutiple connections cannot be made, which prevents more than one instance of this object being active at a time, so an alternate string and architecture must be used
+//databaseConnectionString = ":memory:";
 }
 else
 {
 databaseConnectionString = inputCasterSQLITEConnectionString;
 }
 
+/*
 //Attempt to connect to database and maintain connection as long as object exists so the database does not go out of scope before the object does
 SOM_TRY
 Poco::Data::SQLite::Connector::registerConnector();
@@ -68,9 +70,9 @@ SOM_TRY
 databaseSession.reset(new Poco::Data::Session("SQLite", databaseConnectionString));
 SOM_CATCH("Error creating/connecting to database\n")
 
-//Drop the stream entry tables if they already exist.
+//Drop the stream entry tables if they already exist and enable foreign key constraints
 SOM_TRY
-(*databaseSession) << "BEGIN TRANSACTION; DROP TABLE IF EXISTS base_station_streams; DROP TABLE IF EXISTS base_station_signing_keys; END TRANSACTION;", Poco::Data::Keywords::now;
+(*databaseSession) << "PRAGMA foreign_keys=on; BEGIN TRANSACTION; DROP TABLE IF EXISTS base_station_streams; DROP TABLE IF EXISTS base_station_signing_keys; END TRANSACTION;", Poco::Data::Keywords::now;
 SOM_CATCH("Error dropping database tables during initialization")
 
 //Recreate the tables without any entries
@@ -79,14 +81,23 @@ SOM_TRY
 SOM_CATCH("Error creating tables for caster\n")
 
 //Initialize prepared statements
-//SOM_TRY
-//insertSimpleBaseStationDataIntoDatabasePreparedStatement.reset(new Poco::Data::Statement(*databaseSession));
-//SOM_CATCH("Error initializing prepared statement")
+SOM_TRY
+insertSimpleBaseStationDataIntoDatabasePreparedStatement.reset(new Poco::Data::Statement(*databaseSession));
+SOM_CATCH("Error initializing prepared statement")
 
-//SOM_TRY
-//(*insertSimpleBaseStationDataIntoDatabasePreparedStatement) << "INSERT INTO base_station_streams VALUES (?, ?, ?, ?, ?, ?, ?, ?)", use(std::get<0>(insertSimpleBaseStationDataIntoDatabaseTuple)), use(std::get<1>(insertSimpleBaseStationDataIntoDatabaseTuple)), use(std::get<2>(insertSimpleBaseStationDataIntoDatabaseTuple)), use(std::get<3>(insertSimpleBaseStationDataIntoDatabaseTuple)), use(std::get<4>(insertSimpleBaseStationDataIntoDatabaseTuple)), use(std::get<5>(insertSimpleBaseStationDataIntoDatabaseTuple)), use(std::get<6>(insertSimpleBaseStationDataIntoDatabaseTuple)), use(std::get<7>(insertSimpleBaseStationDataIntoDatabaseTuple)));
-//SOM_CATCH("Error preparing statement\n")
+SOM_TRY
+(*insertSimpleBaseStationDataIntoDatabasePreparedStatement) << "INSERT INTO base_station_streams VALUES (?, ?, ?, ?, ?, ?, ?, ?)", use(std::get<0>(insertSimpleBaseStationDataIntoDatabaseTuple)), use(std::get<1>(insertSimpleBaseStationDataIntoDatabaseTuple)), use(std::get<2>(insertSimpleBaseStationDataIntoDatabaseTuple)), use(std::get<3>(insertSimpleBaseStationDataIntoDatabaseTuple)), use(std::get<4>(insertSimpleBaseStationDataIntoDatabaseTuple)), use(std::get<5>(insertSimpleBaseStationDataIntoDatabaseTuple)), use(std::get<6>(insertSimpleBaseStationDataIntoDatabaseTuple)), use(std::get<7>(insertSimpleBaseStationDataIntoDatabaseTuple)); //Base object
+SOM_CATCH("Error preparing statement\n")
 
+SOM_TRY
+insertBaseStationSigningStatement.reset(new Poco::Data::Statement(*databaseSession));
+SOM_CATCH("Error initializing prepared statement")
+
+SOM_TRY
+(*insertSimpleBaseStationDataIntoDatabasePreparedStatement) << "INSERT INTO base_station_signing_keys VALUES (?, ?)", use(insertBaseStationSigningKeysVector); //There are warnings about using use with a empty vector, but I am going to see if it works as long as it is nonempty when execute is called
+SOM_CATCH("Error preparing statement\n")
+
+*/
 
 //Initialize and bind shutdown socket
 SOM_TRY
@@ -411,6 +422,7 @@ This function checks if the databaseAccessSocket has received a database_request
 void caster::processDatabaseRequest()
 {
 
+/*
 //Receive message
 std::unique_ptr<zmq::message_t> messageBuffer;
 
@@ -455,9 +467,97 @@ return;
 SOM_CATCH("Error sending reply");
 }
 
+//Validate submessage
+if(request.has_base_station_to_register())
+{//Add basestation
+if(!request.base_station_to_register().has_latitude() || !request.base_station_to_register().has_longitude() || !request.base_station_to_register().has_base_station_id() || !request.base_station_to_register().has_start_time() || !request.base_station_to_register().has_message_format())
+{//Message did not have required fields, so send back message saying request failed
+SOM_TRY
+sendReplyLambda(true, DATABASE_REQUEST_FORMAT_INVALID);
+return;
+SOM_CATCH("Error sending reply")
+}
+
 //Perform database operation
+std::get<0>(insertSimpleBaseStationDataIntoDatabaseTuple) = request.base_station_to_register().base_station_id(); //ID
+std::get<1>(insertSimpleBaseStationDataIntoDatabaseTuple) = request.base_station_to_register().latitude();//Latitude
+std::get<2>(insertSimpleBaseStationDataIntoDatabaseTuple) = request.base_station_to_register().longitude();//Longitude
+
+if(request.base_station_to_register().has_expected_update_rate())
+{
+std::get<3>(insertSimpleBaseStationDataIntoDatabaseTuple) = request.base_station_to_register().expected_update_rate();//expected_update_rate
+}
+else
+{ //Set NULL
+std::get<3>(insertSimpleBaseStationDataIntoDatabaseTuple).clear();
+}
+
+std::get<4>(insertSimpleBaseStationDataIntoDatabaseTuple) = (int64_t) request.base_station_to_register().message_format();//message_format
+
+if(request.base_station_to_register().has_informal_name())
+{
+std::get<5>(insertSimpleBaseStationDataIntoDatabaseTuple) = request.base_station_to_register().informal_name();//informal_name
+}
+else
+{ //Set NULL
+std::get<5>(insertSimpleBaseStationDataIntoDatabaseTuple).clear();
+}
+
+if(request.base_station_to_register().has_source_public_key())
+{
+std::get<6>(insertSimpleBaseStationDataIntoDatabaseTuple) = request.base_station_to_register().source_public_key();//source_public_key
+}
+else
+{ //Set NULL
+std::get<6>(insertSimpleBaseStationDataIntoDatabaseTuple).clear();
+}
+
+std::get<7>(insertSimpleBaseStationDataIntoDatabaseTuple) = request.base_station_to_register().start_time();//start_time
+
+//Load data signing keys into vector
+int64_t baseStationID = request.base_station_to_register().base_station_id();
+insertBaseStationSigningKeysVector.clear();
+SOMScopeGuard vectorScopeGuard([&]() { insertBaseStationSigningKeysVector.clear(); }); //Ensure vector gets cleaned up at end of function
+for(int i=0; i<request.base_station_to_register().signing_keys_size(); i++)
+{
+insertBaseStationSigningKeysVector.push_back(std::tuple<std::string, int64_t>(request.base_station_to_register().signing_keys(i), baseStationID));
+}
+
+{ //Make block to define transaction scope
+std::unique_ptr<Poco::Data::Transaction> transaction;
+SOM_TRY //Start database transaction
+transaction.reset(new Poco::Data::Transaction((*databaseSession), true));
+SOM_CATCH("Error creating transaction\n")
+
+if(insertSimpleBaseStationDataIntoDatabasePreparedStatement->execute() != 1)
+{ //Placing base station in database failed
+SOM_TRY
+sendReplyLambda(true, DATABASE_CONSTRAINTS_VIOLATED);
+return;
+SOM_CATCH("Error sending reply")
+}
+
+if(insertBaseStationSigningStatement->execute() != insertBaseStationSigningKeysVector.size())
+{//Placing base station in database failed
+SOM_TRY
+sendReplyLambda(true, DATABASE_CONSTRAINTS_VIOLATED);
+return;
+SOM_CATCH("Error sending reply")
+}
+
+SOM_TRY //Everything worked, so indicate success
+sendReplyLambda(false);
+return;
+SOM_CATCH("Error sending reply")
+}
+
 //TODO: Finish code to perform database operations
 
+
+
+}
+
+*/
 
 //Send reply
 

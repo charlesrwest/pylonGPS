@@ -6,6 +6,8 @@
 #include<string>
 #include "zmq.hpp"
 #include "zmq_utils.h"
+#include <cstdio>
+#include<functional>
 
 using namespace pylongps; //Use pylongps classes without alteration for now
 
@@ -41,6 +43,63 @@ decodedCasterSecretKey = std::string(buffer, 32);
 caster myCaster(context.get(), 0,9001,9002,9003,9004, 9005, 9006, decodedCasterPublicKey, decodedCasterSecretKey);
 
 REQUIRE( true == true);
+
+}
+}
+
+class testClass
+{
+public:
+testClass(int inputNumber)
+{
+number = inputNumber;
+}
+
+int getNumber()
+{
+return number;
+}
+
+void setNumber(int inputNumber)
+{
+number = inputNumber; 
+}
+
+int number;
+};
+
+template <class classType> class functionCaller
+{
+public:
+void setFunctionToCall(const std::function<int(classType*)> inputFunctionPointer)
+{
+memberFunctionPointer = inputFunctionPointer;
+}
+
+void callFunction(classType &inputTestClass)
+{
+printf("Called with value: %d\n", memberFunctionPointer(&inputTestClass));
+}
+
+std::function<int(classType*)> memberFunctionPointer;
+};
+
+TEST_CASE( "Test member function pointers", "[test]")
+{
+
+SECTION( "Call member function pointer")
+{
+//Create two objects
+testClass test0(0);
+testClass test1(9);
+
+functionCaller<testClass> functionCaller;
+functionCaller.setFunctionToCall(&testClass::getNumber);
+
+//std::function<void(testClass*)> f_add_display = &testClass::getNumber;
+
+functionCaller.callFunction(test0);
+functionCaller.callFunction(test1);
 
 }
 }
