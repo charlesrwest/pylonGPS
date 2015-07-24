@@ -8,6 +8,9 @@
 #include "zmq_utils.h"
 #include <cstdio>
 #include<functional>
+#include "protobufSQLConverter.hpp"
+#include "credentials.pb.h"
+
 
 using namespace pylongps; //Use pylongps classes without alteration for now
 
@@ -100,6 +103,26 @@ functionCaller.setFunctionToCall(&testClass::getNumber);
 
 functionCaller.callFunction(test0);
 functionCaller.callFunction(test1);
+
+}
+}
+
+TEST_CASE( "Test protobufSQLConverter", "[test]")
+{
+
+SECTION( "Get a string")
+{
+//Initialize protobufSQLConverter
+protobufSQLConverter<credentials> testConverter;
+
+//Attempt to add fields for credentials
+std::function<const std::string &(const credentials*)> get(&credentials::permissions);
+std::function<void (credentials*, const std::string &)> set(static_cast<void (credentials::*)(const ::std::string& value)>(&credentials::set_permissions));
+std::function<bool(const credentials*)> has(&credentials::has_permissions);
+std::string fieldName = "test";
+std::tuple<std::function<const std::string &(const credentials*)>, std::function<void (credentials*, const std::string &)>, std::function<bool(const credentials*)>, std::string> testTuple(get, set, has, fieldName);
+testConverter.addField(testTuple);
+
 
 }
 }
