@@ -9,8 +9,15 @@
 #include <cstdio>
 #include<functional>
 #include "protobufSQLConverter.hpp"
-#include "credentials.pb.h"
+#include "base_station_stream_information.pb.h"
 
+
+
+
+
+//stringField<credentials>(&credentials::permissions, static_cast<void (credentials::*)(const ::std::string& value)>(&credentials::set_permissions), &credentials::has_permissions, "permissions_field")
+
+//GEN_STRING_FIELD_TUPLE(credentials, permissions, "permissions_field")
 
 using namespace pylongps; //Use pylongps classes without alteration for now
 
@@ -113,15 +120,40 @@ TEST_CASE( "Test protobufSQLConverter", "[test]")
 SECTION( "Get a string")
 {
 //Initialize protobufSQLConverter
-protobufSQLConverter<credentials> testConverter;
+protobufSQLConverter<base_station_stream_information> testConverter;
 
 //Attempt to add fields for credentials
-std::function<const std::string &(const credentials*)> get(&credentials::permissions);
-std::function<void (credentials*, const std::string &)> set(static_cast<void (credentials::*)(const ::std::string& value)>(&credentials::set_permissions));
-std::function<bool(const credentials*)> has(&credentials::has_permissions);
-std::string fieldName = "test";
-std::tuple<std::function<const std::string &(const credentials*)>, std::function<void (credentials*, const std::string &)>, std::function<bool(const credentials*)>, std::string> testTuple(get, set, has, fieldName);
-testConverter.addField(testTuple);
+//int64Field<base_station_stream_information> tuple(&base_station_stream_information::base_station_id, &base_station_stream_information::set_base_station_id, &base_station_stream_information::has_base_station_id, "base_station_id");
+
+//std::tuple<std::function<const ::google::protobuf::int64 &(const base_station_stream_information* )>, std::function<void (classType*, ::google::protobuf::int64)>, std::function<bool(const classType*)>, std::string>
+
+//::google::protobuf::int64 base_station_id() const
+auto funcPtr = &base_station_stream_information::base_station_id;
+std::function<const ::google::protobuf::int64 &(const base_station_stream_information* )> test(funcPtr);
+
+//std::function<const std::string &(const classType*)>
+
+
+
+//Add int64 
+testConverter.addField(PYLON_GPS_GEN_OPTIONAL_INT64_FIELD(base_station_stream_information, base_station_id, "base_station_id"));
+
+//Add double
+testConverter.addField(PYLON_GPS_GEN_OPTIONAL_DOUBLE_FIELD(base_station_stream_information, real_update_rate, "expected_update_rate" )); 
+
+//Add string
+testConverter.addField(PYLON_GPS_GEN_OPTIONAL_STRING_FIELD(base_station_stream_information, source_public_key, "source_public_key"));
+
+
+
+//Make message to test on
+base_station_stream_information testBaseStationInfo;
+testBaseStationInfo.set_source_public_key("test source public key");
+testBaseStationInfo.set_base_station_id(9001);
+
+
+//Print out all of the fields we added
+testConverter.serialize(testBaseStationInfo);
 
 
 }
