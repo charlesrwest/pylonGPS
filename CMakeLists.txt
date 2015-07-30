@@ -24,7 +24,7 @@ add_subdirectory(./messages)
 
 
 #Tell compiler where to find required libraries
-link_directories(/usr/lib/x86_64-linux-gnu/ lib/ ./messages /usr/local/lib)
+link_directories(/usr/lib/x86_64-linux-gnu/ lib/ ./messages)
 
 include_directories(./src/library/ ./messages ./cppzmq-master ./src/executables/unitTests )
 
@@ -49,7 +49,7 @@ add_library(pylongps SHARED  ${SOURCEFILES})
 #Tell CMake what executables to make
 ADD_EXECUTABLE(unitTests ${UNIT_TESTS_EXECUTABLE_SOURCE}) 
 
-target_link_libraries(pylongps dl PocoFoundation PocoNet PocoUtil PocoData PocoDataSQLite pylonGPSMessages zmq ${PROTOBUF_LIBRARY} ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(pylongps dl PocoFoundation PocoNet PocoUtil sqlite3 pylonGPSMessages zmq ${PROTOBUF_LIBRARY} ${CMAKE_THREAD_LIBS_INIT})
 
 #link libraries to executable
 target_link_libraries(unitTests pylongps )

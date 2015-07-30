@@ -14,12 +14,7 @@
 #include "SOMScopeGuard.hpp"
 #include "event.hpp"
 #include "utilityFunctions.hpp"
-#include "Poco/Data/Session.h"
-#include "Poco/Data/Statement.h"
-#include "Poco/Data/SQLite/Connector.h"
-#include "Poco/Data/Transaction.h"
 #include "Poco/Timestamp.h"
-#include "Poco/Nullable.h"
 
 #include "database_request.pb.h"
 #include "database_reply.pb.h"
@@ -75,7 +70,7 @@ std::string shutdownPublishingConnectionString; //string to use for inproc conne
 std::string databaseAccessConnectionString; //String to use for inproc connection to send requests to modify the database
 std::string casterPublicKey;
 std::string casterSecretKey;
-std::unique_ptr<Poco::Data::Session> databaseSession; //Ensures that the database doesn't go out of scope until the object does
+//std::unique_ptr<Poco::Data::Session> databaseSession; //Ensures that the database doesn't go out of scope until the object does
 
 /**
 This function is called in the clientRequestHandlingThread to handle client requests and manage access to the SQLite database.
@@ -142,10 +137,10 @@ This function checks if the clientRequestInterface has received a client_query_r
 */
 void processClientQueryRequest();
 
-std::unique_ptr<Poco::Data::Statement> insertSimpleBaseStationDataIntoDatabasePreparedStatement; //Use to insert the data for a single base station (except for the variable size files) using 
-std::tuple<int64_t, double, double, Poco::Nullable<double>, int64_t, Poco::Nullable<std::string>, Poco::Nullable<std::string>, int64_t> insertSimpleBaseStationDataIntoDatabaseTuple; //Tuple associated with statement
-std::unique_ptr<Poco::Data::Statement> insertBaseStationSigningStatement;
-std::vector< std::tuple<std::string, int64_t> > insertBaseStationSigningKeysVector;
+//std::unique_ptr<Poco::Data::Statement> insertSimpleBaseStationDataIntoDatabasePreparedStatement; //Use to insert the data for a single base station (except for the variable size files) using 
+//std::tuple<int64_t, double, double, Poco::Nullable<double>, int64_t, Poco::Nullable<std::string>, Poco::Nullable<std::string>, int64_t> insertSimpleBaseStationDataIntoDatabaseTuple; //Tuple associated with statement
+//std::unique_ptr<Poco::Data::Statement> insertBaseStationSigningStatement;
+//std::vector< std::tuple<std::string, int64_t> > insertBaseStationSigningKeysVector;
 
  
 };

@@ -9,7 +9,7 @@
 #include <cstdio>
 #include<functional>
 #include "protobufSQLConverter.hpp"
-#include "base_station_stream_information.pb.h"
+#include "protobuf_sql_converter_test_message.pb.h"
 
 
 
@@ -20,6 +20,8 @@
 //GEN_STRING_FIELD_TUPLE(credentials, permissions, "permissions_field")
 
 using namespace pylongps; //Use pylongps classes without alteration for now
+using namespace pylongps_protobuf_sql_converter; //Use protobuf/sql converter test message
+
 
 TEST_CASE( "Caster Initializes", "[test]")
 {
@@ -117,44 +119,95 @@ functionCaller.callFunction(test1);
 TEST_CASE( "Test protobufSQLConverter", "[test]")
 {
 
-SECTION( "Get a string")
+SECTION( "Set/get fields")
 {
+//Create database connection
+sqlite3 *databaseConnection = nullptr;
+REQUIRE(sqlite3_open_v2(":memory:", &databaseConnection, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE,NULL) == SQLITE_OK);
+//REQUIRE(sqlite3_open_v2("./testDatabase", &databaseConnection, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE,NULL) == SQLITE_OK);
+
+SOMScopeGuard databaseConnectionGuard([&]() {sqlite3_close_v2(databaseConnection);} );
+
+//Make sure foreign key constractions are active for this connection
+REQUIRE(sqlite3_exec(databaseConnection, "PRAGMA foreign_keys = on;", NULL, NULL, NULL) == SQLITE_OK);
+
+//Create tables for test message
+REQUIRE(sqlite3_exec(databaseConnection, "BEGIN TRANSACTION; CREATE TABLE protobuf_sql_converter_test_message_table (optional_int64 integer, optional_double real, optional_string text, optional_enum integer,  null_optional_int64 integer, null_optional_double real, null_optional_string text, null_optional_enum integer, required_int64 integer primary key, required_double real not null, required_string text not null, required_enum integer not null); CREATE TABLE repeated_int64_table (repeated_int64 integer not null, key integer not null, FOREIGN KEY(key) REFERENCES protobuf_sql_converter_test_message_table(required_int64) ON DELETE CASCADE); CREATE TABLE repeated_double_table (repeated_double real not null, key integer not null, FOREIGN KEY(key) REFERENCES protobuf_sql_converter_test_message_table(required_int64) ON DELETE CASCADE); CREATE TABLE repeated_string_table (repeated_string integer not null, key integer not null, FOREIGN KEY(key) REFERENCES protobuf_sql_converter_test_message_table(required_int64) ON DELETE CASCADE); CREATE TABLE repeated_enum_table (repeated_enum integer not null, key integer not null, FOREIGN KEY(key) REFERENCES protobuf_sql_converter_test_message_table(required_int64) ON DELETE CASCADE); END TRANSACTION;", nullptr, nullptr, nullptr) == SQLITE_OK);
+
+
 //Initialize protobufSQLConverter
-protobufSQLConverter<base_station_stream_information> testConverter;
+protobufSQLConverter<protobuf_sql_converter_test_message> testConverter(databaseConnection, "protobuf_sql_converter_test_message_table");
 
-//Attempt to add fields for credentials
-//int64Field<base_station_stream_information> tuple(&base_station_stream_information::base_station_id, &base_station_stream_information::set_base_station_id, &base_station_stream_information::has_base_station_id, "base_station_id");
-
-//std::tuple<std::function<const ::google::protobuf::int64 &(const base_station_stream_information* )>, std::function<void (classType*, ::google::protobuf::int64)>, std::function<bool(const classType*)>, std::string>
-
-//::google::protobuf::int64 base_station_id() const
-auto funcPtr = &base_station_stream_information::base_station_id;
-std::function<const ::google::protobuf::int64 &(const base_station_stream_information* )> test(funcPtr);
-
-//std::function<const std::string &(const classType*)>
+//Add REQUIRED fields
+//int64 primary key
+testConverter.addField(PYLON_GPS_GEN_REQUIRED_INT64_FIELD(protobuf_sql_converter_test_message, required_int64, "required_int64"), true); 
+testConverter.addField(PYLON_GPS_GEN_REQUIRED_DOUBLE_FIELD(protobuf_sql_converter_test_message, required_double, "required_double" )); 
+testConverter.addField(PYLON_GPS_GEN_REQUIRED_STRING_FIELD(protobuf_sql_converter_test_message, required_string, "required_string"));
+testConverter.addField(PYLON_GPS_GEN_REQUIRED_ENUM_FIELD(protobuf_sql_converter_test_message, test_enum, required_enum, "required_enum"));
 
 
+//Add OPTIONAL fields
+testConverter.addField(PYLON_GPS_GEN_OPTIONAL_INT64_FIELD(protobuf_sql_converter_test_message, optional_int64, "optional_int64"));
+testConverter.addField(PYLON_GPS_GEN_OPTIONAL_DOUBLE_FIELD(protobuf_sql_converter_test_message, optional_double, "optional_double" )); 
+testConverter.addField(PYLON_GPS_GEN_OPTIONAL_STRING_FIELD(protobuf_sql_converter_test_message, optional_string, "optional_string"));
+testConverter.addField(PYLON_GPS_GEN_OPTIONAL_ENUM_FIELD(protobuf_sql_converter_test_message, test_enum, optional_enum, "optional_enum"));
 
-//Add int64 
-testConverter.addField(PYLON_GPS_GEN_OPTIONAL_INT64_FIELD(base_station_stream_information, base_station_id, "base_station_id"));
 
-//Add double
-testConverter.addField(PYLON_GPS_GEN_OPTIONAL_DOUBLE_FIELD(base_station_stream_information, real_update_rate, "expected_update_rate" )); 
+//These are left null when the message is made (not set)
+testConverter.addField(PYLON_GPS_GEN_OPTIONAL_INT64_FIELD(protobuf_sql_converter_test_message, null_optional_int64, "null_optional_int64"));
+testConverter.addField(PYLON_GPS_GEN_OPTIONAL_DOUBLE_FIELD(protobuf_sql_converter_test_message, null_optional_double, "null_optional_double" )); 
+testConverter.addField(PYLON_GPS_GEN_OPTIONAL_STRING_FIELD(protobuf_sql_converter_test_message, null_optional_string, "null_optional_string"));
+testConverter.addField(PYLON_GPS_GEN_OPTIONAL_ENUM_FIELD(protobuf_sql_converter_test_message, test_enum, null_optional_enum, "null_optional_enum"));
 
-//Add string
-testConverter.addField(PYLON_GPS_GEN_OPTIONAL_STRING_FIELD(base_station_stream_information, source_public_key, "source_public_key"));
-
+//Add REPEATED fields
+testConverter.addField(PYLON_GPS_GEN_REPEATED_INT64_FIELD(protobuf_sql_converter_test_message, repeated_int64,  "repeated_int64_table", "repeated_int64", "key"));
+testConverter.addField(PYLON_GPS_GEN_REPEATED_DOUBLE_FIELD(protobuf_sql_converter_test_message, repeated_double,  "repeated_double_table", "repeated_double", "key"));
+testConverter.addField(PYLON_GPS_GEN_REPEATED_STRING_FIELD(protobuf_sql_converter_test_message, repeated_string,  "repeated_string_table", "repeated_string", "key"));
+testConverter.addField(PYLON_GPS_GEN_REPEATED_ENUM_FIELD(protobuf_sql_converter_test_message, test_enum, repeated_enum,  "repeated_enum_table", "repeated_enum", "key"));
 
 
 //Make message to test on
-base_station_stream_information testBaseStationInfo;
-testBaseStationInfo.set_source_public_key("test source public key");
-testBaseStationInfo.set_base_station_id(9001);
+protobuf_sql_converter_test_message testMessage;
+testMessage.set_required_int64(1);
+testMessage.set_required_double(2.0);
+testMessage.set_required_string("3");
+testMessage.set_required_enum(TEST_REGISTERED_COMMUNITY);
+
+testMessage.set_optional_int64(4);
+testMessage.set_optional_double(5.0);
+testMessage.set_optional_string("6");
+testMessage.set_optional_enum(TEST_COMMUNITY);
+
+
+testMessage.add_repeated_int64(7);
+testMessage.add_repeated_int64(8);
+testMessage.add_repeated_int64(9);
+testMessage.add_repeated_double(10.0);
+testMessage.add_repeated_double(11.0);
+testMessage.add_repeated_double(12.0);
+testMessage.add_repeated_string("13");
+testMessage.add_repeated_string("14");
+testMessage.add_repeated_string("15");
+testMessage.add_repeated_enum(TEST_OFFICIAL);
+testMessage.add_repeated_enum(TEST_REGISTERED_COMMUNITY);
+testMessage.add_repeated_enum(TEST_COMMUNITY);
+
+
 
 
 //Print out all of the fields we added
-testConverter.serialize(testBaseStationInfo);
+testConverter.print(testMessage);
+//Attempt to write to the database
+testConverter.store(testMessage);
 
+std::vector<protobuf_sql_converter_test_message> retrievedValues;
+std::vector<::google::protobuf::int64> keys = {1};
+
+SOM_TRY
+retrievedValues = testConverter.retrieve(keys);
+SOM_CATCH("Error retrieving values")
+
+REQUIRE(retrievedValues.size() == 1);
 
 }
 }

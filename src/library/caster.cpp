@@ -1,7 +1,6 @@
 #include "caster.hpp"
 
 using namespace pylongps;
-using namespace Poco::Data::Keywords;
 
 /**
 This function initializes the class, creates the associated database, and starts the two threads associated with it.
@@ -256,7 +255,7 @@ This function signals for the threads to shut down and then waits for them to do
 caster::~caster()
 {
 //Ensure that all exits points still unregister connector
-SOMScopeGuard connectorGuard([](){ Poco::Data::SQLite::Connector::unregisterConnector();});
+//SOMScopeGuard connectorGuard([](){ Poco::Data::SQLite::Connector::unregisterConnector();});
 
 //Publish shutdown signal and wait for threads
 try

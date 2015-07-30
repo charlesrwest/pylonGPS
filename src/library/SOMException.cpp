@@ -134,7 +134,7 @@ return std::string("ZMQ_ERROR");
 break;
 
 case SQLITE3_ERROR:
-return std::string("ZMQ_ERROR");
+return std::string("SQLITE3_ERROR");
 break;
 
 case FILE_SYSTEM_ERROR:

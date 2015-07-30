@@ -46,6 +46,9 @@ This message is sent in response to a database request and indicates the success
 
 Enums are defined in a shared .proto file for inclusion.
 
+protobuf_sql_converter_test_message:
+A message used for testing the protobuf/sql converter.
+
 Credentials:
 
 Credentials are suppose to grant the owner of a certain public key some rights in the system.  In this case, it is suppose to allow official or registered GPS base station owning organizations to assure ownership to a given stream.  This is done by passing a credentials message along with a registration to prove that the stream being used to provide updates is using a key that was authorized by one or more known organizations.  Currently credentials are set to have limited lifetimes and blacklist capability is expected to be added at some point in the future.
