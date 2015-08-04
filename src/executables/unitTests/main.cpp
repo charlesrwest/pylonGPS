@@ -13,12 +13,6 @@
 
 
 
-
-
-//stringField<credentials>(&credentials::permissions, static_cast<void (credentials::*)(const ::std::string& value)>(&credentials::set_permissions), &credentials::has_permissions, "permissions_field")
-
-//GEN_STRING_FIELD_TUPLE(credentials, permissions, "permissions_field")
-
 using namespace pylongps; //Use pylongps classes without alteration for now
 using namespace pylongps_protobuf_sql_converter; //Use protobuf/sql converter test message
 
@@ -90,7 +84,7 @@ memberFunctionPointer = inputFunctionPointer;
 
 void callFunction(classType &inputTestClass)
 {
-printf("Called with value: %d\n", memberFunctionPointer(&inputTestClass));
+//printf("Called with value: %d\n", memberFunctionPointer(&inputTestClass));
 }
 
 std::function<int(classType*)> memberFunctionPointer;
@@ -131,10 +125,6 @@ SOMScopeGuard databaseConnectionGuard([&]() {sqlite3_close_v2(databaseConnection
 //Make sure foreign key constractions are active for this connection
 REQUIRE(sqlite3_exec(databaseConnection, "PRAGMA foreign_keys = on;", NULL, NULL, NULL) == SQLITE_OK);
 
-//Create tables for test message
-REQUIRE(sqlite3_exec(databaseConnection, "BEGIN TRANSACTION; CREATE TABLE protobuf_sql_converter_test_message_table (optional_int64 integer, optional_double real, optional_string text, optional_enum integer,  null_optional_int64 integer, null_optional_double real, null_optional_string text, null_optional_enum integer, required_int64 integer primary key, required_double real not null, required_string text not null, required_enum integer not null); CREATE TABLE repeated_int64_table (repeated_int64 integer not null, key integer not null, FOREIGN KEY(key) REFERENCES protobuf_sql_converter_test_message_table(required_int64) ON DELETE CASCADE); CREATE TABLE repeated_double_table (repeated_double real not null, key integer not null, FOREIGN KEY(key) REFERENCES protobuf_sql_converter_test_message_table(required_int64) ON DELETE CASCADE); CREATE TABLE repeated_string_table (repeated_string integer not null, key integer not null, FOREIGN KEY(key) REFERENCES protobuf_sql_converter_test_message_table(required_int64) ON DELETE CASCADE); CREATE TABLE repeated_enum_table (repeated_enum integer not null, key integer not null, FOREIGN KEY(key) REFERENCES protobuf_sql_converter_test_message_table(required_int64) ON DELETE CASCADE); END TRANSACTION;", nullptr, nullptr, nullptr) == SQLITE_OK);
-
-
 //Initialize protobufSQLConverter
 protobufSQLConverter<protobuf_sql_converter_test_message> testConverter(databaseConnection, "protobuf_sql_converter_test_message_table");
 
@@ -144,6 +134,7 @@ testConverter.addField(PYLON_GPS_GEN_REQUIRED_INT64_FIELD(protobuf_sql_converter
 testConverter.addField(PYLON_GPS_GEN_REQUIRED_DOUBLE_FIELD(protobuf_sql_converter_test_message, required_double, "required_double" )); 
 testConverter.addField(PYLON_GPS_GEN_REQUIRED_STRING_FIELD(protobuf_sql_converter_test_message, required_string, "required_string"));
 testConverter.addField(PYLON_GPS_GEN_REQUIRED_ENUM_FIELD(protobuf_sql_converter_test_message, test_enum, required_enum, "required_enum"));
+
 
 
 //Add OPTIONAL fields
@@ -159,12 +150,15 @@ testConverter.addField(PYLON_GPS_GEN_OPTIONAL_DOUBLE_FIELD(protobuf_sql_converte
 testConverter.addField(PYLON_GPS_GEN_OPTIONAL_STRING_FIELD(protobuf_sql_converter_test_message, null_optional_string, "null_optional_string"));
 testConverter.addField(PYLON_GPS_GEN_OPTIONAL_ENUM_FIELD(protobuf_sql_converter_test_message, test_enum, null_optional_enum, "null_optional_enum"));
 
+
 //Add REPEATED fields
 testConverter.addField(PYLON_GPS_GEN_REPEATED_INT64_FIELD(protobuf_sql_converter_test_message, repeated_int64,  "repeated_int64_table", "repeated_int64", "key"));
 testConverter.addField(PYLON_GPS_GEN_REPEATED_DOUBLE_FIELD(protobuf_sql_converter_test_message, repeated_double,  "repeated_double_table", "repeated_double", "key"));
 testConverter.addField(PYLON_GPS_GEN_REPEATED_STRING_FIELD(protobuf_sql_converter_test_message, repeated_string,  "repeated_string_table", "repeated_string", "key"));
 testConverter.addField(PYLON_GPS_GEN_REPEATED_ENUM_FIELD(protobuf_sql_converter_test_message, test_enum, repeated_enum,  "repeated_enum_table", "repeated_enum", "key"));
 
+//Automatically generate tables
+testConverter.createTable();
 
 //Make message to test on
 protobuf_sql_converter_test_message testMessage;
@@ -208,6 +202,43 @@ retrievedValues = testConverter.retrieve(keys);
 SOM_CATCH("Error retrieving values")
 
 REQUIRE(retrievedValues.size() == 1);
+
+REQUIRE(retrievedValues[0].required_int64() == 1);
+REQUIRE(retrievedValues[0].required_double() == Approx(2.0));
+REQUIRE(retrievedValues[0].required_string() == "3");
+REQUIRE(retrievedValues[0].required_enum() == TEST_REGISTERED_COMMUNITY);
+
+REQUIRE(retrievedValues[0].has_optional_int64() == true);
+REQUIRE(retrievedValues[0].has_optional_double() == true);
+REQUIRE(retrievedValues[0].has_optional_string() == true);
+REQUIRE(retrievedValues[0].has_optional_enum() == true);
+
+REQUIRE(retrievedValues[0].has_null_optional_int64() == false);
+REQUIRE(retrievedValues[0].has_null_optional_double() == false);
+REQUIRE(retrievedValues[0].has_null_optional_string() == false);
+REQUIRE(retrievedValues[0].has_null_optional_enum() == false);
+
+REQUIRE(retrievedValues[0].optional_int64() == 4);
+REQUIRE(retrievedValues[0].optional_double() == Approx(5.0));
+REQUIRE(retrievedValues[0].optional_string() == "6");
+REQUIRE(retrievedValues[0].optional_enum() == TEST_COMMUNITY);
+
+REQUIRE(retrievedValues[0].repeated_int64_size() == 3);
+REQUIRE(retrievedValues[0].repeated_int64(0) == 7);
+REQUIRE(retrievedValues[0].repeated_int64(1) == 8);
+REQUIRE(retrievedValues[0].repeated_int64(2) == 9);
+REQUIRE(retrievedValues[0].repeated_double_size() == 3);
+REQUIRE(retrievedValues[0].repeated_double(0) == Approx(10.0));
+REQUIRE(retrievedValues[0].repeated_double(1) == Approx(11.0));
+REQUIRE(retrievedValues[0].repeated_double(2) == Approx(12.0));
+REQUIRE(retrievedValues[0].repeated_string_size() == 3);
+REQUIRE(retrievedValues[0].repeated_string(0) == "13");
+REQUIRE(retrievedValues[0].repeated_string(1) == "14");
+REQUIRE(retrievedValues[0].repeated_string(2) == "15");
+REQUIRE(retrievedValues[0].repeated_enum_size() == 3);
+REQUIRE(retrievedValues[0].repeated_enum(0) == TEST_OFFICIAL);
+REQUIRE(retrievedValues[0].repeated_enum(1) == TEST_REGISTERED_COMMUNITY);
+REQUIRE(retrievedValues[0].repeated_enum(2) == TEST_COMMUNITY);
 
 }
 }
