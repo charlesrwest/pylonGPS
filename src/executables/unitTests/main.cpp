@@ -158,7 +158,7 @@ testConverter.addField(PYLON_GPS_GEN_REPEATED_STRING_FIELD(protobuf_sql_converte
 testConverter.addField(PYLON_GPS_GEN_REPEATED_ENUM_FIELD(protobuf_sql_converter_test_message, test_enum, repeated_enum,  "repeated_enum_table", "repeated_enum", "key"));
 
 //Automatically generate tables
-testConverter.createTable();
+testConverter.createTables();
 
 //Make message to test on
 protobuf_sql_converter_test_message testMessage;
@@ -240,5 +240,64 @@ REQUIRE(retrievedValues[0].repeated_enum(0) == TEST_OFFICIAL);
 REQUIRE(retrievedValues[0].repeated_enum(1) == TEST_REGISTERED_COMMUNITY);
 REQUIRE(retrievedValues[0].repeated_enum(2) == TEST_COMMUNITY);
 
+//Test updating a field in the database
+testConverter.update(fieldValue((::google::protobuf::int64) 1), "required_double", 16.0);
+
+//Retrieve and check if update went through
+SOM_TRY
+retrievedValues = testConverter.retrieve(keys);
+SOM_CATCH("Error retrieving values")
+
+REQUIRE(retrievedValues.size() == 1);
+
+REQUIRE(retrievedValues[0].required_int64() == 1);
+REQUIRE(retrievedValues[0].required_double() == Approx(16.0));
+REQUIRE(retrievedValues[0].required_string() == "3");
+REQUIRE(retrievedValues[0].required_enum() == TEST_REGISTERED_COMMUNITY);
+
+REQUIRE(retrievedValues[0].has_optional_int64() == true);
+REQUIRE(retrievedValues[0].has_optional_double() == true);
+REQUIRE(retrievedValues[0].has_optional_string() == true);
+REQUIRE(retrievedValues[0].has_optional_enum() == true);
+
+REQUIRE(retrievedValues[0].has_null_optional_int64() == false);
+REQUIRE(retrievedValues[0].has_null_optional_double() == false);
+REQUIRE(retrievedValues[0].has_null_optional_string() == false);
+REQUIRE(retrievedValues[0].has_null_optional_enum() == false);
+
+REQUIRE(retrievedValues[0].optional_int64() == 4);
+REQUIRE(retrievedValues[0].optional_double() == Approx(5.0));
+REQUIRE(retrievedValues[0].optional_string() == "6");
+REQUIRE(retrievedValues[0].optional_enum() == TEST_COMMUNITY);
+
+REQUIRE(retrievedValues[0].repeated_int64_size() == 3);
+REQUIRE(retrievedValues[0].repeated_int64(0) == 7);
+REQUIRE(retrievedValues[0].repeated_int64(1) == 8);
+REQUIRE(retrievedValues[0].repeated_int64(2) == 9);
+REQUIRE(retrievedValues[0].repeated_double_size() == 3);
+REQUIRE(retrievedValues[0].repeated_double(0) == Approx(10.0));
+REQUIRE(retrievedValues[0].repeated_double(1) == Approx(11.0));
+REQUIRE(retrievedValues[0].repeated_double(2) == Approx(12.0));
+REQUIRE(retrievedValues[0].repeated_string_size() == 3);
+REQUIRE(retrievedValues[0].repeated_string(0) == "13");
+REQUIRE(retrievedValues[0].repeated_string(1) == "14");
+REQUIRE(retrievedValues[0].repeated_string(2) == "15");
+REQUIRE(retrievedValues[0].repeated_enum_size() == 3);
+REQUIRE(retrievedValues[0].repeated_enum(0) == TEST_OFFICIAL);
+REQUIRE(retrievedValues[0].repeated_enum(1) == TEST_REGISTERED_COMMUNITY);
+REQUIRE(retrievedValues[0].repeated_enum(2) == TEST_COMMUNITY);
+
+
+//Delete the object from the database
+SOM_TRY
+testConverter.deleteObjects(keys);
+SOM_CATCH("Error deleting objects")
+
+//Test if delete took
+SOM_TRY
+retrievedValues = testConverter.retrieve(keys);
+SOM_CATCH("Error retrieving values")
+
+REQUIRE(retrievedValues.size() == 0);
 }
 }

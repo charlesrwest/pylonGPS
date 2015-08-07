@@ -440,7 +440,7 @@ This function initializes the converter with the database connection and table t
 
 @throws: This function can throw exceptions
 */
-template <class classType> protobufSQLConverter<classType>::protobufSQLConverter(sqlite3 *inputDatabaseConnection, std::string inputPrimaryTableName) :  insertPrimaryRowStatement(nullptr, &sqlite3_finalize), retrievePrimaryRowStatement(nullptr, &sqlite3_finalize), startTransactionStatement(nullptr, &sqlite3_finalize), endTransactionStatement(nullptr, &sqlite3_finalize), rollbackStatement(nullptr, &sqlite3_finalize)
+template <class classType> protobufSQLConverter<classType>::protobufSQLConverter(sqlite3 *inputDatabaseConnection, std::string inputPrimaryTableName) :  insertPrimaryRowStatement(nullptr, &sqlite3_finalize), retrievePrimaryRowStatement(nullptr, &sqlite3_finalize), startTransactionStatement(nullptr, &sqlite3_finalize), endTransactionStatement(nullptr, &sqlite3_finalize), rollbackStatement(nullptr, &sqlite3_finalize), deletePrimaryRowStatement(nullptr, &sqlite3_finalize)
 {
 if(inputDatabaseConnection == nullptr)
 {
@@ -450,21 +450,7 @@ throw SOMException("Database connection pointer is NULL\n", INVALID_FUNCTION_INP
 databaseConnection = inputDatabaseConnection;
 primaryTableName = inputPrimaryTableName;
 
-auto prepareStatement = [&](std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> &inputStatement, const std::string &inputStatementString)
-{
-int returnValue = 0;
-SOM_TRY
-sqlite3_stmt *buffer;
-returnValue = sqlite3_prepare_v2(databaseConnection, inputStatementString.c_str(), inputStatementString.size(), &buffer, NULL);
-inputStatement.reset(buffer);
-SOM_CATCH("Error, unable to initialize SQLite prepared statement\n")
 
-if(returnValue != SQLITE_OK)
-{
-std::string errorMessage(std::string("Error preparing parametric sql statement: ") + sqlite3_errstr(sqlite3_extended_errcode(databaseConnection)) + "\n");
-throw SOMException(errorMessage.c_str(), INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
-}
-};
 
 std::string startTransactionString = "BEGIN TRANSACTION;";
 SOM_TRY
@@ -499,8 +485,21 @@ throw SOMException("Primary key has already been set\n", INVALID_FUNCTION_INPUT,
 }
 }
 
+if(isSingularField(inputField.type) )
+{
+if(requiredOrOptionalFieldNameToFieldsIndex.count(inputField.fieldNameInDatabase) > 0)
+{
+throw SOMException("Field name has already been used\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
+}
+}
+
 fields.push_back(inputField);
 int currentFieldIndex = fields.size() - 1; 
+
+if(isSingularField(inputField.type) )
+{ //Add to map
+requiredOrOptionalFieldNameToFieldsIndex[inputField.fieldNameInDatabase] = currentFieldIndex;
+}
 
 if(inputIsPrimaryKey && isSingularField(inputField.type) )
 {
@@ -544,7 +543,7 @@ This function generates the table to store and retrieve the associated protobuf 
 
 @throws: This function can throw exceptions
 */
-template <class classType> void protobufSQLConverter<classType>::createTable()
+template <class classType> void protobufSQLConverter<classType>::createTables()
 {
 if(primaryKeyIndex < 0)
 {
@@ -587,8 +586,6 @@ if(singularFieldCount != 0)
 {
 createTableString += ", ";
 }
-
-//TODO
 
 std::string fieldString;
 SOM_TRY
@@ -676,11 +673,10 @@ rollbackGuard.dismiss();
 /**
 This function stores the given instance of the class into the associated SQLite tables.  A primary key field must be defined before this function is used.
 @param inputClass: An instance of the class to store in the database
-@return: 1 if succcessful and 0 otherwise
 
 @throws: This function can throw exceptions.
 */
-template <class classType> int protobufSQLConverter<classType>::store(classType &inputClass)
+template <class classType> void protobufSQLConverter<classType>::store(classType &inputClass)
 {
 //Generate prepared statments if they have not already been made
 SOM_TRY //Should throw if primary key hasn't been defined
@@ -826,8 +822,6 @@ throw SOMException("Error executing statement to end transaction (" +std::to_str
 }
 rollbackGuard.dismiss(); //Disable automatic rollback 
 
-
-return 1;
 }
 
 /**
@@ -1032,7 +1026,144 @@ SOM_CATCH("Error setting object value\n")
 return true;
 }
 
+/**
+This function updates the value of a required or optional field in the given object to that of the given value.  The field name must be registered and the field value type correct or an exception will be thrown.
+@param inputPrimaryKeyValue: The primary key of the entry to update
+@param inputFieldName: The name of the field to update
+@param inputUpdatedValue: The value to set the field to
 
+@throws: This function can throw exceptions
+*/
+template <class classType> void protobufSQLConverter<classType>::update(const fieldValue &inputPrimaryKeyValue, const std::string &inputFieldName, const fieldValue &inputUpdatedValue)
+{
+int index = 0;
+SOM_TRY
+index = requiredOrOptionalFieldNameToFieldsIndex.at(inputFieldName);
+SOM_CATCH("Required or optional field does not exist\n")
+
+if(singularFieldIndexToUpdateStatement.count(index) == 0)
+{
+throw SOMException("The associated update statement was not found\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __FILE__, __LINE__);
+}
+
+auto stepStatement = [](std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> &inputStatement) 
+{
+int returnValue = sqlite3_step(inputStatement.get());
+sqlite3_reset(inputStatement.get()); //Reset so that statement can be used again
+if(returnValue != SQLITE_DONE)
+{
+throw SOMException("Error executing statement\n", SQLITE3_ERROR, __FILE__, __LINE__);
+}
+};
+
+//Bind associated fields
+SOM_TRY
+bindFieldToStatement(singularFieldIndexToUpdateStatement.at(index).get(), 1, inputUpdatedValue);
+SOM_CATCH("Error binding updated value to statement\n")
+
+SOM_TRY
+bindFieldToStatement(singularFieldIndexToUpdateStatement.at(index).get(), 2, inputPrimaryKeyValue);
+SOM_CATCH("Error binding updated value to statement\n")
+
+SOM_TRY
+stepStatement(singularFieldIndexToUpdateStatement.at(index));
+SOM_CATCH("Error updating field\n")
+}
+
+/**
+This function deletes any objects which have the given primary keys from the database.
+@param inputPrimaryKeys: The primary keys to delete.
+
+@throws: This function can throw exceptions 
+*/
+template <class classType> void protobufSQLConverter<classType>::deleteObjects(const std::vector<::google::protobuf::int64> &inputPrimaryKeys)
+{//Convert to field vector
+std::vector<fieldValue> primaryKeys;
+
+for(int i=0; i<inputPrimaryKeys.size(); i++)
+{
+primaryKeys.push_back(fieldValue(inputPrimaryKeys[i]));
+}
+
+SOM_TRY
+deleteObjects(primaryKeys);
+SOM_CATCH("Error deleting objects\n")
+}
+
+/**
+This function deletes any objects which have the given primary keys from the database.
+@param inputPrimaryKeys: The primary keys to delete.
+
+@throws: This function can throw exceptions 
+*/
+template <class classType> void protobufSQLConverter<classType>::deleteObjects(const std::vector<double> &inputPrimaryKeys)
+{//Convert to field vector
+std::vector<fieldValue> primaryKeys;
+
+for(int i=0; i<inputPrimaryKeys.size(); i++)
+{
+primaryKeys.push_back(fieldValue(inputPrimaryKeys[i]));
+}
+
+SOM_TRY
+deleteObjects(primaryKeys);
+SOM_CATCH("Error deleting objects\n")
+}
+
+/**
+This function deletes any objects which have the given primary keys from the database.
+@param inputPrimaryKeys: The primary keys to delete.
+
+@throws: This function can throw exceptions 
+*/
+template <class classType> void protobufSQLConverter<classType>::deleteObjects(const std::vector<std::string> &inputPrimaryKeys)
+{//Convert to field vector
+std::vector<fieldValue> primaryKeys;
+
+for(int i=0; i<inputPrimaryKeys.size(); i++)
+{
+primaryKeys.push_back(fieldValue(inputPrimaryKeys[i]));
+}
+
+SOM_TRY
+deleteObjects(primaryKeys);
+SOM_CATCH("Error deleting objects\n")
+}
+
+
+/**
+This function deletes any objects which have the given primary keys from the database.
+@param inputPrimaryKeys: The primary keys to delete.
+
+@throws: This function can throw exceptions 
+*/
+template <class classType> void protobufSQLConverter<classType>::deleteObjects(const std::vector<fieldValue> &inputPrimaryKeys)
+{
+if(primaryKeyIndex < 0)
+{
+throw SOMException("Primary key has not been set\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
+}
+
+for(int i=0; i<inputPrimaryKeys.size(); i++)
+{
+if(inputPrimaryKeys[i].type != fields[primaryKeyIndex].type)
+{
+throw SOMException("fieldValue does not have same type as primary key\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
+}
+
+SOM_TRY
+bindFieldToStatement(deletePrimaryRowStatement.get(), 1, inputPrimaryKeys[i]);
+SOM_CATCH("Error binding field to statement\n")
+
+int returnValue = sqlite3_step(deletePrimaryRowStatement.get());
+sqlite3_reset(deletePrimaryRowStatement.get()); //Reset so that statement can be used again
+if(returnValue != SQLITE_DONE)
+{
+throw SOMException("Error executing statement\n", SQLITE3_ERROR, __FILE__, __LINE__);
+}
+}
+
+}
 
 /**
 This function prints information about each of the registered fields and their associated value in the class
@@ -1040,6 +1171,7 @@ This function prints information about each of the registered fields and their a
 */
 template <class classType> void protobufSQLConverter<classType>::print(classType &inputClass)
 {
+//TODO: reimplement this function
 }
 
 /**
@@ -1094,6 +1226,16 @@ if(insertPrimaryRowStatement.get() != nullptr && retrievePrimaryRowStatement != 
 return; //Statements have already been prepared
 }
 
+//Construct deletion statement
+std::string deletePrimaryRowString;
+SOM_TRY
+deletePrimaryRowString = "DELETE FROM " + primaryTableName + " WHERE " + getPrimaryKeyFieldName() + " = ?;";
+SOM_CATCH("Error creating deleter statement string\n")
+
+SOM_TRY
+prepareStatement(deletePrimaryRowStatement, deletePrimaryRowString);
+SOM_CATCH("Error, unable to make delete primary row statement\n")
+
 //Construct insert statement string
 int countOfSingularFields = numberOfSingularFields();
 
@@ -1124,18 +1266,9 @@ sqlString += "?";
 
 sqlString += ");";
 
-int returnValue = 0;
 SOM_TRY
-sqlite3_stmt *buffer;
-returnValue = sqlite3_prepare_v2(databaseConnection, sqlString.c_str(), sqlString.size(), &buffer, NULL);
-insertPrimaryRowStatement.reset(buffer);
-SOM_CATCH("Error, unable to initialize SQLite prepared statement\n")
-
-if(returnValue != SQLITE_OK)
-{
-std::string errorMessage(std::string("Error preparing parametric sql statement: ") + sqlite3_errstr(sqlite3_extended_errcode(databaseConnection)) + "\n");
-throw SOMException(errorMessage.c_str(), INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
-}
+prepareStatement(insertPrimaryRowStatement, sqlString);
+SOM_CATCH("Error, unable to make insert primary row statement\n")
 
 //Generate the retrieve primary row prepared query
 //SELECT fieldName1, fieldName2 FROM primaryRowTableName WHERE primaryKeyName IN (?);
@@ -1164,18 +1297,39 @@ SOM_CATCH("Error getting primary key field name\n")
 
 retrievePrimaryRowQueryString += " FROM " + primaryTableName + " WHERE " + primaryKeyFieldName + " IN (?);";
 
-returnValue = 0;
 SOM_TRY
-sqlite3_stmt *buffer;
-returnValue = sqlite3_prepare_v2(databaseConnection, retrievePrimaryRowQueryString.c_str(), retrievePrimaryRowQueryString.size(), &buffer, NULL);
-retrievePrimaryRowStatement.reset(buffer);
-SOM_CATCH("Error, unable to initialize SQLite prepared statement\n")
+prepareStatement(retrievePrimaryRowStatement, retrievePrimaryRowQueryString);
+SOM_CATCH("Error, unable to make insert primary row statement\n")
 
-if(returnValue != SQLITE_OK)
+//Create singular field updates statements
+for(int i=0; i<fields.size(); i++)
 {
-std::string errorMessage(std::string("Error preparing parametric sql statement: ") + sqlite3_errstr(sqlite3_extended_errcode(databaseConnection)) + "\n");
-throw SOMException(errorMessage.c_str(), INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
+if(!isSingularField(fields[i].type) )
+{//Skip nonsigular field 
+continue;
 }
+
+//UPDATE table_name SET field_name = value WHERE primary_key = id;
+std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> updateStatementBuffer(nullptr, &sqlite3_finalize); 
+std::string updateString = "UPDATE " + primaryTableName + " SET " + fields[i].fieldNameInDatabase + " = ? WHERE ";
+
+
+SOM_TRY
+updateString += getPrimaryKeyFieldName();
+SOM_CATCH("Error getting primary key field name\n")
+
+
+updateString += " = ?;";
+
+SOM_TRY
+prepareStatement(updateStatementBuffer, updateString);
+SOM_CATCH("Error, unable to make update primary row statement\n")
+
+
+//Add to map
+singularFieldIndexToUpdateStatement.emplace(i,std::move(updateStatementBuffer));
+}
+
 }
 
 /**
@@ -1279,6 +1433,29 @@ This function returns the count of the total number of repeated fields.
 template <class classType> int protobufSQLConverter<classType>::numberOfRepeatedFields()
 {
 return repeatedInt64FieldsIndex.size() + repeatedDoubleFieldsIndex.size() + repeatedStringFieldsIndex.size();
+}
+
+/**
+This function creates a sqlite statement, binds it with the given statement string and assigns it to the given unique_ptr.
+@param inputStatement: The unique_ptr to assign statement ownership to
+@param inputStatementString: The SQL string to construct the statement from
+
+@throws: This function can throw exceptions
+*/
+template <class classType> void protobufSQLConverter<classType>::prepareStatement(std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> &inputStatement, const std::string &inputStatementString)
+{
+int returnValue = 0;
+SOM_TRY
+sqlite3_stmt *buffer;
+returnValue = sqlite3_prepare_v2(databaseConnection, inputStatementString.c_str(), inputStatementString.size(), &buffer, NULL);
+inputStatement.reset(buffer);
+SOM_CATCH("Error, unable to initialize SQLite prepared statement\n")
+
+if(returnValue != SQLITE_OK)
+{
+std::string errorMessage(std::string("Error preparing parametric sql statement: ") + sqlite3_errstr(sqlite3_extended_errcode(databaseConnection)) + "\n");
+throw SOMException(errorMessage.c_str(), INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
+}
 }
 
 /*

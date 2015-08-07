@@ -332,16 +332,15 @@ This function generates the table to store and retrieve the associated protobuf 
 
 @throws: This function can throw exceptions
 */
-void createTable();
+void createTables();
 
 /**
 This function stores the given instance of the class into the associated SQLite tables.  A primary key field must be defined before this function is used.
 @param inputClass: An instance of the class to store in the database
-@return: 1 if succcessful and 0 otherwise
 
 @throws: This function can throw exceptions.
 */
-int store(classType &inputClass);
+void store(classType &inputClass);
 
 /**
 This overload of the function retrieves from the database all protobuf messages that contain one of the given primary keys.
@@ -385,6 +384,47 @@ This overload of the function retrieves from the database all protobuf messages 
 */
 bool retrieve(const fieldValue &inputPrimaryKey, classType &inputClassBuffer);
 
+/**
+This function updates the value of a required or optional field in the given object to that of the given value.  The field name must be registered and the field value type correct or an exception will be thrown.
+@param inputPrimaryKeyValue: The primary key of the entry to update
+@param inputFieldName: The name of the field to update
+@param inputUpdatedValue: The value to set the field to
+
+@throws: This function can throw exceptions
+*/
+void update(const fieldValue &inputPrimaryKeyValue, const std::string &inputFieldName, const fieldValue &inputUpdatedValue); 
+
+/**
+This function deletes any objects which have the given primary keys from the database.
+@param inputPrimaryKeys: The primary keys to delete.
+
+@throws: This function can throw exceptions 
+*/
+void deleteObjects(const std::vector<::google::protobuf::int64> &inputPrimaryKeys);
+
+/**
+This function deletes any objects which have the given primary keys from the database.
+@param inputPrimaryKeys: The primary keys to delete.
+
+@throws: This function can throw exceptions 
+*/
+void deleteObjects(const std::vector<double> &inputPrimaryKeys);
+
+/**
+This function deletes any objects which have the given primary keys from the database.
+@param inputPrimaryKeys: The primary keys to delete.
+
+@throws: This function can throw exceptions 
+*/
+void deleteObjects(const std::vector<std::string> &inputPrimaryKeys);
+
+/**
+This function deletes any objects which have the given primary keys from the database.
+@param inputPrimaryKeys: The primary keys to delete.
+
+@throws: This function can throw exceptions 
+*/
+void deleteObjects(const std::vector<fieldValue> &inputPrimaryKeys);
 
 /**
 This function prints information about each of the registered fields and their associated value in the class
@@ -423,19 +463,28 @@ This function generates the prepared statements for operations with repeated fie
 */
 void generateRepeatedFieldStatements();
 
-/*
+/**
 This function returns the count of the total number of singular fields.
 @return: the number of singular fields
 */
 int numberOfSingularFields();
 
-/*
+/**
 This function returns the count of the total number of repeated fields.
 @return: the number of repeated fields
 */
 int numberOfRepeatedFields();
 
-/*
+/**
+This function creates a sqlite statement, binds it with the given statement string and assigns it to the given unique_ptr.
+@param inputStatement: The unique_ptr to assign statement ownership to
+@param inputStatementString: The SQL string to construct the statement from
+
+@throws: This function can throw exceptions
+*/
+void prepareStatement(std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> &inputStatement, const std::string &inputStatementString);
+
+/**
 This member function makes it easier to bind a field to a given statement compactly.
 @param inputStatement: The prepared statement to bind the field to
 @param inputQueryIndex: The index in the prepared query to bind (starts at 1)
@@ -461,6 +510,7 @@ std::string primaryTableName;
 //Have to initialize these pointers with deleter (rather than default) or they throw an error
 std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> insertPrimaryRowStatement;
 std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> retrievePrimaryRowStatement;
+std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> deletePrimaryRowStatement;
 std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> startTransactionStatement; //Used to start/stop transactions
 std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> endTransactionStatement;
 std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> rollbackStatement;
@@ -470,9 +520,14 @@ std::map<int, std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> > repea
 
 std::map<int, std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> > repeatedFieldIndexToRetrievalStatement; //A map from the associated "fields" index value for a repeated field to the associated prepared SQL statement
 
+std::map<int, std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> > singularFieldIndexToUpdateStatement;
+
 int primaryKeyIndex = -1; //Index of primary key in the fields vector (negative if not yet set)
 
 std::vector<field<classType> > fields; //All fields types are stored in one vector, with the type member allowing resolution of needed functions to call
+
+std::map<std::string, int> requiredOrOptionalFieldNameToFieldsIndex;
+
 std::set<int> int64FieldsIndex; //Indexes of all required/optional int64 fields in the fields vector
 std::set<int> repeatedInt64FieldsIndex; //Indexes of all repeated int64 fields in the fields vector
 std::set<int> doubleFieldsIndex; //Indexes of all required/optional double fields in the fields vector

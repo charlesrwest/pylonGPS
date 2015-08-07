@@ -4,8 +4,9 @@ import "base_station_stream_information.proto";
 
 enum client_query_request_failure_reason
 {
-REQUEST_DESERIALIZATION_FAILED = 1; //Couldn't read the request
-REQUEST_PARAMETERS_INVALID = 2; //One or more required parameters were not found
+CLIENT_QUERY_REQUEST_DESERIALIZATION_FAILED = 1; //Couldn't read the request
+CLIENT_QUERY_REQUEST_PARAMETERS_INVALID = 2; //One or more required parameters were not found
+CLIENT_QUERY_REQUEST_TOO_COMPLEX = 3;  //The request had too many things to check for (would take a really long time to process)
 }
 
 //This message contains either an error message indicating the request was invalid, a list (sometimes sorted) of base station information structures or a message containing the details about the caster.

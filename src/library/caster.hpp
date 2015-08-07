@@ -10,14 +10,20 @@
 #include<string>
 #include<vector>
 #include<random>
+#include<cmath>
 #include "SOMException.hpp"
 #include "SOMScopeGuard.hpp"
 #include "event.hpp"
 #include "utilityFunctions.hpp"
 #include "Poco/Timestamp.h"
+#include "protobufSQLConverter.hpp"
+#include "sqlite3.h"
+//#include "sqlite3ext.h"
 
 #include "database_request.pb.h"
 #include "database_reply.pb.h"
+#include "client_query_request.pb.h"
+#include "client_query_reply.pb.h"
 
 namespace pylongps
 {
@@ -48,7 +54,7 @@ This function initializes the class, creates the associated database, and starts
 
 @throws: This function can throw exceptions
 */
-caster(zmq::context_t *inputContext, uint64_t inputCasterID, uint32_t inputTransmitterRegistrationAndStreamingPortNumber, uint32_t inputAuthenticatedTransmitterRegistrationAndStreamingPortNumber, uint32_t inputClientRequestPortNumber, uint32_t inputClientStreamPublishingPortNumber, uint32_t inputProxyStreamPublishingPortNumber, uint32_t inputStreamStatusNotificationPortNumber, const std::string &inputCasterPublicKey, const std::string &inputCasterSecretKey, const std::string &inputCasterSQLITEConnectionString = "");
+caster(zmq::context_t *inputContext, int64_t inputCasterID, uint32_t inputTransmitterRegistrationAndStreamingPortNumber, uint32_t inputAuthenticatedTransmitterRegistrationAndStreamingPortNumber, uint32_t inputClientRequestPortNumber, uint32_t inputClientStreamPublishingPortNumber, uint32_t inputProxyStreamPublishingPortNumber, uint32_t inputStreamStatusNotificationPortNumber, const std::string &inputCasterPublicKey, const std::string &inputCasterSecretKey, const std::string &inputCasterSQLITEConnectionString = "");
 
 /**
 This function signals for the threads to shut down and then waits for them to do so.
@@ -56,7 +62,7 @@ This function signals for the threads to shut down and then waits for them to do
 ~caster();
 
 zmq::context_t *context;
-uint64_t casterID;
+int64_t casterID;
 uint32_t transmitterRegistrationAndStreamingPortNumber;
 uint32_t authenticatedTransmitterRegistrationAndStreamingPortNumber;
 uint32_t clientRequestPortNumber;
@@ -116,6 +122,9 @@ std::unique_ptr<std::thread> streamRegistrationAndPublishingThread;
 std::unique_ptr<std::thread> authenticationIDCheckingThread; //A thread that is enabled/started to do ZMQ authentication if the inproc address "inproc://zeromq.zap.01" has not been bound already 
 std::unique_ptr<std::thread> statisticsGatheringThread; //This thread analyzes the statistics of the stream messages that are published and periodically updates the associated entries in the database.
 
+std::unique_ptr<sqlite3, decltype(&sqlite3_close_v2)> databaseConnection; //Pointer to created database connection
+std::unique_ptr<protobufSQLConverter<base_station_stream_information> > basestationToSQLInterface; //Allows storage/retrieval of base_station_stream_information objects in the database
+
 //Interfaces
 std::unique_ptr<zmq::socket_t> transmitterRegistrationAndStreamingInterface; ///A ZMQ ROUTER socket which expects unencrypted data (transmitter_registration_request to which it responses with a transmitter_registration_reply. If accepted, the request is followed by the data to broadcast).  Used by streamRegistrationAndPublishingThread.
 std::unique_ptr<zmq::socket_t> authenticatedTransmitterRegistrationAndStreamingInterface; ///A ZMQ ROUTER socket which expects encrypted data (transmitter_registration_request with credentials to which it responses with a transmitter_registration_reply. If accepted, the request is followed by the data to broadcast) and checks the key (ZMQ connection ID must match public key).  Used by streamRegistrationAndPublishingThread.
@@ -124,34 +133,119 @@ std::unique_ptr<zmq::socket_t> clientStreamPublishingInterface; ///A ZMQ PUB soc
 std::unique_ptr<zmq::socket_t> proxyStreamPublishingInterface; ///A ZMQ PUB socket which publishes all data associated with all streams with the caster ID and stream ID preappended for clients to subscribe.  Used by streamRegistrationAndPublishingThread.
 std::unique_ptr<zmq::socket_t> streamStatusNotificationInterface; ///A ZMQ PUB socket which publishes stream_status_update messages.  Used by streamRegistrationAndPublishingThread.
 
-//Functions and objects used internally in threads
+//Functions and objects used internally
+/**
+This function sets up the basestationToSQLInterface and generates the associated tables so that basestations can be stored and returned.  databaseConnection must be setup before this function is called.
+
+@throws: This function can throw exceptions
+*/
+void setupBaseStationToSQLInterface();
+
 /**
 This function checks if the databaseAccessSocket has received a database_request message and (if so) processes the message and sends a database_reply in response.
+
 @throws: This function can throw exceptions
 */
 void processDatabaseRequest();
 
 /**
 This function checks if the clientRequestInterface has received a client_query_request message and (if so) processes the message and sends a client_query_reply in response.
+
 @throws: This function can throw exceptions
 */
 void processClientQueryRequest();
 
-//std::unique_ptr<Poco::Data::Statement> insertSimpleBaseStationDataIntoDatabasePreparedStatement; //Use to insert the data for a single base station (except for the variable size files) using 
-//std::tuple<int64_t, double, double, Poco::Nullable<double>, int64_t, Poco::Nullable<std::string>, Poco::Nullable<std::string>, int64_t> insertSimpleBaseStationDataIntoDatabaseTuple; //Tuple associated with statement
-//std::unique_ptr<Poco::Data::Statement> insertBaseStationSigningStatement;
-//std::vector< std::tuple<std::string, int64_t> > insertBaseStationSigningKeysVector;
+/**
+This process checks if ZAPAuthenticationSocket has received a ZAP request.  If so, it checks to make sure that the first 32 bytes of the connection identity contains the public key in the credentials, so that the key associated with a connection can be checked using the identity at the authenticatedTransmitterRegistrationAndStreamingInterface using a credentials message sent over that connection
 
- 
+@throws: This function can throw exceptions
+*/
+void processZAPAuthenticationRequest();
+
+/**
+This function generates the complete query string required to get all of the ids of the stations that meet the query's requirements.
+@param inputRequest: This is the request to generate the query string for
+@param inputParameterCountBuffer: This is set to the total number of bound variables
+@return: The query string
+
+@throws: This function can throw exceptions
+*/
+std::string generateClientQueryRequestSQLString(const client_query_request &inputRequest, int &inputParameterCountBuffer);
+
+/**
+This function binds the fields from the client_query_request to the associated prepared statement.
+@param inputStatement: The statement to bind the fields for
+@param inputRequest: The request to bind the fields with
+@return: The number of bound parameters
+
+@throws: This function can throw exceptions
+*/
+int bindClientQueryRequestFields(std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> &inputStatement, const client_query_request &inputRequest);
+
 };
 
 
 
+/**
+This function helps with creating SQL query strings for client requests.
+@param inputRelation: The relation to resolve into a SQL string part (such as "<= ?"
+@return: The associated SQL string component 
+*/
+std::string sqlRelationalOperatorToSQLString(sql_relational_operator inputRelation);
 
 
+/**
+This function helps with creating SQL query strings for client requests.
+@param inputStringRelation: The relation to resolve into a SQL string part (such as "LIKE ?"
+@return: The associated SQL string component 
+*/
+std::string sqlStringRelationalOperatorToSQLString(sql_string_relational_operator inputStringRelation);
 
+/**
+This function generates a sql query subpart of the form (fieldName IN (?, ?, etc))
+@param inputPreappendAND: True if an " AND " should be added before the subquery part
+@param inputFieldName: The field name to have conditions on
+@param inputNumberOfFields: The number of entries in the "IN" set
+@return: The query subpart
+*/
+std::string generateInSubquery(bool inputPreappendAND, const std::string &inputFieldName, int inputNumberOfFields);
 
+/**
+This function generates a sql query subpart of the form (fieldName IN (?, ?, etc))
+@param inputPreappendAND: True if an " AND " should be added before the subquery part
+@param inputFieldName: The field name to have conditions on
+@param inputRelationalOperator: The relational operator to impose using the value
+@return: The query subpart
+*/
+std::string generateRelationalSubquery(bool inputPreappendAND, const std::string &inputFieldName, sql_relational_operator inputRelationalOperator);
 
+//SQLITE functions to add for support of great circle calculations
+const double PI = 3.14159265359;
+const double DEGREES_TO_RADIANS_CONSTANT = PI/180.0;
+
+/**
+This function can be used to add the "sin" function to the current SQLite connection.
+@param inputContext: The current SQLite context
+@param inputArraySize: The number of values in the array
+@param inputValues: The array values
+*/
+void SQLiteSinFunctionDegrees(sqlite3_context *inputContext, int inputArraySize, sqlite3_value **inputValues);
+
+/**
+This function can be used to add the "cos" function to the current SQLite connection.
+@param inputContext: The current SQLite context
+@param inputArraySize: The number of values in the array
+@param inputValues: The array values
+*/
+void SQLiteCosFunctionDegrees(sqlite3_context *inputContext, int inputArraySize, sqlite3_value **inputValues);
+
+/**
+This function can be used to add the "acos" function to the current SQLite connection.
+@param inputContext: The current SQLite context
+@param inputArraySize: The number of values in the array
+@param inputValues: The array values
+*/
+void SQLiteAcosFunctionDegrees(sqlite3_context *inputContext, int inputArraySize, sqlite3_value **inputValues);
 
 
 

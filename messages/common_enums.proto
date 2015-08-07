@@ -35,8 +35,9 @@ enum sql_relational_operator
 LESS_THAN = 10;
 LESS_THAN_EQUAL_TO = 20;
 EQUAL_TO = 30;
-GREATER_THAN = 40;
-GREATER_THAN_EQUAL_TO = 50;
+NOT_EQUAL_TO = 40;
+GREATER_THAN = 50;
+GREATER_THAN_EQUAL_TO = 60;
 }
 
 enum sql_string_relational_operator
