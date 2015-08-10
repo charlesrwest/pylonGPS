@@ -3,6 +3,6 @@ package pylongps; //Put in pylongps namespace
 //This message carries the public key of a key pair used to sign a given message and the resulting signed hash for associated with the particular message that was signed
 message signature
 {
-required string public_key = 1; //The public key associated with the private key that was used to sign the key
-required string cryptographic_signature = 2; //The signature generated from the key pair/message
+required bytes public_key = 1; //The public key associated with the private key that was used to sign the key
+required bytes cryptographic_signature = 2; //The signature generated from the key pair/message
 }

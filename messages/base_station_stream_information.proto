@@ -10,13 +10,13 @@ optional double latitude = 10; //The latitude of the information source
 optional double longitude = 20;  //The longitude of the information source
 optional double expected_update_rate = 30; //Expected number of complete protocol messages (RTCM/etc) per second 
 optional corrections_message_format message_format = 40; //The base station stream's message protocol/format 
-optional string informal_name = 50; //The name the basestation suggests be used for it in graphical displays/user interfaces.
+optional bytes informal_name = 50; //The name the basestation suggests be used for it in graphical displays/user interfaces.
 
 //Fields potentially filled in by the caster
 optional base_station_class station_class = 60; //The type of the basestation (OFFICIAL, COMMUNITY, etc)
 optional int64 base_station_id = 70; //The 64 bit id assigned by the caster for this stream
-optional string source_public_key = 80; //The public key (in binary) associated with a source (if it has one), this is left blank in registration requests and filled internally via credentials
-repeated string signing_keys = 90; //Any keys that have signed the public key associated with this source (if any) in binary format
+optional bytes source_public_key = 80; //The public key (in binary) associated with a source (if it has one), this is left blank in registration requests and filled internally via credentials
+repeated bytes signing_keys = 90; //Any keys that have signed the public key associated with this source (if any) in binary format
 optional double real_update_rate = 100; //How many messages/second received on average from the basestation (updated every 30 seconds or so to prevent needing too many database accesses)
 optional double uptime = 110; //How long a basestation has been connected
 optional int64 start_time = 120; //The POCO datetime when the basestation was registered (microseconds since unix epoch)

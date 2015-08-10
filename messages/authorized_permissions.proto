@@ -3,7 +3,7 @@ package pylongps; //Put in pylongps namespace
 //This message defines the permissions granted to the owner of the public key by those that sign a serialized version of this message.
 message authorized_permissions
 {
-required string public_key = 1; //The public key of the entity the permissions are granted to
+required bytes public_key = 1; //The public key of the entity the permissions are granted to
 optional int64 valid_until = 2; //These permissions are granted until revoked by blacklist or the timepointed defined by valid_until which is defined as the 64 bit unix timestamp given by the Poco Timestamp function.
 
 //The granted permissions

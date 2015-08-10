@@ -5,6 +5,6 @@ import "common_enums.proto";
 //This message is used as part of a subquery message to specify conditions on one or more parts of stream base station results that are returned.  It specifies a constraint on the value of a particular field of the stream base station entry.
 message sql_string_condition
 {
-required string value = 10; //The value the condition is in relation to
+required bytes value = 10; //The value the condition is in relation to
 required sql_string_relational_operator relation = 20; //The relation to the value (==, LIKE (permits wildcards))
 } 

@@ -3,5 +3,5 @@ package pylongps; //Put in pylongps namespace
 //This message contains all the details regarding a pylonGPS caster instance, including version.
 message caster_information
 {
-required string version = 1; //A string indicating the version of the caster ("x.x.x" format)
+required bytes version = 1; //A string indicating the version of the caster ("x.x.x" format)
 } 

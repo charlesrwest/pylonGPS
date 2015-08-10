@@ -12,22 +12,22 @@ message protobuf_sql_converter_test_message
 {
 optional int64 optional_int64 = 10;
 optional double optional_double = 20;
-optional string optional_string = 30;
+optional bytes optional_string = 30;
 optional test_enum optional_enum = 40;
 
 //These are left null to test that functionality
 optional int64 null_optional_int64 = 11; 
 optional double null_optional_double = 21;
-optional string null_optional_string = 31;
+optional bytes null_optional_string = 31;
 optional test_enum null_optional_enum = 41;
 
 required int64 required_int64 = 50;
 required double required_double = 60;
-required string required_string = 70;
+required bytes required_string = 70;
 required test_enum required_enum = 80;
 
 repeated int64 repeated_int64 = 90;
 repeated double repeated_double = 100;
-repeated string repeated_string = 110;
+repeated bytes repeated_string = 110;
 repeated test_enum repeated_enum = 120;
 }

@@ -18,7 +18,7 @@ repeated sql_double_condition real_update_rate_condition = 60; //Conditions on t
 repeated sql_double_condition expected_update_rate_condition = 70; //A condition on the expected update rate (GPS format messages/second), defined at registration
 optional sql_string_condition informal_name_condition = 80; //A condition on the informal name to search for
 repeated sql_integer_condition base_station_id_condition = 90; //Conditions on the assigned base station ID
-repeated string source_public_keys = 100; //Acceptable signing public keys
+repeated bytes source_public_keys = 100; //Acceptable signing public keys
 
 optional base_station_radius_subquery circular_search_region = 110; //A central point and radius to search for base stations around
 }
