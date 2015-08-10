@@ -301,3 +301,96 @@ SOM_CATCH("Error retrieving values")
 REQUIRE(retrievedValues.size() == 0);
 }
 }
+
+TEST_CASE( "Test unauthenticated stream registration", "[test]")
+{
+
+SECTION( "Register a stream")
+{
+//Make ZMQ context
+std::unique_ptr<zmq::context_t> context;
+
+SOM_TRY
+context.reset(new zmq::context_t);
+SOM_CATCH("Error initializing ZMQ context\n")
+
+//Generate keys to use
+char z85CasterPublicKey[41];
+char z85CasterSecretKey[41];
+
+REQUIRE(zmq_curve_keypair(z85CasterPublicKey, z85CasterSecretKey) == 0);
+
+//Convert to binary format
+char buffer[32];
+std::string decodedCasterPublicKey;
+std::string decodedCasterSecretKey;
+
+zmq_z85_decode((uint8_t *) buffer, z85CasterPublicKey);
+decodedCasterPublicKey = std::string(buffer, 32);
+
+zmq_z85_decode((uint8_t *) buffer, z85CasterSecretKey);
+decodedCasterSecretKey = std::string(buffer, 32);
+
+int unauthenticatedRegistrationPort = 9010;
+caster myCaster(context.get(), 0,unauthenticatedRegistrationPort,9012,9013,9014, 9015, 9016, decodedCasterPublicKey, decodedCasterSecretKey);
+//caster myCaster(context.get(), 0,unauthenticatedRegistrationPort,9012,9013,9014, 9015, 9016, decodedCasterPublicKey, decodedCasterSecretKey, "testSQLDatabase.db");
+
+//Create a basestation and register it
+std::string serializedRegistrationRequest;
+transmitter_registration_request registrationRequest;
+auto basestationInfo = registrationRequest.mutable_stream_info();
+basestationInfo->set_latitude(1.0);
+basestationInfo->set_longitude(2.0);
+basestationInfo->set_expected_update_rate(3.0);
+basestationInfo->set_message_format(RTCM_V3_1);
+basestationInfo->set_informal_name("testBasestation");
+
+registrationRequest.SerializeToString(&serializedRegistrationRequest);
+
+
+//Create socket to talk with caster
+std::unique_ptr<zmq::socket_t> registrationSocket;
+
+SOM_TRY //Init socket
+registrationSocket.reset(new zmq::socket_t(*context, ZMQ_DEALER));
+SOM_CATCH("Error making socket\n")
+
+SOM_TRY
+int timeoutWaitTime = 5000; //Max 5 seconds
+registrationSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
+SOM_CATCH("Error setting socket timeout\n")
+
+SOM_TRY //Connect to caster
+std::string connectionString = "tcp://127.0.0.1:" +std::to_string(unauthenticatedRegistrationPort);
+registrationSocket->connect(connectionString.c_str());
+SOM_CATCH("Error connecting socket for registration with caster\n")
+
+printf("Made it to here!\n");
+
+SOM_TRY //Send registration request
+registrationSocket->send(serializedRegistrationRequest.c_str(), serializedRegistrationRequest.size());
+SOM_CATCH("Error sending base station registration request\n")
+
+std::unique_ptr<zmq::message_t> messageBuffer;
+
+SOM_TRY
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+REQUIRE(registrationSocket->recv(messageBuffer.get()) == true);
+
+printf("And maybe here?\n");
+
+transmitter_registration_reply registrationReply;
+
+std::string stringToPrint( (const char *) messageBuffer->data(), messageBuffer->size());
+printf("Got %ld\n", stringToPrint.size());
+
+registrationReply.ParseFromArray(messageBuffer->data(), messageBuffer->size());
+REQUIRE(registrationReply.IsInitialized() == true);
+
+REQUIRE(registrationReply.request_succeeded() == true);
+
+sleep(10);
+}
+}

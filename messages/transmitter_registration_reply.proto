@@ -5,11 +5,12 @@ enum request_failure_reason
 MESSAGE_FORMAT_INVALID = 1; //Deserialization failed
 CREDENTIALS_DESERIALIZATION_FAILED = 2;  //Unable to read credentials
 INSUFFICIENT_PERMISSIONS = 3; //Credentials not signed by recognized authorities or otherwise are not enough.
+MISSING_REQUIRED_FIELD = 4;
 }
 
 //This message used used by a caster to reply to a transmitter_registration_request.  It indicates if the registration succeeded and if not, then why it failed.
 message transmitter_registration_reply
 {
-required bool request_succeeded = 1; //True if the registration request succeeded
-optional request_failure_reason failure_reason= 2; //The reason for the request being rejected 
+required bool request_succeeded = 10; //True if the registration request succeeded
+optional request_failure_reason failure_reason= 20; //The reason for the request being rejected 
 }

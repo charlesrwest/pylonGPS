@@ -49,7 +49,7 @@ add_library(pylongps SHARED  ${SOURCEFILES})
 #Tell CMake what executables to make
 ADD_EXECUTABLE(unitTests ${UNIT_TESTS_EXECUTABLE_SOURCE}) 
 
-target_link_libraries(pylongps dl PocoFoundation PocoNet PocoUtil sqlite3 pylonGPSMessages zmq ${PROTOBUF_LIBRARY} ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(pylongps dl PocoFoundation PocoNet PocoUtil sqlite3 pylonGPSMessages zmq ${PROTOBUF_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} sodium)
 
 #link libraries to executable
 target_link_libraries(unitTests pylongps )

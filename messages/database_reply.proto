@@ -10,5 +10,6 @@ DATABASE_REQUEST_FORMAT_INVALID = 30; //Missing "optional" fields required for a
 //This message is sent in response to a database request and indicates the success or failure of the request.
 message database_reply
 {
-optional database_request_failure_reason reason = 10; //Why the request failed (success if not there)
+optional bytes registration_connection_id = 10; //The connection ID associated with the base_station_to_register in the registration thread
+optional database_request_failure_reason reason = 20; //Why the request failed (success if not there)
 } 

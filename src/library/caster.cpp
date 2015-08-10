@@ -122,12 +122,23 @@ SOM_CATCH("Error setting subscription for socket listening for shutdown signal\n
 
 //Initialize and bind database access socket
 SOM_TRY
-databaseAccessSocket.reset(new zmq::socket_t(*(context), ZMQ_PUB));
-SOM_CATCH("Error intializing shutdownPublishingSocket\n")
+databaseAccessSocket.reset(new zmq::socket_t(*(context), ZMQ_REP));
+SOM_CATCH("Error intializing databaseAccessSocket\n")
 
 SOM_TRY //Bind to an dynamically generated address
 std::tie(databaseAccessConnectionString,extensionStringNumber) = bindZMQSocketWithAutomaticAddressGeneration(*databaseAccessSocket, "databaseAccessAddress");
 SOM_CATCH("Error binding databaseAccessSocket\n")
+
+//Initialize and connect the registration thread's database request socket
+SOM_TRY
+registrationDatabaseRequestSocket.reset(new zmq::socket_t(*(context), ZMQ_DEALER));
+SOM_CATCH("Error intializing registrationDatabaseRequestSocket\n")
+
+printf("Database connection string: %s\n", databaseAccessConnectionString.c_str());
+
+SOM_TRY
+registrationDatabaseRequestSocket->connect(databaseAccessConnectionString.c_str());
+SOM_CATCH("Error connecting registration database request socket")
 
 //Attempt to register socket for authentication ID verification via ZAP protocol (could already be registered by another object)
 SOM_TRY
@@ -334,6 +345,7 @@ return; //Shutdown message received, so return
 if(pollItems[0].revents & ZMQ_POLLIN)
 {//A database request has been received, so process it
 SOM_TRY
+printf("We got a database request!\n");
 processDatabaseRequest();
 SOM_CATCH("Error processing database request\n")
 }
@@ -362,6 +374,92 @@ This function is called in the streamRegistrationAndPublishingThread to handle s
 */
 void caster::streamRegistrationAndPublishingThreadFunction()
 {
+try
+{
+//Responsible for streamRegistrationAndPublishingThreadShutdownListeningSocket, authenticatedTransmitterRegistrationAndStreamingInterface, transmitterRegistrationAndStreamingInterface, registrationDatabaseRequestSocket
+//Publishes to clientStreamPublishingInterface, proxyStreamPublishingInterface, streamStatusNotificationInterface
+
+//Create priority queue for event queue and poll items, then start polling/event cycle
+std::priority_queue<event> threadEventQueue;
+std::unique_ptr<zmq::pollitem_t[]> pollItems;
+int numberOfPollItems = 4;
+
+SOM_TRY
+pollItems.reset(new zmq::pollitem_t[numberOfPollItems]);
+SOM_CATCH("Error creating poll items\n")
+
+//Populate the poll object list
+pollItems[0] = {(void *) (*streamRegistrationAndPublishingThreadShutdownListeningSocket), 0, ZMQ_POLLIN, 0};
+pollItems[1] = {(void *) (*transmitterRegistrationAndStreamingInterface), 0, ZMQ_POLLIN, 0};
+pollItems[2] = {(void *) (*authenticatedTransmitterRegistrationAndStreamingInterface), 0, ZMQ_POLLIN, 0};
+pollItems[3] = {(void *) (*registrationDatabaseRequestSocket), 0, ZMQ_POLLIN, 0};
+
+
+//Determine if an event has timed out (and deal with it if so) and then calculate the time until the next event timeout
+Poco::Timestamp nextEventTime;
+int64_t timeUntilNextEventInMilliseconds = 0;
+while(true)
+{
+nextEventTime = handleEvents(threadEventQueue);
+
+if(nextEventTime < 0)
+{
+timeUntilNextEventInMilliseconds = -1; //No events, so block until a message is received
+}
+else
+{
+timeUntilNextEventInMilliseconds = (nextEventTime - Poco::Timestamp())/1000 + 1; //Time in milliseconds till the next event, rounding up
+}
+
+//Poll until the next event timeout and resolve any messages that are received
+SOM_TRY
+if(zmq::poll(pollItems.get(), numberOfPollItems, timeUntilNextEventInMilliseconds) == 0)
+{
+continue; //Poll returned without indicating any messages have been received, so check events and go back to polling
+}
+SOM_CATCH("Error polling\n")
+
+//Handle received messages
+
+//Check if it is time to shutdown
+if(pollItems[0].revents & ZMQ_POLLIN)
+{
+return; //Shutdown message received, so return
+}
+
+//Check if an unauthenticated registration or stream update has been received
+if(pollItems[1].revents & ZMQ_POLLIN)
+{//A message has been received, so process it
+SOM_TRY
+printf("Got unauthenticated request message\n");
+processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(threadEventQueue, false);
+SOM_CATCH("Error processing database request\n")
+}
+
+//Check if an authenticated registration or stream update has been received
+if(pollItems[2].revents & ZMQ_POLLIN)
+{//A message has been received, so process it
+SOM_TRY
+processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(threadEventQueue, true);
+SOM_CATCH("Error processing request\n")
+}
+
+//Check if we've received a reply from the database server
+if(pollItems[3].revents & ZMQ_POLLIN)
+{//A message has been received, so process it
+SOM_TRY
+processTransmitterRegistrationAndStreamingDatabaseReply();
+SOM_CATCH("Error processing request\n")
+}
+
+}
+
+}
+catch(const std::exception &inputException)
+{ //If an exception is thrown, swallow it, send error message and terminate
+fprintf(stderr, "clientRequestHandlingThreadFunction: %s\n", inputException.what());
+return;
+}
 
 }
 
@@ -369,7 +467,7 @@ void caster::streamRegistrationAndPublishingThreadFunction()
 This function is called in the authenticationIDCheckingThread to verify if the ZMQ connection ID of authenticated connections matches the public key the connection is using.
 */
 void caster::authenticationIDCheckingThreadFunction()
-{ //TODO: finish this function
+{
 
 try
 {
@@ -466,13 +564,59 @@ if(inputEventQueue.size() == 0)
 return Poco::Timestamp(-1);
 }
 
-if(inputEventQueue.top().time > Poco::Timestamp() )
+Poco::Timestamp currentTime;
+auto timeValue = currentTime.epochMicroseconds();
+
+if(inputEventQueue.top().time > currentTime )
 { //Next event isn't happening yet
 return inputEventQueue.top().time;
 }
 
-//There is an event to process 
-//TODO: Process events 
+//There is an event to process
+event eventToProcess = inputEventQueue.top();
+inputEventQueue.pop(); //Remove event from queue
+
+
+//Process events
+if(eventToProcess.HasExtension(possible_base_station_event_timeout::possible_base_station_event_timeout_field))
+{ //possible_base_station_event_timeout
+possible_base_station_event_timeout eventInstance = eventToProcess.GetExtension(possible_base_station_event_timeout::possible_base_station_event_timeout_field);
+
+std::map<std::string, connectionStatus> *mapPointer;
+if(eventInstance.is_authenticated())
+{
+mapPointer = &authenticatedConnectionStatuses;
+}
+else
+{
+mapPointer = &unauthenticatedConnectionStatuses;
+}
+
+if(mapPointer->count(eventInstance.connection_id()) == 0)
+{//The connection has already been dealt with
+continue;
+}
+
+if((mapPointer->at(eventInstance.connection_id()).timeLastMessageWasReceived + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0) <= eventToProcess.time)
+{//It has been more than SECONDS_BEFORE_CONNECTION_TIMEOUT since a message was received, so drop connection
+mapPointer->erase(eventInstance.connection_id());
+continue;
+}
+}
+ 
+if(eventToProcess.HasExtension(possible_credentials_expiration_event::possible_credentials_expiration_event_field))
+{ //possible_credentials_expiration_event
+//TODO: Possible security vulnerable here because we store potentially long term state for each connection made
+//Could replace with a central database of keys and their associated connections and just have one timeout for a given key instead of one per connection instance.
+//Credentials have expired, so delete connection if it hasn't been already
+
+possible_credentials_expiration_event eventInstance = eventToProcess.GetExtension(possible_credentials_expiration_event::possible_credentials_expiration_event_field);
+if(authenticatedConnectionStatuses.count(eventInstance.connection_id()))
+{
+authenticatedConnectionStatuses.erase(eventInstance.connection_id());
+}
+continue;
+}
 
 }
 
@@ -517,6 +661,8 @@ This function checks if the databaseAccessSocket has received a database_request
 */
 void caster::processDatabaseRequest()
 {
+printf("Database request being processed\n");
+
 //Receive message
 std::unique_ptr<zmq::message_t> messageBuffer;
 
@@ -527,13 +673,24 @@ SOM_CATCH("Error initializing ZMQ message")
 SOM_TRY //Receive message
 if(databaseAccessSocket->recv(messageBuffer.get(), ZMQ_DONTWAIT) != true)
 {
+printf("Um, no message?\n");
 return; //No message to be had
 }
 SOM_CATCH("Error receiving server registration/deregistration message")
 
+printf("Database message received of size %ld\n", messageBuffer->size());
+
 //Create lambda to make it easy to send request failed replies
-auto sendReplyLambda = [&] (bool inputRequestFailed, enum database_request_failure_reason inputReason = DATABASE_REQUEST_DESERIALIZATION_FAILED)
+auto sendReplyLambda = [&] (bool inputRequestFailed, enum database_request_failure_reason inputReason = DATABASE_REQUEST_DESERIALIZATION_FAILED, std::string inputConnectionString = std::string(""))
 {
+if(inputRequestFailed)
+{
+printf("Database request failed\n");
+}
+else
+{
+printf("Database request succeeded\n");
+}
 database_reply reply;
 std::string serializedReply;
 
@@ -541,6 +698,11 @@ if(inputRequestFailed)
 { //Only set the reason if the request failed
 reply.set_reason(inputReason);
 }
+if(inputConnectionString != "")
+{
+reply.set_registration_connection_id(inputConnectionString);
+}
+
 reply.SerializeToString(&serializedReply);
 
 SOM_TRY
@@ -564,10 +726,16 @@ SOM_CATCH("Error sending reply");
 //Validate submessage
 if(request.has_base_station_to_register())
 {//Add basestation
+std::string replyConnectionID;
+if(request.has_registration_connection_id())
+{
+replyConnectionID = request.registration_connection_id();
+}
+
 if(!request.base_station_to_register().has_latitude() || !request.base_station_to_register().has_longitude() || !request.base_station_to_register().has_base_station_id() || !request.base_station_to_register().has_start_time() || !request.base_station_to_register().has_message_format())
 {//Message did not have required fields, so send back message saying request failed
 SOM_TRY
-sendReplyLambda(true, DATABASE_REQUEST_FORMAT_INVALID);
+sendReplyLambda(true, DATABASE_REQUEST_FORMAT_INVALID, replyConnectionID);
 return;
 SOM_CATCH("Error sending reply")
 }
@@ -578,7 +746,7 @@ basestationToSQLInterface->store((*request.mutable_base_station_to_register()));
 SOM_CATCH("Error inserting basestation to database\n")
 //Send reply
 SOM_TRY
-sendReplyLambda(false); //Request succedded
+sendReplyLambda(false, DATABASE_REQUEST_FORMAT_INVALID, replyConnectionID); //Request succedded
 SOM_CATCH("Error sending reply\n")
 return;
 }
@@ -592,7 +760,7 @@ basestationToSQLInterface->deleteObjects(keysToDelete);
 SOM_CATCH("Error deleting from database\n")
 
 SOM_TRY
-sendReplyLambda(false); //Request succedded
+sendReplyLambda(false); //Request succeeded
 SOM_CATCH("Error sending reply\n")
 return;
 }
@@ -789,7 +957,7 @@ auto sendSystemFailedReply = [&] ()
 if(receivedContent.size() >= 3)
 {
 SOM_TRY
-sendReplyLambda(receivedContent[2],500);
+sendReplyLambda(receivedContent[1],500);
 SOM_CATCH("Error sending reply\n")
 }
 else
@@ -865,6 +1033,345 @@ SOM_TRY //Send system failure message
 sendReplyLambda(receivedContent[2],200); //Authentication "succeeded"
 SOM_CATCH("Error sending reply\n")
 }
+
+/**
+This function processes messages from the either the  authenticatedTransmitterRegistrationAndStreamingInterface or the transmitterRegistrationAndStreamingInterface.  A connection is expected to start with a transmitter_registration_request, to which this object replies with a transmitter_registration_reply.  Thereafter, the messages received are forwarded to the associated publisher interfaces until the publisher stops sending for an unacceptably long period (SECONDS_BEFORE_CONNECTION_TIMEOUT), at which point the object erases the associated the associated metadata and publishes that the base station disconnected.  In the authenticated case, the permissions of the key associated with the connection are also checked.
+@param inputEventQueue: The event queue to register events to
+@param inputIsAuthenticated: True if the message is from the authenticated port
+
+@throws: This function can throw exceptions
+*/
+void caster::processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(std::priority_queue<event> &inputEventQueue, bool inputIsAuthenticated)
+{
+//Send reply
+auto sendReplyLambda = [&] (const std::string &inputAddress, bool inputRequestSucceeded, zmq::socket_t *inputSocketToSendFrom, request_failure_reason inputFailureReason = MESSAGE_FORMAT_INVALID)
+{
+//Send: address, empty, data
+transmitter_registration_reply reply;
+std::string serializedReply;
+
+reply.set_request_succeeded(inputRequestSucceeded);
+
+if(!inputRequestSucceeded)
+{ //Only set the reason if the request failed
+reply.set_failure_reason(inputFailureReason);
+}
+reply.SerializeToString(&serializedReply);
+
+SOM_TRY
+inputSocketToSendFrom->send(inputAddress.c_str(), inputAddress.size(), ZMQ_SNDMORE);
+SOM_CATCH("Error sending reply messages\n")
+
+SOM_TRY
+inputSocketToSendFrom->send(serializedReply.c_str(), serializedReply.size());
+SOM_CATCH("Error sending reply messages\n")
+};
+
+zmq::socket_t *sourceSocket = nullptr;
+if(inputIsAuthenticated)
+{
+sourceSocket = authenticatedTransmitterRegistrationAndStreamingInterface.get();
+}
+else
+{
+sourceSocket = transmitterRegistrationAndStreamingInterface.get();
+} 
+
+
+//Receive messages
+std::vector<std::string> receivedContent;
+bool messageRetrievalSuccessful = false;
+SOM_TRY
+messageRetrievalSuccessful = retrieveRouterMessage(*sourceSocket, receivedContent);
+SOM_CATCH("Error retrieving router message\n")
+
+printf("Received %ld message parts\n", receivedContent.size());
+for(int x=0; x<receivedContent.size(); x++)
+{
+printf("Submessage size: %ld\n", receivedContent[x].size());
+}
+
+if(!messageRetrievalSuccessful)
+{ //Invalid message, so ignore
+return;
+}
+
+printf("Message retrieval status: %d\n", messageRetrievalSuccessful);
+
+std::string connectionID = receivedContent[0];
+//Get current time
+Poco::Timestamp currentTime;
+auto timeValue = currentTime.epochMicroseconds();
+
+//See if this base station has been registered yet
+if((!inputIsAuthenticated && unauthenticatedConnectionStatuses.count(connectionID) == 0) || (inputIsAuthenticated && authenticatedConnectionStatuses.count(connectionID) == 0))
+{
+//This connection has not been seen before, so it should have a transmitter_registration_request
+//Attempt to deserialize
+transmitter_registration_request request;
+request.ParseFromArray(receivedContent[1].c_str(), receivedContent[1].size());
+
+if(!request.IsInitialized())
+{//Message header serialization failed, so send back message saying request failed
+SOM_TRY
+sendReplyLambda(connectionID, false, sourceSocket, MESSAGE_FORMAT_INVALID);
+return;
+SOM_CATCH("Error sending reply");
+}
+
+
+
+//Check permissions if authenticated
+bool credentialsMessageIsValid = false;
+bool signedByRecognizedOfficialKey = false;
+bool signedByRecognizedCommunityKey = false;
+authorized_permissions permissionsBuffer;
+if(inputIsAuthenticated)
+{
+std::tie(credentialsMessageIsValid, signedByRecognizedOfficialKey, signedByRecognizedCommunityKey) = checkCredentials(*request.mutable_transmitter_credentials(), permissionsBuffer);
+
+if(!credentialsMessageIsValid || connectionID.find(permissionsBuffer.public_key()) != 0)
+{ //Either authorized_permissions could not be deserialized or one of the signatures didn't match or the key didn't match
+SOM_TRY
+sendReplyLambda(connectionID, false, sourceSocket, CREDENTIALS_DESERIALIZATION_FAILED);
+return;
+SOM_CATCH("Error sending reply");
+}
+
+
+
+if(permissionsBuffer.has_valid_until())
+{ //Permissions recognized but expired
+if(timeValue > permissionsBuffer.valid_until())
+{
+SOM_TRY
+sendReplyLambda(connectionID, false, sourceSocket, CREDENTIALS_DESERIALIZATION_FAILED);
+return;
+SOM_CATCH("Error sending reply");
+}
+}
+
+}
+
+
+
+base_station_stream_information *streamInfo = request.mutable_stream_info();
+
+if(!streamInfo->has_message_format())
+{//Missing a required field
+SOM_TRY
+sendReplyLambda(connectionID, false, sourceSocket, MISSING_REQUIRED_FIELD);
+return;
+SOM_CATCH("Error sending reply")
+}
+
+
+//Set caster assigned fields
+if(!inputIsAuthenticated)
+{
+streamInfo->set_station_class(COMMUNITY);
+}
+else
+{
+if(signedByRecognizedOfficialKey)
+{
+streamInfo->set_station_class(OFFICIAL);
+}
+else if(signedByRecognizedCommunityKey)
+{
+streamInfo->set_station_class(REGISTERED_COMMUNITY);
+}
+else
+{
+SOM_TRY
+sendReplyLambda(connectionID, false, sourceSocket, INSUFFICIENT_PERMISSIONS);
+return;
+SOM_CATCH("Error sending reply");
+}
+}
+
+streamInfo->clear_signing_keys();
+if(inputIsAuthenticated)
+{ //Add signing keys
+for(int i=0; i<request.mutable_transmitter_credentials()->signatures_size(); i++)
+{
+streamInfo->add_signing_keys(request.mutable_transmitter_credentials()->signatures(i).public_key());
+}
+}
+
+auto streamID = getNewStreamID();
+streamInfo->set_base_station_id(streamID); //Create/assign new stream id
+streamInfo->clear_source_public_key();
+streamInfo->clear_real_update_rate();
+streamInfo->clear_uptime();
+streamInfo->set_start_time(timeValue);
+
+//Make/send request to database
+std::string serializedDatabaseRequest;
+database_request databaseRequest;
+(*databaseRequest.mutable_base_station_to_register()) = (*streamInfo);
+databaseRequest.set_registration_connection_id(connectionID);
+
+databaseRequest.SerializeToString(&serializedDatabaseRequest);
+
+//TODO: Change back to just one call
+
+SOM_TRY
+registrationDatabaseRequestSocket->send(nullptr, 0, ZMQ_SNDMORE);
+registrationDatabaseRequestSocket->send(serializedDatabaseRequest.c_str(), serializedDatabaseRequest.size());
+SOM_CATCH("Error sending database request\n")
+
+
+//Add to map
+connectionStatus associatedConnectionStatus;
+associatedConnectionStatus.requestToTheDatabaseHasBeenSent = true;
+associatedConnectionStatus.baseStationID = streamID;
+associatedConnectionStatus.timeLastMessageWasReceived = timeValue;
+if(inputIsAuthenticated)
+{
+authenticatedConnectionStatuses[connectionID] = associatedConnectionStatus;
+}
+else
+{
+unauthenticatedConnectionStatuses[connectionID] = associatedConnectionStatus;
+}
+
+
+
+//Register possible stream timeout event
+possible_base_station_event_timeout timeoutEventSubMessage;
+timeoutEventSubMessage.set_connection_id(connectionID);
+timeoutEventSubMessage.set_is_authenticated(inputIsAuthenticated);
+
+event timeoutEvent(timeValue + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0);
+(*timeoutEvent.MutableExtension(possible_base_station_event_timeout::possible_base_station_event_timeout_field)) = timeoutEventSubMessage;
+
+inputEventQueue.push(timeoutEvent);
+
+
+
+if(inputIsAuthenticated && permissionsBuffer.has_valid_until())
+{//Register credentials timeout event
+possible_credentials_expiration_event credentialsExpiration;
+credentialsExpiration.set_connection_id(connectionID);
+credentialsExpiration.set_is_authenticated(inputIsAuthenticated);
+
+event credentialsExpirationEvent(permissionsBuffer.valid_until());
+(*credentialsExpirationEvent.MutableExtension(possible_credentials_expiration_event::possible_credentials_expiration_event_field)) = credentialsExpiration;
+
+inputEventQueue.push(credentialsExpirationEvent);
+}
+
+printf("Got this far!!\n");
+
+//Tell base station that its registration succeeded
+SOM_TRY
+sendReplyLambda(connectionID, true, sourceSocket);
+SOM_CATCH("Error sending registration succeeded message")
+
+//Make message to announce new station
+std::string serializedUpdateMessage;
+stream_status_update updateMessage;
+(*updateMessage.mutable_new_base_station_info()) = (*streamInfo);
+
+updateMessage.SerializeToString(&serializedUpdateMessage);
+
+//Send the message
+SOM_TRY
+streamStatusNotificationInterface->send(serializedUpdateMessage.c_str(), serializedUpdateMessage.size());
+SOM_CATCH("Error publishing new station registration\n")
+
+return;//Registration finished
+} //End station registration
+
+//connectionID = receivedContent[0];
+//Base station has already been registered, so forward it and update the timeout info
+//Allocate memory and copy the caster ID, stream ID and data to it
+{
+int totalMessageSize = receivedContent[3].size() + sizeof(Poco::Int64)+sizeof(Poco::Int64);
+char *memoryBuffer = new char[totalMessageSize];
+SOMScopeGuard memoryBufferScopeGuard([&]() { delete[] memoryBuffer; }); 
+
+//Poco saves the day again
+Poco::Int64 streamID = 0;
+if(inputIsAuthenticated)
+{
+streamID = authenticatedConnectionStatuses.at(connectionID).baseStationID;
+authenticatedConnectionStatuses.at(connectionID).timeLastMessageWasReceived = timeValue;
+}
+else
+{
+streamID = unauthenticatedConnectionStatuses.at(connectionID).baseStationID;
+unauthenticatedConnectionStatuses.at(connectionID).timeLastMessageWasReceived = timeValue;
+}
+
+
+
+*((Poco::Int64 *) memoryBuffer) = Poco::ByteOrder::toNetwork(Poco::Int64(casterID));
+*(((Poco::Int64 *) memoryBuffer) + 1) = Poco::ByteOrder::toNetwork(Poco::Int64(streamID));
+
+//Copy message to buffer
+memcpy((void *) &memoryBuffer[sizeof(Poco::Int64)*2], (void *) receivedContent[3].c_str(), receivedContent[3].size());
+
+//Forward message
+SOM_TRY
+clientStreamPublishingInterface->send(memoryBuffer, totalMessageSize);
+SOM_CATCH("Error, unable to forward message\n")
+
+SOM_TRY
+proxyStreamPublishingInterface->send(memoryBuffer, totalMessageSize);
+SOM_CATCH("Error, unable to forward message\n")
+}
+
+}
+
+
+/**
+This function processes reply messages sent to registrationDatabaseRequestSocket.  It expects database operations to succeed, so it throws an exception upon receiving a failure message.
+
+@throws: This function can throw exceptions
+*/
+void caster::processTransmitterRegistrationAndStreamingDatabaseReply()
+{
+printf("I got a response from the database!\n");
+
+std::unique_ptr<zmq::message_t> messageBuffer;
+
+SOM_TRY //Receive message
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+bool messageReceived = false;
+SOM_TRY //Receive first message part (should be empty)
+messageReceived = registrationDatabaseRequestSocket->recv(messageBuffer.get(), ZMQ_DONTWAIT);
+SOM_CATCH("Error receiving server registration message")
+
+if(!messageReceived || messageBuffer->size() != 0 || !messageBuffer->more())
+{
+return;
+}
+
+SOM_TRY //Receive message
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+messageReceived = false;
+SOM_TRY //Receive message
+messageReceived = registrationDatabaseRequestSocket->recv(messageBuffer.get(), ZMQ_DONTWAIT);
+SOM_CATCH("Error receiving server registration message")
+
+database_reply reply;
+reply.ParseFromArray(messageBuffer->data(), messageBuffer->size());
+
+if(reply.has_reason())
+{
+printf("There was a problem with the database!\n");
+throw SOMException("Database request failed (" +std::to_string((int) reply.reason())+ "\n", SQLITE3_ERROR, __FILE__, __LINE__);
+}
+printf("The database stuff seemed to work out OK\n");
+
+}
+
 
 /*
 This function generates the complete query string required to get all of the ids of the stations that meet the query's requirements.
@@ -997,6 +1504,53 @@ queryString += ";";
 inputParameterCountBuffer = parameterCount;
 
 return queryString;
+}
+
+/**
+This function makes it easier to process messages from a ZMQ router socket.  It retrieves the messages associated with a single router message (all parts of the multipart message) and stores them in the vector and returns true if the expected format was followed (3 part: addess, empty, message)
+@param inputSocket: The socket to process messages from
+@param inputMessageBuffer: The buffer to store messages in
+@return: true if the message followed the expected format
+
+@throws: This function can throw exceptions
+*/
+bool pylongps::retrieveRouterMessage(zmq::socket_t &inputSocket, std::vector<std::string> &inputMessageBuffer)
+{
+//Receive messages
+std::unique_ptr<zmq::message_t> messageBuffer;
+inputMessageBuffer.clear();
+
+while(true)
+{
+SOM_TRY //Receive message
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+bool messageReceived = false;
+SOM_TRY //Receive message
+messageReceived = inputSocket.recv(messageBuffer.get(), ZMQ_DONTWAIT);
+SOM_CATCH("Error receiving server registration message")
+
+if(!messageReceived)
+{
+break;
+}
+
+inputMessageBuffer.push_back(std::string((const char *) messageBuffer->data(), messageBuffer->size()));
+
+if(!messageBuffer->more())
+{ //Multi-part message completed, so exit loop
+break;
+}
+
+}
+
+if(inputMessageBuffer.size() != 2)
+{
+return false; //Message is invalid, so mark it so
+}
+
+return true;
 }
 
 /**
@@ -1161,6 +1715,55 @@ return parameterCount;
 }
 
 /**
+This (non-threadsafe) function generates new unique (sequential) connection ids.
+@return: A new connection ID to use
+*/
+int64_t caster::getNewStreamID()
+{
+lastAssignedConnectionID++;
+return lastAssignedConnectionID;
+}
+
+/**
+This function checks whether the permissions in a credentials message are considered valid according to the current lists of trusted keys.  
+@param inputCredentials: The credentials giving the permissions/signing keys
+@param inputAuthorizedPermissionsBuffer: The object to return the authorized_permissions with
+@return: A tuple of <messageIsValid, isSignedByOfficialEntityKey, isSignedByRegisteredCommunityKey>
+*/
+std::tuple<bool, bool, bool> caster::checkCredentials(credentials &inputCredentials, authorized_permissions &inputAuthorizedPermissionsBuffer)
+{
+bool isSignedByOfficialEntityKey = false;
+bool isSignedByRegisteredCommunityKey = false;
+
+//Check signatures
+for(int i=0; i<inputCredentials.signatures_size(); i++)
+{
+if(inputCredentials.signatures(i).cryptographic_signature().size() != crypto_sign_BYTES || inputCredentials.signatures(i).public_key().size() != crypto_sign_PUBLICKEYBYTES)
+{ //Signature or public key is wrong size
+return std::tuple<bool, bool, bool>(false, false, false);
+}
+
+if(crypto_sign_verify_detached((const unsigned char *) inputCredentials.signatures(i).cryptographic_signature().c_str(),(const unsigned char *) inputCredentials.permissions().c_str(), inputCredentials.permissions().size(), (const unsigned char *) inputCredentials.signatures(i).public_key().c_str()) != 0)
+{ //Signature of permissions doesn't match (message invalid)
+return std::tuple<bool, bool, bool>(false, false, false);
+}
+
+if(officialSigningKeys.count(inputCredentials.signatures(i).public_key()) > 0)
+{
+isSignedByOfficialEntityKey = true;
+}
+
+if(registeredCommunitySigningKeys.count(inputCredentials.signatures(i).public_key()) > 0)
+{
+isSignedByRegisteredCommunityKey = true;
+}
+
+}
+
+return std::tuple<bool, bool, bool>(true, isSignedByOfficialEntityKey, isSignedByRegisteredCommunityKey);
+}
+
+/**
 This function helps with creating SQL query strings for client requests.
 @param inputStringRelation: The relation to resolve into a SQL string part (such as "LIKE ?"
 @return: The associated SQL string component 
@@ -1287,4 +1890,6 @@ else
 sqlite3_result_double(inputContext, 0.0);
 }
 }
+
+
 

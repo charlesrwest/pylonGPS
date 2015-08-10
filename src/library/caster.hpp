@@ -9,25 +9,40 @@
 #include<queue>
 #include<string>
 #include<vector>
+#include<set>
 #include<random>
 #include<cmath>
+#include<cstring>
 #include "SOMException.hpp"
 #include "SOMScopeGuard.hpp"
 #include "event.hpp"
 #include "utilityFunctions.hpp"
 #include "Poco/Timestamp.h"
+#include "Poco/ByteOrder.h"
 #include "protobufSQLConverter.hpp"
 #include "sqlite3.h"
-//#include "sqlite3ext.h"
+#include "connectionStatus.hpp"
+#include <sodium.h>
 
 #include "database_request.pb.h"
 #include "database_reply.pb.h"
 #include "client_query_request.pb.h"
 #include "client_query_reply.pb.h"
+#include "transmitter_registration_request.pb.h"
+#include "transmitter_registration_reply.pb.h"
+#include "possible_base_station_event_timeout.pb.h"
+#include "stream_status_update.pb.h"
+#include "credentials.pb.h"
+#include "authorized_permissions.pb.h"
+#include "possible_credentials_expiration_event.pb.h"
 
 namespace pylongps
 {
 
+//How long to wait before a connection is considered to have timed out and is closed
+const double SECONDS_BEFORE_CONNECTION_TIMEOUT = 5.0; 
+
+//TODO: Add ZMQ interface to add acceptable signing keys and two constructor arguments (one for list of signing keys to start with and another for a signing key that is required to add a signing key).
 /**
 This class represents a pylonGPS 2.0 caster.  It opens several ZMQ ports to provide caster services, an in-memory SQLITE database and creates 2 threads to manage its duties.
 
@@ -76,7 +91,14 @@ std::string shutdownPublishingConnectionString; //string to use for inproc conne
 std::string databaseAccessConnectionString; //String to use for inproc connection to send requests to modify the database
 std::string casterPublicKey;
 std::string casterSecretKey;
-//std::unique_ptr<Poco::Data::Session> databaseSession; //Ensures that the database doesn't go out of scope until the object does
+std::string signingKeysManagementKey; //The public key of the entity allowed to add/remove sigining keys
+std::set<std::string> officialSigningKeys; //A list of acceptable signing keys for "Official" basestations
+std::set<std::string> registeredCommunitySigningKeys; //A list of acceptable signing keys for "Registered Community" basestations
+
+//Used to keep track of the current status of each basestation connection
+int64_t lastAssignedConnectionID = 0; //Incremented to make unique streamIDs
+std::map<std::string, connectionStatus> unauthenticatedConnectionStatuses;
+std::map<std::string, connectionStatus> authenticatedConnectionStatuses;
 
 /**
 This function is called in the clientRequestHandlingThread to handle client requests and manage access to the SQLite database.
@@ -117,6 +139,8 @@ std::unique_ptr<zmq::socket_t> statisticsGatheringThreadShutdownListeningSocket;
 
 std::unique_ptr<zmq::socket_t> ZAPAuthenticationSocket; //A inproc REP socket that handles ID verification for the ZAP protocol (if another object has not already bound inproc://zeromq.zap.01)
 std::unique_ptr<zmq::socket_t> databaseAccessSocket; //A inproc REP socket that handles requests to make changes to the database.  Used by clientRequestHandlingThread.
+std::unique_ptr<zmq::socket_t> registrationDatabaseRequestSocket; //A inproc dealer socket used in the streamRegistrationAndPublishingThread to send database requests/get replies
+
 std::unique_ptr<std::thread> clientRequestHandlingThread; //Handles client requests and requests by the stream registration and statistics threads to make changes to the database
 std::unique_ptr<std::thread> streamRegistrationAndPublishingThread;
 std::unique_ptr<std::thread> authenticationIDCheckingThread; //A thread that is enabled/started to do ZMQ authentication if the inproc address "inproc://zeromq.zap.01" has not been bound already 
@@ -163,6 +187,23 @@ This process checks if ZAPAuthenticationSocket has received a ZAP request.  If s
 void processZAPAuthenticationRequest();
 
 /**
+This function processes messages from the either the  authenticatedTransmitterRegistrationAndStreamingInterface or the transmitterRegistrationAndStreamingInterface.  A connection is expected to start with a transmitter_registration_request, to which this object replies with a transmitter_registration_reply.  Thereafter, the messages received are forwarded to the associated publisher interfaces until the publisher stops sending for an unacceptably long period (SECONDS_BEFORE_CONNECTION_TIMEOUT), at which point the object erases the associated the associated metadata and publishes that the base station disconnected.  In the authenticated case, the permissions of the key associated with the connection are also checked.
+@param inputEventQueue: The event queue to register events to
+@param inputIsAuthenticated: True if the message is from the authenticated port
+
+@throws: This function can throw exceptions
+*/
+void processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(std::priority_queue<event> &inputEventQueue, bool inputIsAuthenticated);
+
+/**
+This function processes reply messages sent to registrationDatabaseRequestSocket.  It expects database operations to succeed, so it throws an exception upon receiving a failure message.
+
+@throws: This function can throw exceptions
+*/
+void processTransmitterRegistrationAndStreamingDatabaseReply();
+
+
+/**
 This function generates the complete query string required to get all of the ids of the stations that meet the query's requirements.
 @param inputRequest: This is the request to generate the query string for
 @param inputParameterCountBuffer: This is set to the total number of bound variables
@@ -182,9 +223,30 @@ This function binds the fields from the client_query_request to the associated p
 */
 int bindClientQueryRequestFields(std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> &inputStatement, const client_query_request &inputRequest);
 
+/**
+This (non-threadsafe) function generates new unique (sequential) connection ids.
+@return: A new connection ID to use
+*/
+int64_t getNewStreamID();
+
+/**
+This function checks whether the permissions in a credentials message are considered valid according to the current lists of trusted keys.  
+@param inputCredentials: The credentials giving the permissions/signing keys
+@param inputAuthorizedPermissionsBuffer: The object to return the authorized_permissions with
+@return: A tuple of <messageIsValid, isSignedByOfficialEntityKey, isSignedByRegisteredCommunityKey>
+*/
+std::tuple<bool, bool, bool> checkCredentials(credentials &inputCredentials, authorized_permissions &inputAuthorizedPermissionsBuffer);
 };
 
+/**
+This function makes it easier to process messages from a ZMQ router socket.  It retrieves the messages associated with a single router message (all parts of the multipart message) and stores them in the vector and returns true if the expected format was followed (3 part: addess, empty, message)
+@param inputSocket: The socket to process messages from
+@param inputMessageBuffer: The buffer to store messages in
+@return: true if the message followed the expected format
 
+@throws: This function can throw exceptions
+*/
+bool retrieveRouterMessage(zmq::socket_t &inputSocket, std::vector<std::string> &inputMessageBuffer);
 
 /**
 This function helps with creating SQL query strings for client requests.
@@ -246,9 +308,6 @@ This function can be used to add the "acos" function to the current SQLite conne
 @param inputValues: The array values
 */
 void SQLiteAcosFunctionDegrees(sqlite3_context *inputContext, int inputArraySize, sqlite3_value **inputValues);
-
-
-
 
 
 }

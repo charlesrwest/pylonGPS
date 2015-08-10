@@ -1,0 +1,15 @@
+package pylongps;
+
+import "event_message.proto"; 
+
+message possible_base_station_event_timeout
+{
+required string connection_id = 1; //The connection id associated with the base station
+required bool is_authenticated = 2; //This refers to an authenticated basestation if true
+
+//Add to message container to allow simulated polymorphism
+extend event_message
+{
+optional possible_base_station_event_timeout possible_base_station_event_timeout_field = 10;
+}
+}
