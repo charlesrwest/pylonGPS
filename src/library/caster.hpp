@@ -152,7 +152,7 @@ std::unique_ptr<protobufSQLConverter<base_station_stream_information> > basestat
 //Interfaces
 std::unique_ptr<zmq::socket_t> transmitterRegistrationAndStreamingInterface; ///A ZMQ ROUTER socket which expects unencrypted data (transmitter_registration_request to which it responses with a transmitter_registration_reply. If accepted, the request is followed by the data to broadcast).  Used by streamRegistrationAndPublishingThread.
 std::unique_ptr<zmq::socket_t> authenticatedTransmitterRegistrationAndStreamingInterface; ///A ZMQ ROUTER socket which expects encrypted data (transmitter_registration_request with credentials to which it responses with a transmitter_registration_reply. If accepted, the request is followed by the data to broadcast) and checks the key (ZMQ connection ID must match public key).  Used by streamRegistrationAndPublishingThread.
-std::unique_ptr<zmq::socket_t> clientRequestInterface;  ///A ZMQ router socket which expects a client_query_request and responds with a client_query_reply.  Used by clientRequestHandlingThread.
+std::unique_ptr<zmq::socket_t> clientRequestInterface;  ///A ZMQ REP socket which expects a client_query_request and responds with a client_query_reply.  Used by clientRequestHandlingThread.
 std::unique_ptr<zmq::socket_t> clientStreamPublishingInterface; ///A ZMQ PUB socket which publishes all data associated with all streams with the caster ID and stream ID preappended for clients to subscribe.  Used by streamRegistrationAndPublishingThread.
 std::unique_ptr<zmq::socket_t> proxyStreamPublishingInterface; ///A ZMQ PUB socket which publishes all data associated with all streams with the caster ID and stream ID preappended for clients to subscribe.  Used by streamRegistrationAndPublishingThread.
 std::unique_ptr<zmq::socket_t> streamStatusNotificationInterface; ///A ZMQ PUB socket which publishes stream_status_update messages.  Used by streamRegistrationAndPublishingThread.
@@ -284,6 +284,13 @@ std::string generateRelationalSubquery(bool inputPreappendAND, const std::string
 //SQLITE functions to add for support of great circle calculations
 const double PI = 3.14159265359;
 const double DEGREES_TO_RADIANS_CONSTANT = PI/180.0;
+
+/**
+This function flips the sign of the given relational operator.  Give >=, it will return <=, etc.
+@param inputSQLRelationalOperator: The operator to flip
+@return: The flipped operator
+*/
+sql_relational_operator flipOperator(sql_relational_operator inputSQLRelationalOperator);
 
 /**
 This function can be used to add the "sin" function to the current SQLite connection.

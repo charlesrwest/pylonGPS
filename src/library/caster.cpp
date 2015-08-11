@@ -134,8 +134,6 @@ SOM_TRY
 registrationDatabaseRequestSocket.reset(new zmq::socket_t(*(context), ZMQ_DEALER));
 SOM_CATCH("Error intializing registrationDatabaseRequestSocket\n")
 
-printf("Database connection string: %s\n", databaseAccessConnectionString.c_str());
-
 SOM_TRY
 registrationDatabaseRequestSocket->connect(databaseAccessConnectionString.c_str());
 SOM_CATCH("Error connecting registration database request socket")
@@ -194,7 +192,7 @@ SOM_CATCH("Error binding transmitterRegistrationAndStreamingInterface\n")
 
 //Initialize and bind clientRequestInterface socket
 SOM_TRY
-clientRequestInterface.reset(new zmq::socket_t(*(context), ZMQ_ROUTER));
+clientRequestInterface.reset(new zmq::socket_t(*(context), ZMQ_REP));
 SOM_CATCH("Error intializing clientRequestInterface\n")
 
 SOM_TRY
@@ -345,7 +343,6 @@ return; //Shutdown message received, so return
 if(pollItems[0].revents & ZMQ_POLLIN)
 {//A database request has been received, so process it
 SOM_TRY
-printf("We got a database request!\n");
 processDatabaseRequest();
 SOM_CATCH("Error processing database request\n")
 }
@@ -431,7 +428,6 @@ return; //Shutdown message received, so return
 if(pollItems[1].revents & ZMQ_POLLIN)
 {//A message has been received, so process it
 SOM_TRY
-printf("Got unauthenticated request message\n");
 processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(threadEventQueue, false);
 SOM_CATCH("Error processing database request\n")
 }
@@ -556,6 +552,21 @@ This function processes any events that are scheduled to have occurred by now an
 Poco::Timestamp caster::handleEvents(std::priority_queue<pylongps::event> &inputEventQueue)
 {
 
+auto deleteBaseStationFromDatabase = [&](::google::protobuf::int64 inputIDToDelete)
+{
+//Make/send request to database
+std::string serializedDatabaseRequest;
+database_request databaseRequest;
+databaseRequest.set_delete_base_station_id(inputIDToDelete);
+
+databaseRequest.SerializeToString(&serializedDatabaseRequest);
+
+SOM_TRY
+registrationDatabaseRequestSocket->send(nullptr, 0, ZMQ_SNDMORE);
+registrationDatabaseRequestSocket->send(serializedDatabaseRequest.c_str(), serializedDatabaseRequest.size());
+SOM_CATCH("Error sending database request\n")
+};
+
 while(true)
 {//Process an event if its time is less than the current timestamp
 
@@ -597,8 +608,12 @@ if(mapPointer->count(eventInstance.connection_id()) == 0)
 continue;
 }
 
-if((mapPointer->at(eventInstance.connection_id()).timeLastMessageWasReceived + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0) <= eventToProcess.time)
+
+if((mapPointer->at(eventInstance.connection_id()).timeLastMessageWasReceived.epochMicroseconds() + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0) <= eventToProcess.time.epochMicroseconds())
 {//It has been more than SECONDS_BEFORE_CONNECTION_TIMEOUT since a message was received, so drop connection
+SOM_TRY //Remove from database
+deleteBaseStationFromDatabase(mapPointer->at(eventInstance.connection_id()).baseStationID);
+SOM_CATCH("Error, unable to send delete from database request\n")
 mapPointer->erase(eventInstance.connection_id());
 continue;
 }
@@ -613,6 +628,9 @@ if(eventToProcess.HasExtension(possible_credentials_expiration_event::possible_c
 possible_credentials_expiration_event eventInstance = eventToProcess.GetExtension(possible_credentials_expiration_event::possible_credentials_expiration_event_field);
 if(authenticatedConnectionStatuses.count(eventInstance.connection_id()))
 {
+SOM_TRY //Remove from database
+deleteBaseStationFromDatabase(authenticatedConnectionStatuses.at(eventInstance.connection_id()).baseStationID);
+SOM_CATCH("Error, unable to send delete from database request\n")
 authenticatedConnectionStatuses.erase(eventInstance.connection_id());
 }
 continue;
@@ -661,8 +679,6 @@ This function checks if the databaseAccessSocket has received a database_request
 */
 void caster::processDatabaseRequest()
 {
-printf("Database request being processed\n");
-
 //Receive message
 std::unique_ptr<zmq::message_t> messageBuffer;
 
@@ -673,24 +689,13 @@ SOM_CATCH("Error initializing ZMQ message")
 SOM_TRY //Receive message
 if(databaseAccessSocket->recv(messageBuffer.get(), ZMQ_DONTWAIT) != true)
 {
-printf("Um, no message?\n");
 return; //No message to be had
 }
 SOM_CATCH("Error receiving server registration/deregistration message")
 
-printf("Database message received of size %ld\n", messageBuffer->size());
-
 //Create lambda to make it easy to send request failed replies
 auto sendReplyLambda = [&] (bool inputRequestFailed, enum database_request_failure_reason inputReason = DATABASE_REQUEST_DESERIALIZATION_FAILED, std::string inputConnectionString = std::string(""))
 {
-if(inputRequestFailed)
-{
-printf("Database request failed\n");
-}
-else
-{
-printf("Database request succeeded\n");
-}
 database_reply reply;
 std::string serializedReply;
 
@@ -818,7 +823,7 @@ reply.set_caster_id(inputCasterID);
 for(int i=0; i<inputBaseStations.size(); i++)
 {
 auto newObjectPointer = reply.mutable_base_stations()->Add();
-newObjectPointer = &inputBaseStations[i];
+(*newObjectPointer) = (inputBaseStations[i]);
 }
 }
 reply.SerializeToString(&serializedReply);
@@ -841,6 +846,7 @@ return;
 SOM_CATCH("Error sending reply");
 }
 
+
 //TODO: establish limits on query complexity
 
 int boundParameterCount = 0;
@@ -857,6 +863,7 @@ return;
 SOM_CATCH("Error sending reply");
 }
 
+
 std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> clientQueryStatement(nullptr, &sqlite3_finalize);
 
 SOM_TRY
@@ -870,8 +877,8 @@ throw SOMException("Invalid ZMQ context\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __
 }
 
 int returnValue = sqlite3_step(clientQueryStatement.get());
-sqlite3_reset(clientQueryStatement.get()); //Reset so that statement can be used again
-if(returnValue != SQLITE_DONE)
+//sqlite3_reset(clientQueryStatement.get()); //Reset so that statement can be used again
+if(returnValue != SQLITE_DONE && returnValue != SQLITE_ROW)
 {
 throw SOMException("Error executing statement\n", SQLITE3_ERROR, __FILE__, __LINE__);
 }
@@ -882,34 +889,40 @@ if(sqlite3_column_count(clientQueryStatement.get()) !=1)
 throw SOMException("Error, wrong number of result columns returned\n", SQLITE3_ERROR, __FILE__, __LINE__);
 }
 
-if(sqlite3_column_type(clientQueryStatement.get(), 0) != SQLITE_INTEGER)
+
+
+if(sqlite3_column_type(clientQueryStatement.get(), 0) != SQLITE_INTEGER && returnValue != SQLITE_DONE)
 {
 throw SOMException("Error, wrong type of result columns returned\n", SQLITE3_ERROR, __FILE__, __LINE__);
 }
 
-int stepReturnValue = 0;
+
+int stepReturnValue = returnValue;
 std::vector<::google::protobuf::int64> resultPrimaryKeys;
 while(true)
 {
-int stepReturnValue = sqlite3_step(clientQueryStatement.get());
-
 if(stepReturnValue == SQLITE_DONE)
 { //All results for this field have been retrieved
 break; 
 }
 
-if(stepReturnValue != SQLITE_ROW)
+resultPrimaryKeys.push_back((::google::protobuf::int64) sqlite3_column_int(clientQueryStatement.get(), 0));
+
+stepReturnValue = sqlite3_step(clientQueryStatement.get());
+
+if(stepReturnValue != SQLITE_ROW && stepReturnValue != SQLITE_DONE)
 {
 throw SOMException("Error executing query\n", SQLITE3_ERROR, __FILE__, __LINE__);
 }
-
-resultPrimaryKeys.push_back((::google::protobuf::int64) sqlite3_column_int(clientQueryStatement.get(), 0));
 }
+
 
 std::vector<base_station_stream_information> results;
 SOM_TRY
 results = basestationToSQLInterface->retrieve(resultPrimaryKeys);
 SOM_CATCH("Error retrieving objects associated with query primary keys\n")
+
+
 
 Poco::Timestamp currentTime;
 auto timeValue = currentTime.epochMicroseconds();
@@ -917,6 +930,7 @@ for(int i=0; i<results.size(); i++)
 {
 results[i].set_uptime(timeValue-results[i].start_time());
 }
+
 
 SOM_TRY //Send back query results
 sendReplyLambda(false, CLIENT_QUERY_REQUEST_DESERIALIZATION_FAILED, casterID, results);
@@ -1085,18 +1099,10 @@ SOM_TRY
 messageRetrievalSuccessful = retrieveRouterMessage(*sourceSocket, receivedContent);
 SOM_CATCH("Error retrieving router message\n")
 
-printf("Received %ld message parts\n", receivedContent.size());
-for(int x=0; x<receivedContent.size(); x++)
-{
-printf("Submessage size: %ld\n", receivedContent[x].size());
-}
-
 if(!messageRetrievalSuccessful)
 { //Invalid message, so ignore
 return;
 }
-
-printf("Message retrieval status: %d\n", messageRetrievalSuccessful);
 
 std::string connectionID = receivedContent[0];
 //Get current time
@@ -1214,8 +1220,6 @@ databaseRequest.set_registration_connection_id(connectionID);
 
 databaseRequest.SerializeToString(&serializedDatabaseRequest);
 
-//TODO: Change back to just one call
-
 SOM_TRY
 registrationDatabaseRequestSocket->send(nullptr, 0, ZMQ_SNDMORE);
 registrationDatabaseRequestSocket->send(serializedDatabaseRequest.c_str(), serializedDatabaseRequest.size());
@@ -1262,8 +1266,6 @@ event credentialsExpirationEvent(permissionsBuffer.valid_until());
 inputEventQueue.push(credentialsExpirationEvent);
 }
 
-printf("Got this far!!\n");
-
 //Tell base station that its registration succeeded
 SOM_TRY
 sendReplyLambda(connectionID, true, sourceSocket);
@@ -1284,11 +1286,10 @@ SOM_CATCH("Error publishing new station registration\n")
 return;//Registration finished
 } //End station registration
 
-//connectionID = receivedContent[0];
 //Base station has already been registered, so forward it and update the timeout info
 //Allocate memory and copy the caster ID, stream ID and data to it
 {
-int totalMessageSize = receivedContent[3].size() + sizeof(Poco::Int64)+sizeof(Poco::Int64);
+int totalMessageSize = receivedContent[1].size() + sizeof(Poco::Int64)+sizeof(Poco::Int64);
 char *memoryBuffer = new char[totalMessageSize];
 SOMScopeGuard memoryBufferScopeGuard([&]() { delete[] memoryBuffer; }); 
 
@@ -1306,12 +1307,11 @@ unauthenticatedConnectionStatuses.at(connectionID).timeLastMessageWasReceived = 
 }
 
 
-
 *((Poco::Int64 *) memoryBuffer) = Poco::ByteOrder::toNetwork(Poco::Int64(casterID));
 *(((Poco::Int64 *) memoryBuffer) + 1) = Poco::ByteOrder::toNetwork(Poco::Int64(streamID));
 
 //Copy message to buffer
-memcpy((void *) &memoryBuffer[sizeof(Poco::Int64)*2], (void *) receivedContent[3].c_str(), receivedContent[3].size());
+memcpy((void *) &memoryBuffer[sizeof(Poco::Int64)*2], (void *) receivedContent[1].c_str(), receivedContent[1].size());
 
 //Forward message
 SOM_TRY
@@ -1321,6 +1321,27 @@ SOM_CATCH("Error, unable to forward message\n")
 SOM_TRY
 proxyStreamPublishingInterface->send(memoryBuffer, totalMessageSize);
 SOM_CATCH("Error, unable to forward message\n")
+
+//Update map and register potential timeout event
+//Update map
+if(inputIsAuthenticated)
+{
+authenticatedConnectionStatuses.at(connectionID).timeLastMessageWasReceived = timeValue;
+}
+else
+{
+unauthenticatedConnectionStatuses.at(connectionID).timeLastMessageWasReceived = timeValue;
+}
+
+//Register possible stream timeout event
+possible_base_station_event_timeout timeoutEventSubMessage;
+timeoutEventSubMessage.set_connection_id(connectionID);
+timeoutEventSubMessage.set_is_authenticated(inputIsAuthenticated);
+
+event timeoutEvent(timeValue + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0);
+(*timeoutEvent.MutableExtension(possible_base_station_event_timeout::possible_base_station_event_timeout_field)) = timeoutEventSubMessage;
+
+inputEventQueue.push(timeoutEvent);
 }
 
 }
@@ -1333,8 +1354,6 @@ This function processes reply messages sent to registrationDatabaseRequestSocket
 */
 void caster::processTransmitterRegistrationAndStreamingDatabaseReply()
 {
-printf("I got a response from the database!\n");
-
 std::unique_ptr<zmq::message_t> messageBuffer;
 
 SOM_TRY //Receive message
@@ -1365,10 +1384,8 @@ reply.ParseFromArray(messageBuffer->data(), messageBuffer->size());
 
 if(reply.has_reason())
 {
-printf("There was a problem with the database!\n");
 throw SOMException("Database request failed (" +std::to_string((int) reply.reason())+ "\n", SQLITE3_ERROR, __FILE__, __LINE__);
 }
-printf("The database stuff seemed to work out OK\n");
 
 }
 
@@ -1422,8 +1439,9 @@ subQueryString += generateRelationalSubquery(parameterCount > 0, "longitude", in
 parameterCount += inputRequest.subqueries(i).longitude_condition_size();
 
 for(int a=0; a<inputRequest.subqueries(i).uptime_condition_size(); a++)
-{ //Handle uptime conditions 
-subQueryString += generateRelationalSubquery(parameterCount > 0, "start_time", inputRequest.subqueries(i).uptime_condition(a).relation());
+{ //Handle uptime conditions
+//Have to flip relation due to startTime < requirement being related to uptime > requirement
+subQueryString += generateRelationalSubquery(parameterCount > 0, "start_time", flipOperator(inputRequest.subqueries(i).uptime_condition(a).relation()));
 }
 parameterCount += inputRequest.subqueries(i).uptime_condition_size();
 
@@ -1446,7 +1464,7 @@ if(parameterCount > 0)
 subQueryString += " AND ";
 }
 
-subQueryString += "(informal_name " + sqlStringRelationalOperatorToSQLString(inputRequest.subqueries(i).informal_name_condition().relation()) + "?)";
+subQueryString += "(informal_name " + sqlStringRelationalOperatorToSQLString(inputRequest.subqueries(i).informal_name_condition().relation()) + ")";
 parameterCount++;
 }
 
@@ -1473,8 +1491,8 @@ if(inputRequest.subqueries(i).has_circular_search_region())
 if(parameterCount > 0)
 {
 subQueryString += " AND ";
-}
-subQueryString += "(base_station_id IN (SELECT base_station_id FROM (SELECT base_station_id, (6371000*acos(cos(?)*cos(latitude)*cos(longitude-?) + sin(?)*sin(latitude))) AS distance FROM " + basestationToSQLInterface->primaryTableName + " GROUP BY distance HAVING distance <= ?)))";
+} //57.2957795130785 -> radian to degrees constant
+subQueryString += "(base_station_id IN (SELECT base_station_id FROM (SELECT base_station_id, (6371000*acos(57.2957795130785*(cos(?)*cos(latitude)*cos(longitude-?) + sin(?)*sin(latitude)))) AS distance FROM " + basestationToSQLInterface->primaryTableName + " GROUP BY distance HAVING distance <= ?)))";
 //params Qlatitude, Qlongitude, Qlatitude, distance constraint value
 parameterCount += 4;
 }
@@ -1801,7 +1819,7 @@ if(inputPreappendAND)
 querySubPart += " AND ";
 }
 
-querySubPart += "(" + inputFieldName + "IN (";
+querySubPart += "(" + inputFieldName + " IN (";
 
 for(int i=0; i<inputNumberOfFields; i++)
 {
@@ -1838,6 +1856,33 @@ return querySubPart;
 }
 
 /**
+This function flips the sign of the given relational operator.  Give >=, it will return <=, etc.
+@param inputSQLRelationalOperator: The operator to flip
+@return: The flipped operator
+*/
+sql_relational_operator pylongps::flipOperator(sql_relational_operator inputSQLRelationalOperator)
+{
+if(inputSQLRelationalOperator == LESS_THAN)
+{
+return GREATER_THAN;
+}
+else if(inputSQLRelationalOperator == LESS_THAN_EQUAL_TO)
+{
+return GREATER_THAN_EQUAL_TO;
+}
+else if(inputSQLRelationalOperator == GREATER_THAN)
+{
+return LESS_THAN;
+}
+else if(inputSQLRelationalOperator == GREATER_THAN_EQUAL_TO)
+{
+return LESS_THAN_EQUAL_TO;
+}
+
+return inputSQLRelationalOperator; //No sign to change
+}
+
+/**
 This function can be used to add the "sin" function to the current SQLite connection.
 @param inputContext: The current SQLite context
 @param inputArraySize: The number of values in the array
@@ -1845,6 +1890,7 @@ This function can be used to add the "sin" function to the current SQLite connec
 */
 void pylongps::SQLiteSinFunctionDegrees(sqlite3_context *inputContext, int inputArraySize, sqlite3_value **inputValues)
 {
+
 if(inputArraySize > 0)
 {
 sqlite3_result_double(inputContext, sin(sqlite3_value_double(inputValues[0])*DEGREES_TO_RADIANS_CONSTANT));
@@ -1863,6 +1909,7 @@ This function can be used to add the "cos" function to the current SQLite connec
 */
 void pylongps::SQLiteCosFunctionDegrees(sqlite3_context *inputContext, int inputArraySize, sqlite3_value **inputValues)
 {
+
 if(inputArraySize > 0)
 {
 sqlite3_result_double(inputContext, cos(sqlite3_value_double(inputValues[0])*DEGREES_TO_RADIANS_CONSTANT));

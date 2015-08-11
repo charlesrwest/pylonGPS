@@ -331,9 +331,18 @@ decodedCasterPublicKey = std::string(buffer, 32);
 zmq_z85_decode((uint8_t *) buffer, z85CasterSecretKey);
 decodedCasterSecretKey = std::string(buffer, 32);
 
+
+Poco::Int64 casterID = 989;
 int unauthenticatedRegistrationPort = 9010;
-caster myCaster(context.get(), 0,unauthenticatedRegistrationPort,9012,9013,9014, 9015, 9016, decodedCasterPublicKey, decodedCasterSecretKey);
-//caster myCaster(context.get(), 0,unauthenticatedRegistrationPort,9012,9013,9014, 9015, 9016, decodedCasterPublicKey, decodedCasterSecretKey, "testSQLDatabase.db");
+int authenticatedRegistrationPort = 9011;
+int clientRequestPort = 9013;
+int clientPublishingPort = 9014;
+int proxyPublishingPort = 9015;
+int streamStatusNotificationPort = 9016;
+
+
+//caster myCaster(context.get(), casterID,unauthenticatedRegistrationPort,authenticatedRegistrationPort,clientRequestPort, clientPublishingPort, proxyPublishingPort, streamStatusNotificationPort, decodedCasterPublicKey, decodedCasterSecretKey);
+caster myCaster(context.get(), casterID,unauthenticatedRegistrationPort,authenticatedRegistrationPort,clientRequestPort, clientPublishingPort, proxyPublishingPort, streamStatusNotificationPort, decodedCasterPublicKey, decodedCasterSecretKey, "testSQLDatabase.db");
 
 //Create a basestation and register it
 std::string serializedRegistrationRequest;
@@ -365,8 +374,6 @@ std::string connectionString = "tcp://127.0.0.1:" +std::to_string(unauthenticate
 registrationSocket->connect(connectionString.c_str());
 SOM_CATCH("Error connecting socket for registration with caster\n")
 
-printf("Made it to here!\n");
-
 SOM_TRY //Send registration request
 registrationSocket->send(serializedRegistrationRequest.c_str(), serializedRegistrationRequest.size());
 SOM_CATCH("Error sending base station registration request\n")
@@ -379,18 +386,216 @@ SOM_CATCH("Error initializing ZMQ message")
 
 REQUIRE(registrationSocket->recv(messageBuffer.get()) == true);
 
-printf("And maybe here?\n");
-
 transmitter_registration_reply registrationReply;
 
 std::string stringToPrint( (const char *) messageBuffer->data(), messageBuffer->size());
-printf("Got %ld\n", stringToPrint.size());
 
 registrationReply.ParseFromArray(messageBuffer->data(), messageBuffer->size());
 REQUIRE(registrationReply.IsInitialized() == true);
 
 REQUIRE(registrationReply.request_succeeded() == true);
 
-sleep(10);
+//Base station registered, so subscribe and see if we get the next message send
+//Create socket to subscribe to caster
+std::unique_ptr<zmq::socket_t> subscriberSocket;
+
+SOM_TRY //Init socket
+subscriberSocket.reset(new zmq::socket_t(*context, ZMQ_SUB));
+SOM_CATCH("Error making socket\n")
+
+SOM_TRY
+int timeoutWaitTime = 5000; //Max 5 seconds
+subscriberSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
+SOM_CATCH("Error setting socket timeout\n")
+
+SOM_TRY //Connect to caster
+std::string connectionString = "tcp://127.0.0.1:" +std::to_string(clientPublishingPort);
+subscriberSocket->connect(connectionString.c_str());
+SOM_CATCH("Error connecting socket for registration with caster\n")
+
+SOM_TRY //Set filter to allow any published messages to be received
+subscriberSocket->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
+SOM_CATCH("Error setting subscription for socket\n")
+
+//Sleep for a few milliseconds to allow connection to stabilize so no messages are missed
+std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+//Send message to caster and see if we get it back with the subscriber
+std::string testString = "This is a test string\n";
+SOM_TRY
+registrationSocket->send(testString.c_str(), testString.size());
+SOM_CATCH("Error sending message to caster\n")
+
+SOM_TRY
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+REQUIRE(subscriberSocket->recv(messageBuffer.get()) == true);
+
+//Check message format
+REQUIRE(messageBuffer->size() == (testString.size() + sizeof(Poco::Int64)*2));
+
+REQUIRE(Poco::ByteOrder::fromNetwork(*((Poco::Int64 *) messageBuffer->data())) == casterID);
+
+REQUIRE(std::string((((const char *) messageBuffer->data()) + sizeof(Poco::Int64)*2), testString.size()) == testString);
+
+//Send a query and see if we get a valid response
+std::string serializedClientRequest;
+client_query_request clientRequest; //Empty request should return all
+
+clientRequest.SerializeToString(&serializedClientRequest);
+
+std::unique_ptr<zmq::socket_t> clientSocket;
+
+SOM_TRY //Init socket
+clientSocket.reset(new zmq::socket_t(*context, ZMQ_REQ));
+SOM_CATCH("Error making socket\n")
+
+SOM_TRY
+int timeoutWaitTime = 5000; //Max 5 seconds
+clientSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
+SOM_CATCH("Error setting socket timeout\n")
+
+SOM_TRY //Connect to caster
+std::string connectionString = "tcp://127.0.0.1:" +std::to_string(clientRequestPort);
+clientSocket->connect(connectionString.c_str());
+SOM_CATCH("Error connecting socket for registration with caster\n")
+
+SOM_TRY
+clientSocket->send(serializedClientRequest.c_str(), serializedClientRequest.size());
+SOM_CATCH("Error, unable to send client request\n")
+
+SOM_TRY
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+REQUIRE(clientSocket->recv(messageBuffer.get()) == true);
+
+client_query_reply queryReply;
+queryReply.ParseFromArray(messageBuffer->data(), messageBuffer->size());
+
+REQUIRE(queryReply.IsInitialized() == true);
+REQUIRE(queryReply.has_caster_id() == true);
+REQUIRE(queryReply.caster_id() == casterID);
+REQUIRE(queryReply.has_failure_reason() == false);
+REQUIRE(queryReply.base_stations_size() == 1);
+
+auto replyBaseStationInfo = queryReply.base_stations(0);
+REQUIRE(replyBaseStationInfo.has_latitude());
+REQUIRE(replyBaseStationInfo.latitude() == Approx(1.0));
+REQUIRE(replyBaseStationInfo.has_longitude());
+REQUIRE(replyBaseStationInfo.longitude() == Approx(2.0));
+REQUIRE(replyBaseStationInfo.has_expected_update_rate());
+REQUIRE(replyBaseStationInfo.expected_update_rate() == Approx(3.0));
+REQUIRE(replyBaseStationInfo.has_message_format());
+REQUIRE(replyBaseStationInfo.message_format() == RTCM_V3_1);
+REQUIRE(replyBaseStationInfo.has_informal_name());
+REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation");
+REQUIRE(replyBaseStationInfo.has_base_station_id());
+
+//Store station ID so it can be used for later checks
+auto baseStationID = replyBaseStationInfo.base_station_id();
+
+//Do it again with a more complex query
+
+//Let the base station entry age a bit, so we can check uptime
+std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+client_query_request clientRequest0; //Empty request should return all
+
+client_subquery subQuery0; //Shouldn't return any results
+subQuery0.add_acceptable_classes(OFFICIAL);
+
+sql_double_condition doubleCondition;
+sql_integer_condition integerCondition;
+sql_string_condition stringCondition;
+
+client_subquery subQuery1; //Should return 1
+subQuery1.add_acceptable_classes(COMMUNITY);
+subQuery1.add_acceptable_formats(RTCM_V3_1);
+
+doubleCondition.set_value(0.9); 
+doubleCondition.set_relation(GREATER_THAN); 
+auto doubleConditionBuffer = subQuery1.add_latitude_condition();
+(*doubleConditionBuffer) = doubleCondition;
+doubleCondition.set_value(1.1); 
+doubleCondition.set_relation(LESS_THAN);
+doubleConditionBuffer = subQuery1.add_latitude_condition(); 
+(*doubleConditionBuffer) = doubleCondition;
+
+
+
+doubleCondition.set_value(1.9); 
+doubleCondition.set_relation(GREATER_THAN_EQUAL_TO); 
+doubleConditionBuffer = subQuery1.add_longitude_condition();
+(*doubleConditionBuffer) = doubleCondition;
+doubleCondition.set_value(2.1); 
+doubleCondition.set_relation(LESS_THAN_EQUAL_TO); 
+doubleConditionBuffer = subQuery1.add_longitude_condition();
+(*doubleConditionBuffer) = doubleCondition;
+
+
+doubleCondition.set_value(.01); //Up longer than .01 seconds
+doubleCondition.set_relation(GREATER_THAN_EQUAL_TO); 
+doubleConditionBuffer = subQuery1.add_uptime_condition();
+(*doubleConditionBuffer) = doubleCondition;
+
+doubleCondition.set_value(2.9); 
+doubleCondition.set_relation(GREATER_THAN_EQUAL_TO); 
+doubleConditionBuffer = subQuery1.add_expected_update_rate_condition();
+(*doubleConditionBuffer) = doubleCondition;
+
+
+stringCondition.set_value("testBasestat%");
+stringCondition.set_relation(LIKE);
+(*subQuery1.mutable_informal_name_condition()) = stringCondition;
+
+integerCondition.set_value(baseStationID);
+integerCondition.set_relation(EQUAL_TO);
+auto integerConditionBuffer = subQuery1.add_base_station_id_condition();
+(*integerConditionBuffer) = integerCondition;
+
+
+base_station_radius_subquery circleSubQueryPart;
+circleSubQueryPart.set_latitude(1.0);
+circleSubQueryPart.set_longitude(2.0);
+circleSubQueryPart.set_radius(10);
+(*subQuery1.mutable_circular_search_region()) = circleSubQueryPart;
+
+//Add subqueries to request
+(*clientRequest.add_subqueries()) = subQuery0;
+(*clientRequest.add_subqueries()) = subQuery1;
+
+clientRequest.SerializeToString(&serializedClientRequest);
+
+SOM_TRY
+clientSocket->send(serializedClientRequest.c_str(), serializedClientRequest.size());
+SOM_CATCH("Error, unable to send client request\n")
+
+SOM_TRY
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+REQUIRE(clientSocket->recv(messageBuffer.get()) == true);
+
+queryReply.ParseFromArray(messageBuffer->data(), messageBuffer->size());
+REQUIRE(queryReply.IsInitialized() == true);
+REQUIRE(queryReply.has_caster_id() == true);
+REQUIRE(queryReply.caster_id() == casterID);
+REQUIRE(queryReply.has_failure_reason() == false);
+REQUIRE(queryReply.base_stations_size() == 1);
+
+replyBaseStationInfo = queryReply.base_stations(0);
+REQUIRE(replyBaseStationInfo.has_latitude());
+REQUIRE(replyBaseStationInfo.latitude() == Approx(1.0));
+REQUIRE(replyBaseStationInfo.has_longitude());
+REQUIRE(replyBaseStationInfo.longitude() == Approx(2.0));
+REQUIRE(replyBaseStationInfo.has_expected_update_rate());
+REQUIRE(replyBaseStationInfo.expected_update_rate() == Approx(3.0));
+REQUIRE(replyBaseStationInfo.has_message_format());
+REQUIRE(replyBaseStationInfo.message_format() == RTCM_V3_1);
+REQUIRE(replyBaseStationInfo.has_informal_name());
+REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation");
+
 }
 }

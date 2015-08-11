@@ -7,7 +7,7 @@ message database_request
 {
 optional bytes registration_connection_id = 10; //The connection ID associated with the base_station_to_register in the registration thread
 optional base_station_stream_information base_station_to_register = 20; //The information about a basestation to register
-optional uint64 delete_base_station_id = 30; //The ID of a basestation to remove
-optional uint64 base_station_to_update_id = 40; //The ID of a basestation to update
+optional int64 delete_base_station_id = 30; //The ID of a basestation to remove
+optional int64 base_station_to_update_id = 40; //The ID of a basestation to update
 optional double real_update_rate = 50; //The real update rate to update in the table
 }

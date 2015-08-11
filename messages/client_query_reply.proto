@@ -12,7 +12,7 @@ CLIENT_QUERY_REQUEST_TOO_COMPLEX = 3;  //The request had too many things to chec
 //This message contains either an error message indicating the request was invalid, a list (sometimes sorted) of base station information structures or a message containing the details about the caster.
 message client_query_reply
 {
-optional uint64 caster_id = 1; //The (currently required) caster ID associated with the answering caster
-repeated base_station_stream_information base_stations = 2; //A list of base_stations that meet the required criteria
-optional client_query_request_failure_reason failure_reason = 3; //The reason the request failed (the request failed if this has a value)
+optional int64 caster_id = 10; //The (currently required) caster ID associated with the answering caster
+repeated base_station_stream_information base_stations = 20; //A list of base_stations that meet the required criteria
+optional client_query_request_failure_reason failure_reason = 30; //The reason the request failed (the request failed if this has a value)
 }
