@@ -1,0 +1,10 @@
+package pylongps; //Put in pylongps namespace
+
+import "signature.proto";
+
+//This message is used to send a request to add or blacklist a set of keys from the lists of acceptable signing keys for different applications
+message key_management_request
+{ //For now, both fields are required
+optional bytes serialized_key_status_changes = 10; //A serialized key_status_changes message which details the changes to make to the different keys lists
+optional signature signature = 20; //The signature from the owner of the caster authorizing the change
+}

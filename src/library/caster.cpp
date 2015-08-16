@@ -12,13 +12,18 @@ This function initializes the class, creates the associated database, and starts
 @param inputClientStreamPublishingPortNumber: The port to open for the interface to publish stream data to clients
 @param inputProxyStreamPublishingPortNumber: The port to open for the interface to publish stream data to proxies (potentially higher priority)
 @param inputStreamStatusNotificationPortNumber: The port for the interface that is used to to publish stream status changes
+@param inputKeyRegistrationAndRemovalPortNumber: The port for the interface that is used to add/remove 
 @param inputCasterPublicKey: The public key for this caster to use for encryption/authentation
 @param inputCasterSecretKey: The secret key for this caster to use for encryption/authentation
-@param inputCasterSQLITEConnectionString: The connection string used to connect to or create the SQLITE database used for stream source entry management and query resolution.  If an empty string is given (by default), it will connect/create an in memory database with a random 64 bit hex number string (example: "file:jfuggekdai?mode=memory&cache=shared")
+@param inputSigningKeysManagementKey: The signing key that has permission to add/remove allowed signing keys from the caster
+@param inputOfficialSigningKeys: A list of the initial set of approved keys for official basestations
+@param inputRegisteredCommunitySigningKeys: A list of the initial set of approved keys for registered community basestations
+@param inputBlacklistedKeys: A list of signing keys not to trust 
+@param inputCasterSQLITEConnectionString: The connection string used to connect to or create the SQLITE database used for stream source entry management and query resolution.  If an empty string is given (by default), it will connect/create an in memory database with a random 64 bit number string (example: "file:9735926149617295559?mode=memory&cache=shared")
 
 @throws: This function can throw exceptions
 */
-caster::caster(zmq::context_t *inputContext, int64_t inputCasterID, uint32_t inputTransmitterRegistrationAndStreamingPortNumber, uint32_t inputAuthenticatedTransmitterRegistrationAndStreamingPortNumber, uint32_t inputClientRequestPortNumber, uint32_t inputClientStreamPublishingPortNumber, uint32_t inputProxyStreamPublishingPortNumber, uint32_t inputStreamStatusNotificationPortNumber, const std::string &inputCasterPublicKey, const std::string &inputCasterSecretKey, const std::string &inputCasterSQLITEConnectionString) : databaseConnection(nullptr, &sqlite3_close_v2)
+caster::caster(zmq::context_t *inputContext, int64_t inputCasterID, uint32_t inputTransmitterRegistrationAndStreamingPortNumber, uint32_t inputAuthenticatedTransmitterRegistrationAndStreamingPortNumber, uint32_t inputClientRequestPortNumber, uint32_t inputClientStreamPublishingPortNumber, uint32_t inputProxyStreamPublishingPortNumber, uint32_t inputStreamStatusNotificationPortNumber, uint32_t inputKeyRegistrationAndRemovalPortNumber, const std::string &inputCasterPublicKey, const std::string &inputCasterSecretKey, const std::string &inputSigningKeysManagementKey, const std::vector<std::string> &inputOfficialSigningKeys, const std::vector<std::string> &inputRegisteredCommunitySigningKeys, const std::vector<std::string> &inputBlacklistedKeys, const std::string &inputCasterSQLITEConnectionString) : databaseConnection(nullptr, &sqlite3_close_v2)
 {
 if(inputContext == nullptr)
 {
@@ -43,6 +48,41 @@ streamStatusNotificationPortNumber = inputStreamStatusNotificationPortNumber;
 casterPublicKey = inputCasterPublicKey;
 casterSecretKey = inputCasterSecretKey;
 
+//Check key lengths and place the keys in the set
+if(inputSigningKeysManagementKey.size() != crypto_sign_PUBLICKEYBYTES)
+{
+throw SOMException("Master signing key is incorrect length\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
+}
+signingKeysManagementKey = inputSigningKeysManagementKey;
+
+for(int i=0; i<inputOfficialSigningKeys.size(); i++)
+{
+if(inputOfficialSigningKeys[i].size() != crypto_sign_PUBLICKEYBYTES)
+{
+throw SOMException("One of the official signing keys is incorrect length\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
+}
+officialSigningKeys.insert(inputOfficialSigningKeys[i]);
+}
+
+for(int i=0; i<inputRegisteredCommunitySigningKeys.size(); i++)
+{
+if(inputRegisteredCommunitySigningKeys[i].size() != crypto_sign_PUBLICKEYBYTES)
+{
+throw SOMException("One of the registered community signing keys is incorrect length\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
+}
+registeredCommunitySigningKeys.insert(inputRegisteredCommunitySigningKeys[i]);
+}
+
+for(int i=0; i<inputBlacklistedKeys.size(); i++)
+{
+if(inputBlacklistedKeys[i].size() != crypto_sign_PUBLICKEYBYTES)
+{
+throw SOMException("One of the signing keys in the blacklist is a incorrect length\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
+}
+blacklistedSigningKeys.insert(inputBlacklistedKeys[i]);
+}
+
+
 //Set database connection string 
 if(inputCasterSQLITEConnectionString == "")
 {
@@ -66,7 +106,7 @@ throw SOMException("Unable to open database connection\n", SQLITE3_ERROR, __FILE
 }
 databaseConnection.reset(databaseConnectionBuffer); //Transfer ownership so that connection will be closed when object goes out of scope
 
-//Make sure foreign key relationships will be honored
+//Make sure foreign key relationshcrypto_sign_PUBLICKEYBYTESips will be honored
 if(sqlite3_exec(databaseConnection.get(), "PRAGMA foreign_keys = on;", NULL, NULL, NULL) != SQLITE_OK)
 {
 throw SOMException("Error enabling foreign keys\n", SQLITE3_ERROR, __FILE__, __LINE__);
@@ -189,6 +229,19 @@ SOM_TRY //Bind port for socket
 std::string bindingAddress = "tcp://*:" + std::to_string(authenticatedTransmitterRegistrationAndStreamingPortNumber);
 transmitterRegistrationAndStreamingInterface->bind(bindingAddress.c_str());
 SOM_CATCH("Error binding transmitterRegistrationAndStreamingInterface\n")
+
+//Initialize and bind keyRegistrationAndRemoval socket
+SOM_TRY
+keyRegistrationAndRemovalInterface.reset(new zmq::socket_t(*(context), ZMQ_REP));
+SOM_CATCH("Error intializing keyRegistrationAndRemovalInterface\n")
+
+SOM_TRY
+std::string bindingAddress = "tcp://*:" + std::to_string(inputKeyRegistrationAndRemovalPortNumber);
+keyRegistrationAndRemovalInterface->bind(bindingAddress.c_str());
+SOM_CATCH("Error binding keyRegistrationAndRemovalInterface\n")
+
+
+
 
 //Initialize and bind clientRequestInterface socket
 SOM_TRY
@@ -373,13 +426,13 @@ void caster::streamRegistrationAndPublishingThreadFunction()
 {
 try
 {
-//Responsible for streamRegistrationAndPublishingThreadShutdownListeningSocket, authenticatedTransmitterRegistrationAndStreamingInterface, transmitterRegistrationAndStreamingInterface, registrationDatabaseRequestSocket
+//Responsible for streamRegistrationAndPublishingThreadShutdownListeningSocket, authenticatedTransmitterRegistrationAndStreamingInterface, transmitterRegistrationAndStreamingInterface, registrationDatabaseRequestSocket, keyRegistrationAndRemovalInterface
 //Publishes to clientStreamPublishingInterface, proxyStreamPublishingInterface, streamStatusNotificationInterface
 
 //Create priority queue for event queue and poll items, then start polling/event cycle
 std::priority_queue<event> threadEventQueue;
 std::unique_ptr<zmq::pollitem_t[]> pollItems;
-int numberOfPollItems = 4;
+int numberOfPollItems = 5;
 
 SOM_TRY
 pollItems.reset(new zmq::pollitem_t[numberOfPollItems]);
@@ -390,6 +443,7 @@ pollItems[0] = {(void *) (*streamRegistrationAndPublishingThreadShutdownListenin
 pollItems[1] = {(void *) (*transmitterRegistrationAndStreamingInterface), 0, ZMQ_POLLIN, 0};
 pollItems[2] = {(void *) (*authenticatedTransmitterRegistrationAndStreamingInterface), 0, ZMQ_POLLIN, 0};
 pollItems[3] = {(void *) (*registrationDatabaseRequestSocket), 0, ZMQ_POLLIN, 0};
+pollItems[4] = {(void *) (*keyRegistrationAndRemovalInterface), 0, ZMQ_POLLIN, 0};
 
 
 //Determine if an event has timed out (and deal with it if so) and then calculate the time until the next event timeout
@@ -426,18 +480,26 @@ return; //Shutdown message received, so return
 
 //Check if an unauthenticated registration or stream update has been received
 if(pollItems[1].revents & ZMQ_POLLIN)
-{//A message has been received, so process it
+{//A message has been received, so process it (unauthenticated)
 SOM_TRY
 processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(threadEventQueue, false);
-SOM_CATCH("Error processing database request\n")
+SOM_CATCH("Error processing registration request\n")
+}
+
+//Check if a key status change request has been received 
+if(pollItems[4].revents & ZMQ_POLLIN)
+{//A message has been received, so process it
+SOM_TRY
+processKeyManagementRequest(threadEventQueue);
+SOM_CATCH("Error processing request\n")
 }
 
 //Check if an authenticated registration or stream update has been received
 if(pollItems[2].revents & ZMQ_POLLIN)
-{//A message has been received, so process it
+{//A message has been received, so process it (authenticated)
 SOM_TRY
 processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(threadEventQueue, true);
-SOM_CATCH("Error processing request\n")
+SOM_CATCH("Error processing registration request\n")
 }
 
 //Check if we've received a reply from the database server
@@ -552,21 +614,6 @@ This function processes any events that are scheduled to have occurred by now an
 Poco::Timestamp caster::handleEvents(std::priority_queue<pylongps::event> &inputEventQueue)
 {
 
-auto deleteBaseStationFromDatabase = [&](::google::protobuf::int64 inputIDToDelete)
-{
-//Make/send request to database
-std::string serializedDatabaseRequest;
-database_request databaseRequest;
-databaseRequest.set_delete_base_station_id(inputIDToDelete);
-
-databaseRequest.SerializeToString(&serializedDatabaseRequest);
-
-SOM_TRY
-registrationDatabaseRequestSocket->send(nullptr, 0, ZMQ_SNDMORE);
-registrationDatabaseRequestSocket->send(serializedDatabaseRequest.c_str(), serializedDatabaseRequest.size());
-SOM_CATCH("Error sending database request\n")
-};
-
 while(true)
 {//Process an event if its time is less than the current timestamp
 
@@ -593,51 +640,376 @@ if(eventToProcess.HasExtension(possible_base_station_event_timeout::possible_bas
 { //possible_base_station_event_timeout
 possible_base_station_event_timeout eventInstance = eventToProcess.GetExtension(possible_base_station_event_timeout::possible_base_station_event_timeout_field);
 
-std::map<std::string, connectionStatus> *mapPointer;
+std::map<std::string, connectionStatus> *mapPointer = nullptr;
 if(eventInstance.is_authenticated())
 {
-mapPointer = &authenticatedConnectionStatuses;
+mapPointer = &authenticatedConnectionIDToConnectionStatus;
 }
 else
 {
-mapPointer = &unauthenticatedConnectionStatuses;
-}
-
-if(mapPointer->count(eventInstance.connection_id()) == 0)
-{//The connection has already been dealt with
-continue;
+mapPointer = &unauthenticatedConnectionIDToConnectionStatus;
 }
 
 
 if((mapPointer->at(eventInstance.connection_id()).timeLastMessageWasReceived.epochMicroseconds() + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0) <= eventToProcess.time.epochMicroseconds())
 {//It has been more than SECONDS_BEFORE_CONNECTION_TIMEOUT since a message was received, so drop connection
-SOM_TRY //Remove from database
-deleteBaseStationFromDatabase(mapPointer->at(eventInstance.connection_id()).baseStationID);
-SOM_CATCH("Error, unable to send delete from database request\n")
-mapPointer->erase(eventInstance.connection_id());
-continue;
-}
-}
- 
-if(eventToProcess.HasExtension(possible_credentials_expiration_event::possible_credentials_expiration_event_field))
-{ //possible_credentials_expiration_event
-//TODO: Possible security vulnerable here because we store potentially long term state for each connection made
-//Could replace with a central database of keys and their associated connections and just have one timeout for a given key instead of one per connection instance.
-//Credentials have expired, so delete connection if it hasn't been already
-
-possible_credentials_expiration_event eventInstance = eventToProcess.GetExtension(possible_credentials_expiration_event::possible_credentials_expiration_event_field);
-if(authenticatedConnectionStatuses.count(eventInstance.connection_id()))
+if(eventInstance.is_authenticated())
 {
 SOM_TRY //Remove from database
-deleteBaseStationFromDatabase(authenticatedConnectionStatuses.at(eventInstance.connection_id()).baseStationID);
-SOM_CATCH("Error, unable to send delete from database request\n")
-authenticatedConnectionStatuses.erase(eventInstance.connection_id());
+removeAuthenticatedConnection(eventInstance.connection_id());
+SOM_CATCH("Error, unable to remove authenticated connection\n")
+continue;
 }
+else
+{
+SOM_TRY
+removeUnauthenticatedConnection(eventInstance.connection_id());
+SOM_CATCH("Error, unable to remove unauthenticated connection\n")
+}
+}
+
+}
+ 
+if(eventToProcess.HasExtension(blacklist_key_timeout_event::blacklist_key_timeout_event_field))
+{ //Blacklist entry timed out, so simply remove the key from the blacklist
+blacklistedSigningKeys.erase(eventToProcess.GetExtension(blacklist_key_timeout_event::blacklist_key_timeout_event_field).blacklist_key());
+continue;
+}
+
+if(eventToProcess.HasExtension(connection_key_timeout_event::connection_key_timeout_event_field))
+{ //A connection key has timed out, so remove it
+SOM_TRY
+removeConnectionKey(eventToProcess.GetExtension(connection_key_timeout_event::connection_key_timeout_event_field).connection_key());
+SOM_CATCH("Error removing connection key\n")
+continue;
+}
+
+if(eventToProcess.HasExtension(signing_key_timeout_event::signing_key_timeout_event_field))
+{ //A signing key has timed out, so remove it
+SOM_TRY
+removeSigningKey(eventToProcess.GetExtension(signing_key_timeout_event::signing_key_timeout_event_field).key());
+SOM_CATCH("Error removing signing key\n")
 continue;
 }
 
 }
 
+}
+
+/**
+This function adds a authenticated connection by placing it in the associated maps/sets and the database.  The call is ignored if the connection key is not found in connectionKeyToSigningKeys, so addConnectionKey should have been called first for the connection key.
+@param inputConnectionID: The ZMQ connection ID string of the connection to add
+@param inputConnectionKey: The ZMQ CURVE key that is being used with this connection (connection key)
+@param inputConnectionStatus: The current status of the connection
+@param inputBaseStationStreamInfo: The connection's details to register with the database
+@param inputEventQueue: The queue to register the timeout associated with this connection (close if idle for X seconds).
+
+@throws: This function can throw exceptions
+*/
+void caster::addAuthenticatedConnection(const std::string &inputConnectionID,  const std::string &inputConnectionKey, const connectionStatus &inputConnectionStatus, const base_station_stream_information &inputBaseStationStreamInfo, std::priority_queue<event> &inputEventQueue)
+{
+if(connectionKeyToSigningKeys.count(inputConnectionID))
+{
+return; //Connection key entry not found, so the connection cannot be registered
+}
+
+//Add to maps/sets
+authenticatedConnectionIDToConnectionKey.emplace(inputConnectionID, inputConnectionKey);
+connectionKeyToAuthenticatedConnectionIDs.emplace(inputConnectionKey, inputConnectionID);
+authenticatedConnectionIDToConnectionStatus[inputConnectionID] = inputConnectionStatus;
+
+//Send registration request to database
+std::string serializedDatabaseRequest;
+database_request databaseRequest;
+(*databaseRequest.mutable_base_station_to_register()) = inputBaseStationStreamInfo;
+databaseRequest.set_registration_connection_id(inputConnectionID);
+
+databaseRequest.SerializeToString(&serializedDatabaseRequest);
+
+SOM_TRY
+registrationDatabaseRequestSocket->send(nullptr, 0, ZMQ_SNDMORE);
+registrationDatabaseRequestSocket->send(serializedDatabaseRequest.c_str(), serializedDatabaseRequest.size());
+SOM_CATCH("Error sending database request\n")
+
+//Add timeout event to queue
+Poco::Timestamp currentTime;
+auto timeValue = currentTime.epochMicroseconds();
+
+possible_base_station_event_timeout timeoutEventSubMessage;
+timeoutEventSubMessage.set_connection_id(inputConnectionID);
+timeoutEventSubMessage.set_is_authenticated(true);
+
+event timeoutEvent(timeValue + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0);
+(*timeoutEvent.MutableExtension(possible_base_station_event_timeout::possible_base_station_event_timeout_field)) = timeoutEventSubMessage;
+
+inputEventQueue.push(timeoutEvent);
+}
+
+/**
+This function removes a authenticated connection and updates the associated datastructures.
+@param inputConnectionID: The connection ID of the authenticated connection to remove
+
+@throws: This function can throw exceptions
+*/
+void caster::removeAuthenticatedConnection(const std::string &inputConnectionID)
+{
+//Check if it has already been erased
+if(authenticatedConnectionIDToConnectionKey.count(inputConnectionID) == 0)
+{
+return;
+}
+
+//Remove from maps/sets
+std::string connectionKey(authenticatedConnectionIDToConnectionKey.at(inputConnectionID));
+authenticatedConnectionIDToConnectionKey.erase(inputConnectionID);
+
+removeKeyValuePairFromStringMultimap(connectionKeyToAuthenticatedConnectionIDs, connectionKey, inputConnectionID);
+
+auto basestationID = authenticatedConnectionIDToConnectionStatus.at(inputConnectionID).baseStationID;
+authenticatedConnectionIDToConnectionStatus.erase(inputConnectionID);
+
+//Remove from database
+std::string serializedDatabaseRequest;
+database_request databaseRequest;
+databaseRequest.set_delete_base_station_id(basestationID);
+
+databaseRequest.SerializeToString(&serializedDatabaseRequest);
+
+SOM_TRY
+registrationDatabaseRequestSocket->send(nullptr, 0, ZMQ_SNDMORE);
+registrationDatabaseRequestSocket->send(serializedDatabaseRequest.c_str(), serializedDatabaseRequest.size());
+SOM_CATCH("Error sending database request\n")
+}
+
+/**
+This function adds a connection signing key, updates the associated maps and schedules it to timeout if it has a timeout time.  Only signing keys which are already present will be acknowledged.
+@param inputConnectionKey: The connection key to add
+@param inputExpirationTime: The timestamp of when this key expires (negative if it does not expire on its own)
+@param inputSigningKeys: The keys which have signed this 
+@param inputEventQueue: The event queue to add the timeout event to
+
+@return: true if the key had valid signing keys and was added
+*/
+bool caster::addConnectionKey(const std::string &inputConnectionKey, int64_t inputExpirationTime, const std::vector<std::string> &inputSigningKeys, std::priority_queue<event> &inputEventQueue)
+{
+//Check if any of the signing keys are considered valid
+std::set<std::string> listOfOfficialSigningKeys;
+for(int i=0; i<inputSigningKeys.size(); i++)
+{
+if(officialSigningKeys.count(inputSigningKeys[i]) > 0)
+{
+listOfOfficialSigningKeys.insert(inputSigningKeys[i]);
+}
+}
+
+std::set<std::string> listOfRegisteredCommunitySigningKeys;
+if(listOfOfficialSigningKeys.size() == 0)
+{
+for(int i=0; i<inputSigningKeys.size(); i++)
+{
+if(registeredCommunitySigningKeys.count(inputSigningKeys[i]) > 0)
+{
+listOfRegisteredCommunitySigningKeys.insert(inputSigningKeys[i]);
+}
+}
+}
+
+if(listOfOfficialSigningKeys.size() && listOfRegisteredCommunitySigningKeys.size() == 0)
+{
+return false; //Doesn't have a valid signing key
+}
+
+std::set<std::string> *set = nullptr;
+if(listOfOfficialSigningKeys.size() > 0)
+{ //Official 
+set = &listOfOfficialSigningKeys;
+}
+else
+{ //Registered community
+set = &listOfRegisteredCommunitySigningKeys;
+}
+
+//Add to maps
+for(auto iter = set->begin(); iter!=set->end(); iter++)
+{
+signingKeyToConnectionKeys.emplace(*iter, inputConnectionKey);
+connectionKeyToSigningKeys.emplace(inputConnectionKey, *iter);
+}
+
+//Add timeout event to queue
+if(inputExpirationTime >= 0)
+{
+connection_key_timeout_event timeoutEventSubMessage;
+timeoutEventSubMessage.set_connection_key(inputConnectionKey);
+
+event timeoutEvent(inputExpirationTime);
+(*timeoutEvent.MutableExtension(connection_key_timeout_event::connection_key_timeout_event_field)) = timeoutEventSubMessage;
+
+inputEventQueue.push(timeoutEvent);
+}
+
+return true;
+}
+
+/**
+This function removes the given connection key from the maps and removes all associated connections.
+@param inputConnectionKey: The connection key to remove
+
+@throws: This function can throw exceptions
+*/
+void caster::removeConnectionKey(const std::string &inputConnectionKey)
+{
+//Remove/delete all affiliated connections
+auto equal_range = connectionKeyToAuthenticatedConnectionIDs.equal_range(inputConnectionKey);
+for(auto iter = equal_range.first; iter != equal_range.second;)
+{
+auto buffer = iter++; //Iter's entry gets deleted, so we have to increment before that happens
+SOM_TRY
+removeAuthenticatedConnection(iter->second);
+SOM_CATCH("Error removing authenticated connection\n")
+iter = buffer; 
+}
+
+//Remove from maps
+equal_range = connectionKeyToSigningKeys.equal_range(inputConnectionKey);
+for(auto iter = equal_range.first; iter != equal_range.second;)
+{
+removeKeyValuePairFromStringMultimap(signingKeyToConnectionKeys, iter->second, inputConnectionKey);
+}
+connectionKeyToSigningKeys.erase(inputConnectionKey);
+}
+
+/**
+This function adds a new signing key and schedules its timeout.
+@param inputSigningKey: The signing key to add
+@param inputIsOfficialSigningKey: True if the signing key is an "Official" one and false if it is "Registered Community"
+@param inputExpirationTime: When the signing key becomes invalid
+@param inputEventQueue: The event queue to add the timeout event to
+
+@return: true if the key was added successfully or is already present
+*/
+bool caster::addSigningKey(const std::string &inputSigningKey, bool inputIsOfficialSigningKey, int64_t inputExpirationTime, std::priority_queue<event> &inputEventQueue)
+{
+if((officialSigningKeys.count(inputSigningKey) > 0 && inputIsOfficialSigningKey) || (registeredCommunitySigningKeys.count(inputSigningKey) > 0 && !inputIsOfficialSigningKey))
+{
+return true; //The key has already been added
+}
+
+Poco::Timestamp currentTime;
+auto timeValue = currentTime.epochMicroseconds();
+if(inputExpirationTime < timeValue)
+{
+return false; //Key has already expired
+}
+
+if(inputIsOfficialSigningKey)
+{
+officialSigningKeys.insert(inputSigningKey);
+}
+else
+{
+registeredCommunitySigningKeys.insert(inputSigningKey);
+}
+
+//Add timeout event
+signing_key_timeout_event timeoutEventSubMessage;
+timeoutEventSubMessage.set_key(inputSigningKey);
+timeoutEventSubMessage.set_is_official(inputIsOfficialSigningKey);
+
+event timeoutEvent(inputExpirationTime);
+(*timeoutEvent.MutableExtension(signing_key_timeout_event::signing_key_timeout_event_field)) = timeoutEventSubMessage;
+
+inputEventQueue.push(timeoutEvent);
+}
+
+/**
+This function removes a signing key.  This can cause a cascade where a connection key which is reliant on it is removed, which can in turn cause many connections to be removed.
+@param inputSigningKey: The signing key to remove
+
+@throws: This function can throw exceptions
+*/
+void caster::removeSigningKey(const std::string &inputSigningKey)
+{
+//Remove any affected connection keys and delete all references to this key
+auto equal_range = signingKeyToConnectionKeys.equal_range(inputSigningKey);
+for(auto iter = equal_range.first; iter != equal_range.second;)
+{
+auto buffer = iter++; //Object refered to by iter will be removed
+if(connectionKeyToSigningKeys.count(iter->second) < 2)
+{//If this connection key is only signed by this signing key, remove it
+SOM_TRY
+removeConnectionKey(iter->second);
+SOM_CATCH("Error removing signing key\n")
+}
+else
+{
+removeKeyValuePairFromStringMultimap(connectionKeyToSigningKeys, iter->second, inputSigningKey);
+signingKeyToConnectionKeys.erase(iter);
+}
+iter = buffer;
+} //Takes care of signingKeyToConnectionKeys, connectionKeyToSigningKeys
+
+//Erase from both (won't do anything if not there)
+officialSigningKeys.erase(inputSigningKey);
+registeredCommunitySigningKeys.erase(inputSigningKey);
+}
+
+/**
+Add a key to the blacklist, triggering its removal from "official" and "registered community" and the prevention of it from being reused until the certificate expires.
+@param inputBlacklistKey: The key to place on the blacklist
+@param inputExpirationTime: When the key expires
+@param inputEventQueue: The queue to to ad the expiration event to
+
+@throws: this function can throw exceptions
+*/
+void caster::addBlacklistKey(const std::string &inputBlacklistKey, int64_t inputExpirationTime, std::priority_queue<event> &inputEventQueue)
+{
+SOM_TRY //Remove the key from list of signing keys
+removeSigningKey(inputBlacklistKey);
+SOM_CATCH("Error removing blacklist key\n")
+
+//Add to the list of blacklisted keys
+blacklistedSigningKeys.insert(inputBlacklistKey);
+
+//Add timeout event
+blacklist_key_timeout_event timeoutEventSubMessage;
+timeoutEventSubMessage.set_blacklist_key(inputBlacklistKey);
+
+event timeoutEvent(inputExpirationTime);
+(*timeoutEvent.MutableExtension(blacklist_key_timeout_event::blacklist_key_timeout_event_field)) = timeoutEventSubMessage;
+
+inputEventQueue.push(timeoutEvent);
+}
+
+/**
+This function removes a unauthenticated connection and updates the associated datastructures.
+@param inputConnectionID: The connection ID of the authenticated connection to remove
+
+@throws: This function can throw exceptions
+*/
+void caster::removeUnauthenticatedConnection(const std::string &inputConnectionID)
+{
+//Check if it has already been erased
+if(unauthenticatedConnectionIDToConnectionStatus.count(inputConnectionID) == 0)
+{
+return;
+}
+
+//Remove from maps/sets
+auto basestationID = unauthenticatedConnectionIDToConnectionStatus.at(inputConnectionID).baseStationID;
+unauthenticatedConnectionIDToConnectionStatus.erase(inputConnectionID);
+
+//Remove from database
+std::string serializedDatabaseRequest;
+database_request databaseRequest;
+databaseRequest.set_delete_base_station_id(basestationID);
+
+databaseRequest.SerializeToString(&serializedDatabaseRequest);
+
+SOM_TRY
+registrationDatabaseRequestSocket->send(nullptr, 0, ZMQ_SNDMORE);
+registrationDatabaseRequestSocket->send(serializedDatabaseRequest.c_str(), serializedDatabaseRequest.size());
+SOM_CATCH("Error sending database request\n")
 }
 
 /**
@@ -1091,6 +1463,16 @@ else
 sourceSocket = transmitterRegistrationAndStreamingInterface.get();
 } 
 
+std::map<std::string, connectionStatus> *associatedMap = nullptr;
+if(inputIsAuthenticated)
+{
+associatedMap = &authenticatedConnectionIDToConnectionStatus;
+}
+else
+{
+associatedMap = &unauthenticatedConnectionIDToConnectionStatus;
+} 
+
 
 //Receive messages
 std::vector<std::string> receivedContent;
@@ -1109,9 +1491,11 @@ std::string connectionID = receivedContent[0];
 Poco::Timestamp currentTime;
 auto timeValue = currentTime.epochMicroseconds();
 
+
 //See if this base station has been registered yet
-if((!inputIsAuthenticated && unauthenticatedConnectionStatuses.count(connectionID) == 0) || (inputIsAuthenticated && authenticatedConnectionStatuses.count(connectionID) == 0))
+if(associatedMap->count(connectionID) == 0)
 {
+
 //This connection has not been seen before, so it should have a transmitter_registration_request
 //Attempt to deserialize
 transmitter_registration_request request;
@@ -1125,6 +1509,15 @@ return;
 SOM_CATCH("Error sending reply");
 }
 
+base_station_stream_information *streamInfo = request.mutable_stream_info();
+
+if(!streamInfo->has_message_format())
+{//Missing a required field
+SOM_TRY
+sendReplyLambda(connectionID, false, sourceSocket, MISSING_REQUIRED_FIELD);
+return;
+SOM_CATCH("Error sending reply")
+}
 
 
 //Check permissions if authenticated
@@ -1156,19 +1549,39 @@ return;
 SOM_CATCH("Error sending reply");
 }
 }
-
+else
+{
+SOM_TRY
+sendReplyLambda(connectionID, false, sourceSocket, CREDENTIALS_DESERIALIZATION_FAILED);
+return;
+SOM_CATCH("Error sending reply");
 }
 
-
-
-base_station_stream_information *streamInfo = request.mutable_stream_info();
-
-if(!streamInfo->has_message_format())
-{//Missing a required field
+if(connectionID.find(permissionsBuffer.public_key()) != 0 || permissionsBuffer.public_key().size() != 32) //ZMQ key size
+{ //The connection ID doesn't match the certificate key
 SOM_TRY
-sendReplyLambda(connectionID, false, sourceSocket, MISSING_REQUIRED_FIELD);
+sendReplyLambda(connectionID, false, sourceSocket, CREDENTIALS_DESERIALIZATION_FAILED);
 return;
-SOM_CATCH("Error sending reply")
+SOM_CATCH("Error sending reply");
+}
+
+//Connection appears to be valid, so add it
+auto credentialsPointer = *request.mutable_transmitter_credentials();
+std::vector<std::string> signingKeys;
+
+for(int i=0; i<credentialsPointer.signatures_size(); i++)
+{
+signingKeys.push_back(credentialsPointer.signatures(i).public_key());
+}
+
+//Add connection key
+if(addConnectionKey(permissionsBuffer.public_key(), permissionsBuffer.valid_until(), signingKeys, inputEventQueue) != true)
+{
+SOM_TRY
+sendReplyLambda(connectionID, false, sourceSocket, INSUFFICIENT_PERMISSIONS);
+return;
+SOM_CATCH("Error sending reply");
+}
 }
 
 
@@ -1213,6 +1626,8 @@ streamInfo->clear_uptime();
 streamInfo->set_start_time(timeValue);
 
 //Make/send request to database
+if(!inputIsAuthenticated)
+{
 std::string serializedDatabaseRequest;
 database_request databaseRequest;
 (*databaseRequest.mutable_base_station_to_register()) = (*streamInfo);
@@ -1224,7 +1639,7 @@ SOM_TRY
 registrationDatabaseRequestSocket->send(nullptr, 0, ZMQ_SNDMORE);
 registrationDatabaseRequestSocket->send(serializedDatabaseRequest.c_str(), serializedDatabaseRequest.size());
 SOM_CATCH("Error sending database request\n")
-
+}
 
 //Add to map
 connectionStatus associatedConnectionStatus;
@@ -1233,15 +1648,18 @@ associatedConnectionStatus.baseStationID = streamID;
 associatedConnectionStatus.timeLastMessageWasReceived = timeValue;
 if(inputIsAuthenticated)
 {
-authenticatedConnectionStatuses[connectionID] = associatedConnectionStatus;
+SOM_TRY
+addAuthenticatedConnection(connectionID, permissionsBuffer.public_key(), associatedConnectionStatus, *streamInfo, inputEventQueue);
+SOM_CATCH("Error adding authenticated connection\n")
 }
 else
 {
-unauthenticatedConnectionStatuses[connectionID] = associatedConnectionStatus;
+unauthenticatedConnectionIDToConnectionStatus[connectionID] = associatedConnectionStatus;
 }
 
 
-
+if(!inputIsAuthenticated)
+{
 //Register possible stream timeout event
 possible_base_station_event_timeout timeoutEventSubMessage;
 timeoutEventSubMessage.set_connection_id(connectionID);
@@ -1251,20 +1669,8 @@ event timeoutEvent(timeValue + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0);
 (*timeoutEvent.MutableExtension(possible_base_station_event_timeout::possible_base_station_event_timeout_field)) = timeoutEventSubMessage;
 
 inputEventQueue.push(timeoutEvent);
-
-
-
-if(inputIsAuthenticated && permissionsBuffer.has_valid_until())
-{//Register credentials timeout event
-possible_credentials_expiration_event credentialsExpiration;
-credentialsExpiration.set_connection_id(connectionID);
-credentialsExpiration.set_is_authenticated(inputIsAuthenticated);
-
-event credentialsExpirationEvent(permissionsBuffer.valid_until());
-(*credentialsExpirationEvent.MutableExtension(possible_credentials_expiration_event::possible_credentials_expiration_event_field)) = credentialsExpiration;
-
-inputEventQueue.push(credentialsExpirationEvent);
 }
+
 
 //Tell base station that its registration succeeded
 SOM_TRY
@@ -1284,7 +1690,7 @@ streamStatusNotificationInterface->send(serializedUpdateMessage.c_str(), seriali
 SOM_CATCH("Error publishing new station registration\n")
 
 return;//Registration finished
-} //End station registration
+}//End station registration
 
 //Base station has already been registered, so forward it and update the timeout info
 //Allocate memory and copy the caster ID, stream ID and data to it
@@ -1293,19 +1699,10 @@ int totalMessageSize = receivedContent[1].size() + sizeof(Poco::Int64)+sizeof(Po
 char *memoryBuffer = new char[totalMessageSize];
 SOMScopeGuard memoryBufferScopeGuard([&]() { delete[] memoryBuffer; }); 
 
-//Poco saves the day again
+//Poco saves the day again (good serialization functions)
+//Update map
 Poco::Int64 streamID = 0;
-if(inputIsAuthenticated)
-{
-streamID = authenticatedConnectionStatuses.at(connectionID).baseStationID;
-authenticatedConnectionStatuses.at(connectionID).timeLastMessageWasReceived = timeValue;
-}
-else
-{
-streamID = unauthenticatedConnectionStatuses.at(connectionID).baseStationID;
-unauthenticatedConnectionStatuses.at(connectionID).timeLastMessageWasReceived = timeValue;
-}
-
+streamID = associatedMap->at(connectionID).baseStationID;
 
 *((Poco::Int64 *) memoryBuffer) = Poco::ByteOrder::toNetwork(Poco::Int64(casterID));
 *(((Poco::Int64 *) memoryBuffer) + 1) = Poco::ByteOrder::toNetwork(Poco::Int64(streamID));
@@ -1324,14 +1721,7 @@ SOM_CATCH("Error, unable to forward message\n")
 
 //Update map and register potential timeout event
 //Update map
-if(inputIsAuthenticated)
-{
-authenticatedConnectionStatuses.at(connectionID).timeLastMessageWasReceived = timeValue;
-}
-else
-{
-unauthenticatedConnectionStatuses.at(connectionID).timeLastMessageWasReceived = timeValue;
-}
+associatedMap->at(connectionID).timeLastMessageWasReceived = timeValue;
 
 //Register possible stream timeout event
 possible_base_station_event_timeout timeoutEventSubMessage;
@@ -1363,7 +1753,7 @@ SOM_CATCH("Error initializing ZMQ message")
 bool messageReceived = false;
 SOM_TRY //Receive first message part (should be empty)
 messageReceived = registrationDatabaseRequestSocket->recv(messageBuffer.get(), ZMQ_DONTWAIT);
-SOM_CATCH("Error receiving server registration message")
+SOM_CATCH("Error receiving database reply message")
 
 if(!messageReceived || messageBuffer->size() != 0 || !messageBuffer->more())
 {
@@ -1387,6 +1777,132 @@ if(reply.has_reason())
 throw SOMException("Database request failed (" +std::to_string((int) reply.reason())+ "\n", SQLITE3_ERROR, __FILE__, __LINE__);
 }
 
+}
+
+/**
+This function processes key_management_request messages and accordingly modifies the list of accepted signing keys.  If a connection is reliant on a dropped signing key (has no other valid signing keys), then it will be dropped when the signing key is taken out of circulation.
+@param inputEventQueue: The event queue to register events to
+
+@throws: This function can throw exceptions
+*/
+void caster::processKeyManagementRequest(std::priority_queue<event> &inputEventQueue)
+{
+//Create lambda to make it easy to send request failed replies
+auto sendReplyLambda = [&] (bool inputRequestFailed, enum key_management_request_failure_reason inputReason = KEY_MESSAGE_FORMAT_INVALID)
+{
+key_management_reply reply;
+std::string serializedReply;
+
+
+reply.set_request_succeeded(!inputRequestFailed);
+
+if(inputRequestFailed)
+{ //Only set the reason if the request failed
+reply.set_failure_reason(inputReason);
+}
+
+reply.SerializeToString(&serializedReply);
+
+SOM_TRY
+keyRegistrationAndRemovalInterface->send(serializedReply.c_str(), serializedReply.size());
+SOM_CATCH("Error sending reply message\n")
+};
+
+std::unique_ptr<zmq::message_t> messageBuffer;
+
+SOM_TRY //Receive message
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+bool messageReceived = false;
+SOM_TRY //Receive first message part (should be empty)
+messageReceived = keyRegistrationAndRemovalInterface->recv(messageBuffer.get(), ZMQ_DONTWAIT);
+SOM_CATCH("Error receiving key registration message")
+
+if(!messageReceived)
+{
+return;
+}
+
+key_management_request request;
+request.ParseFromArray(messageBuffer->data(), messageBuffer->size());
+
+if(!request.IsInitialized())
+{
+SOM_TRY
+sendReplyLambda(true, KEY_MESSAGE_FORMAT_INVALID); //Couldn't deserialize message 
+SOM_CATCH("Error, unable to send reply")
+}
+
+if(!request.has_serialized_key_status_changes() || !request.has_signature())
+{
+SOM_TRY
+sendReplyLambda(true, KEY_MISSING_REQUIRED_FIELD); //One or more needed fields are missing 
+SOM_CATCH("Error, unable to send reply")
+} 
+
+//Check signatures
+if(request.signature().cryptographic_signature().size() != crypto_sign_BYTES || request.signature().public_key().size() != crypto_sign_PUBLICKEYBYTES)
+{ //Signature or public key is wrong size
+SOM_TRY
+sendReplyLambda(true, KEY_MESSAGE_FORMAT_INVALID);
+SOM_CATCH("Error, unable to send reply")
+}
+
+if(request.signature().public_key() != signingKeysManagementKey)
+{
+SOM_TRY
+sendReplyLambda(true, KEY_INSUFFICIENT_PERMISSIONS);
+SOM_CATCH("Error, unable to send reply")
+}
+
+if(crypto_sign_verify_detached((const unsigned char *) request.signature().cryptographic_signature().c_str(),(const unsigned char *) request.serialized_key_status_changes().c_str(), request.serialized_key_status_changes().size(), (const unsigned char *) request.signature().public_key().c_str()) != 0)
+{ //Signature of permissions doesn't match (message invalid)
+SOM_TRY
+sendReplyLambda(true, KEY_MESSAGE_FORMAT_INVALID);
+SOM_CATCH("Error, unable to send reply")
+}
+
+//Deserialized desired change
+key_status_changes changes;
+changes.ParseFromArray(request.serialized_key_status_changes().c_str(), request.serialized_key_status_changes().size());
+
+if(!changes.IsInitialized())
+{
+SOM_TRY
+sendReplyLambda(true, KEY_STATUS_CHANGE_DESERIALIZATION_FAILED); //Couldn't deserialize message 
+SOM_CATCH("Error, unable to send reply")
+}
+
+//Validate changes message
+if(changes.official_signing_keys_to_add_size() != changes.official_signing_keys_to_add_valid_until_size() || changes.registered_community_signing_keys_to_add_size() != changes.registered_community_signing_keys_to_add_valid_until_size() || changes.keys_to_add_to_blacklist_size() != changes.keys_to_add_to_blacklist_valid_until_size())
+{
+SOM_TRY
+sendReplyLambda(true, KEY_MISSING_REQUIRED_FIELD); //One or more fields not right
+SOM_CATCH("Error, unable to send reply")
+}
+
+//Process changes
+//Handle blacklist entries
+for(int i=0; i<changes.keys_to_add_to_blacklist_size(); i++)
+{ 
+//add key to blacklist and terminate any connections who were solely reliant on associated keys
+addBlacklistKey(changes.keys_to_add_to_blacklist(i), changes.keys_to_add_to_blacklist_valid_until(i), inputEventQueue);
+}
+
+for(int i=0; i<changes.official_signing_keys_to_add_size(); i++)
+{
+addSigningKey(changes.official_signing_keys_to_add(i), true, changes.official_signing_keys_to_add_valid_until(i), inputEventQueue);
+}
+
+for(int i=0; i<changes.official_signing_keys_to_add_size(); i++)
+{
+addSigningKey(changes.registered_community_signing_keys_to_add(i), false,  changes.registered_community_signing_keys_to_add_valid_until(i), inputEventQueue);
+}
+
+SOM_TRY
+sendReplyLambda(false); //Operation succeeded
+SOM_CATCH("Error, unable to send reply")
 }
 
 
@@ -1781,6 +2297,30 @@ isSignedByRegisteredCommunityKey = true;
 return std::tuple<bool, bool, bool>(true, isSignedByOfficialEntityKey, isSignedByRegisteredCommunityKey);
 }
 
+
+/**
+This function removes a basestation connection from both the maps and the database.
+@param inputConnectionID: The connection to remove
+@param inputIsAuthenticated: True if the associated connection is authenticated
+
+@throws: This function can throw exceptions
+*/
+void caster::removeConnection(const std::string &inputConnectionID, bool inputIsAuthenticated)
+{
+
+if(inputIsAuthenticated)
+{ //Handle if authenticated
+SOM_TRY
+removeAuthenticatedConnection(inputConnectionID);
+SOM_CATCH("Error, unable to remove authenticated connection\n")
+}
+else
+{
+removeUnauthenticatedConnection(inputConnectionID);
+}
+}
+
+
 /**
 This function helps with creating SQL query strings for client requests.
 @param inputStringRelation: The relation to resolve into a SQL string part (such as "LIKE ?"
@@ -1938,5 +2478,26 @@ sqlite3_result_double(inputContext, 0.0);
 }
 }
 
+/**
+This function removes all entries of the map with the specific key/value.
+@param inputMultimap: the multimap to delete from
+@param inputKey: the key of the key/value pair
+@param inputValue: The value of the key/value pair
+*/
+void pylongps::removeKeyValuePairFromStringMultimap(std::multimap<std::string, std::string> &inputMultimap, const std::string &inputKey, const std::string &inputValue)
+{
+auto equalRange = inputMultimap.equal_range(inputKey);
+for(auto iter = equalRange.first; iter!=equalRange.second;)
+{
+if(iter->second == inputValue)
+{
+iter = inputMultimap.erase(iter); //Erase the pair and move to the next position
+}
+else
+{
+iter++; //Just go to the next entry to check
+}
+}
 
+}
 

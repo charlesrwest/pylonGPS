@@ -34,7 +34,12 @@
 #include "stream_status_update.pb.h"
 #include "credentials.pb.h"
 #include "authorized_permissions.pb.h"
-#include "possible_credentials_expiration_event.pb.h"
+#include "key_management_request.pb.h"
+#include "key_management_reply.pb.h"
+#include "key_status_changes.pb.h"
+#include "blacklist_key_timeout_event.pb.h"
+#include "connection_key_timeout_event.pb.h"
+#include "signing_key_timeout_event.pb.h"
 
 namespace pylongps
 {
@@ -42,7 +47,6 @@ namespace pylongps
 //How long to wait before a connection is considered to have timed out and is closed
 const double SECONDS_BEFORE_CONNECTION_TIMEOUT = 5.0; 
 
-//TODO: Add ZMQ interface to add acceptable signing keys and two constructor arguments (one for list of signing keys to start with and another for a signing key that is required to add a signing key).
 /**
 This class represents a pylonGPS 2.0 caster.  It opens several ZMQ ports to provide caster services, an in-memory SQLITE database and creates 2 threads to manage its duties.
 
@@ -63,13 +67,18 @@ This function initializes the class, creates the associated database, and starts
 @param inputClientStreamPublishingPortNumber: The port to open for the interface to publish stream data to clients
 @param inputProxyStreamPublishingPortNumber: The port to open for the interface to publish stream data to proxies (potentially higher priority)
 @param inputStreamStatusNotificationPortNumber: The port for the interface that is used to to publish stream status changes
+@param inputKeyRegistrationAndRemovalPortNumber: The port for the interface that is used to add/remove 
 @param inputCasterPublicKey: The public key for this caster to use for encryption/authentation
 @param inputCasterSecretKey: The secret key for this caster to use for encryption/authentation
+@param inputSigningKeysManagementKey: The signing key that has permission to add/remove allowed signing keys from the caster
+@param inputOfficialSigningKeys: A list of the initial set of approved keys for official basestations
+@param inputRegisteredCommunitySigningKeys: A list of the initial set of approved keys for registered community basestations
+@param inputBlacklistedKeys: A list of signing keys not to trust 
 @param inputCasterSQLITEConnectionString: The connection string used to connect to or create the SQLITE database used for stream source entry management and query resolution.  If an empty string is given (by default), it will connect/create an in memory database with a random 64 bit number string (example: "file:9735926149617295559?mode=memory&cache=shared")
 
 @throws: This function can throw exceptions
 */
-caster(zmq::context_t *inputContext, int64_t inputCasterID, uint32_t inputTransmitterRegistrationAndStreamingPortNumber, uint32_t inputAuthenticatedTransmitterRegistrationAndStreamingPortNumber, uint32_t inputClientRequestPortNumber, uint32_t inputClientStreamPublishingPortNumber, uint32_t inputProxyStreamPublishingPortNumber, uint32_t inputStreamStatusNotificationPortNumber, const std::string &inputCasterPublicKey, const std::string &inputCasterSecretKey, const std::string &inputCasterSQLITEConnectionString = "");
+caster(zmq::context_t *inputContext, int64_t inputCasterID, uint32_t inputTransmitterRegistrationAndStreamingPortNumber, uint32_t inputAuthenticatedTransmitterRegistrationAndStreamingPortNumber, uint32_t inputClientRequestPortNumber, uint32_t inputClientStreamPublishingPortNumber, uint32_t inputProxyStreamPublishingPortNumber, uint32_t inputStreamStatusNotificationPortNumber, uint32_t inputKeyRegistrationAndRemovalPortNumber, const std::string &inputCasterPublicKey, const std::string &inputCasterSecretKey, const std::string &inputSigningKeysManagementKey, const std::vector<std::string> &inputOfficialSigningKeys, const std::vector<std::string> &inputRegisteredCommunitySigningKeys, const std::vector<std::string> &inputBlacklistedKeys, const std::string &inputCasterSQLITEConnectionString = "");
 
 /**
 This function signals for the threads to shut down and then waits for them to do so.
@@ -91,14 +100,23 @@ std::string shutdownPublishingConnectionString; //string to use for inproc conne
 std::string databaseAccessConnectionString; //String to use for inproc connection to send requests to modify the database
 std::string casterPublicKey;
 std::string casterSecretKey;
-std::string signingKeysManagementKey; //The public key of the entity allowed to add/remove sigining keys
+
+//Owned by streamRegistrationAndPublishingThread
+std::string signingKeysManagementKey; //The public key of the entity allowed to add/remove sigining keys (registration taken care of in streamRegistrationAndPublishingThread)
 std::set<std::string> officialSigningKeys; //A list of acceptable signing keys for "Official" basestations
 std::set<std::string> registeredCommunitySigningKeys; //A list of acceptable signing keys for "Registered Community" basestations
+std::set<std::string> blacklistedSigningKeys; //A list of all signing keys that have been blacklisted
+
+//See article on key management for how these maps are used
+std::multimap<std::string, std::string> signingKeyToConnectionKeys;
+std::multimap<std::string, std::string> connectionKeyToSigningKeys;
+std::multimap<std::string, std::string> connectionKeyToAuthenticatedConnectionIDs;
+std::map<std::string, std::string> authenticatedConnectionIDToConnectionKey;
 
 //Used to keep track of the current status of each basestation connection
 int64_t lastAssignedConnectionID = 0; //Incremented to make unique streamIDs
-std::map<std::string, connectionStatus> unauthenticatedConnectionStatuses;
-std::map<std::string, connectionStatus> authenticatedConnectionStatuses;
+std::map<std::string, connectionStatus> unauthenticatedConnectionIDToConnectionStatus;
+std::map<std::string, connectionStatus> authenticatedConnectionIDToConnectionStatus;
 
 /**
 This function is called in the clientRequestHandlingThread to handle client requests and manage access to the SQLite database.
@@ -152,12 +170,98 @@ std::unique_ptr<protobufSQLConverter<base_station_stream_information> > basestat
 //Interfaces
 std::unique_ptr<zmq::socket_t> transmitterRegistrationAndStreamingInterface; ///A ZMQ ROUTER socket which expects unencrypted data (transmitter_registration_request to which it responses with a transmitter_registration_reply. If accepted, the request is followed by the data to broadcast).  Used by streamRegistrationAndPublishingThread.
 std::unique_ptr<zmq::socket_t> authenticatedTransmitterRegistrationAndStreamingInterface; ///A ZMQ ROUTER socket which expects encrypted data (transmitter_registration_request with credentials to which it responses with a transmitter_registration_reply. If accepted, the request is followed by the data to broadcast) and checks the key (ZMQ connection ID must match public key).  Used by streamRegistrationAndPublishingThread.
+std::unique_ptr<zmq::socket_t> keyRegistrationAndRemovalInterface; ///A ZMQ REP socket which expects a key_management_request message and sends back a key_management_reply message.  Used by streamRegistrationAndPublishingThread.
 std::unique_ptr<zmq::socket_t> clientRequestInterface;  ///A ZMQ REP socket which expects a client_query_request and responds with a client_query_reply.  Used by clientRequestHandlingThread.
 std::unique_ptr<zmq::socket_t> clientStreamPublishingInterface; ///A ZMQ PUB socket which publishes all data associated with all streams with the caster ID and stream ID preappended for clients to subscribe.  Used by streamRegistrationAndPublishingThread.
 std::unique_ptr<zmq::socket_t> proxyStreamPublishingInterface; ///A ZMQ PUB socket which publishes all data associated with all streams with the caster ID and stream ID preappended for clients to subscribe.  Used by streamRegistrationAndPublishingThread.
 std::unique_ptr<zmq::socket_t> streamStatusNotificationInterface; ///A ZMQ PUB socket which publishes stream_status_update messages.  Used by streamRegistrationAndPublishingThread.
 
 //Functions and objects used internally
+/**
+This function adds a authenticated connection by placing it in the associated maps/sets and the database.  The call is ignored if the connection key is not found in connectionKeyToSigningKeys, so addConnectionKey should have been called first for the connection key.
+@param inputConnectionID: The ZMQ connection ID string of the connection to add
+@param inputConnectionKey: The ZMQ CURVE key that is being used with this connection (connection key)
+@param inputConnectionStatus: The current status of the connection
+@param inputBaseStationStreamInfo: The connection's details to register with the database
+@param inputEventQueue: The queue to register the timeout associated with this connection (close if idle for X seconds).
+
+@throws: This function can throw exceptions
+*/
+void addAuthenticatedConnection(const std::string &inputConnectionID,  const std::string &inputConnectionKey, const connectionStatus &inputConnectionStatus, const base_station_stream_information &inputBaseStationStreamInfo, std::priority_queue<event> &inputEventQueue);
+
+/**
+This function removes a authenticated connection and updates the associated datastructures.
+@param inputConnectionID: The connection ID of the authenticated connection to remove
+
+@throws: This function can throw exceptions
+*/
+void removeAuthenticatedConnection(const std::string &inputConnectionID);
+
+/**
+This function adds a connection signing key, updates the associated maps and schedules it to timeout if it has a timeout time.  Only signing keys which are already present will be acknowledged.
+@param inputConnectionKey: The connection key to add
+@param inputExpirationTime: The timestamp of when this key expires (negative if it does not expire on its own)
+@param inputSigningKeys: The keys which have signed this 
+@param inputEventQueue: The event queue to add the timeout event to
+
+@return: true if the key had valid signing keys and was added
+*/
+bool addConnectionKey(const std::string &inputConnectionKey, int64_t inputExpirationTime, const std::vector<std::string> &inputSigningKeys, std::priority_queue<event> &inputEventQueue);
+
+/**
+This function removes the given connection key from the maps and removes all associated connections.
+@param inputConnectionKey: The connection key to remove
+
+@throws: This function can throw exceptions
+*/
+void removeConnectionKey(const std::string &inputConnectionKey);
+
+/**
+This function adds a new signing key and schedules its timeout.
+@param inputSigningKey: The signing key to add
+@param inputIsOfficialSigningKey: True if the signing key is an "Official" one and false if it is "Registered Community"
+@param inputExpirationTime: When the signing key becomes invalid
+@param inputEventQueue: The event queue to add the timeout event to
+
+@return: true if the key was added successfully or is already present
+*/
+bool addSigningKey(const std::string &inputSigningKey, bool inputIsOfficialSigningKey, int64_t inputExpirationTime, std::priority_queue<event> &inputEventQueue);
+
+/**
+This function removes a signing key.  This can cause a cascade where a connection key which is reliant on it is removed, which can in turn cause many connections to be removed.
+@param inputSigningKey: The signing key to remove
+
+@throws: This function can throw exceptions
+*/
+void removeSigningKey(const std::string &inputSigningKey);
+
+/**
+Add a key to the blacklist, triggering its removal from "official" and "registered community" and the prevention of it from being reused until the certificate expires.
+@param inputBlacklistKey: The key to place on the blacklist
+@param inputExpirationTime: When the key expires
+@param inputEventQueue: The queue to to ad the expiration event to
+
+@throws: this function can throw exceptions
+*/
+void addBlacklistKey(const std::string &inputBlacklistKey, int64_t inputExpirationTime, std::priority_queue<event> &inputEventQueue);
+
+/**
+This function removes a unauthenticated connection and updates the associated datastructures.
+@param inputConnectionID: The connection ID of the authenticated connection to remove
+
+@throws: This function can throw exceptions
+*/
+void removeUnauthenticatedConnection(const std::string &inputConnectionID);
+
+/**
+This function removes a basestation connection from both the maps and the database.
+@param inputConnectionID: The connection to remove
+@param inputIsAuthenticated: True if the associated connection is authenticated
+
+@throws: This function can throw exceptions
+*/
+void removeConnection(const std::string &inputConnectionID, bool inputIsAuthenticated);
+
 /**
 This function sets up the basestationToSQLInterface and generates the associated tables so that basestations can be stored and returned.  databaseConnection must be setup before this function is called.
 
@@ -201,6 +305,14 @@ This function processes reply messages sent to registrationDatabaseRequestSocket
 @throws: This function can throw exceptions
 */
 void processTransmitterRegistrationAndStreamingDatabaseReply();
+
+/**
+This function processes key_management_request messages and accordingly modifies the list of accepted signing keys.  If a connection is reliant on a dropped signing key (has no other valid signing keys), then it will be dropped when the signing key is taken out of circulation.
+@param inputEventQueue: The event queue to register events to
+
+@throws: This function can throw exceptions
+*/
+void processKeyManagementRequest(std::priority_queue<event> &inputEventQueue);
 
 
 /**
@@ -315,6 +427,14 @@ This function can be used to add the "acos" function to the current SQLite conne
 @param inputValues: The array values
 */
 void SQLiteAcosFunctionDegrees(sqlite3_context *inputContext, int inputArraySize, sqlite3_value **inputValues);
+
+/**
+This function removes all entries of the map with the specific key/value.
+@param inputMultimap: the multimap to delete from
+@param inputKey: the key of the key/value pair
+@param inputValue: The value of the key/value pair
+*/
+void removeKeyValuePairFromStringMultimap(std::multimap<std::string, std::string> &inputMultimap, const std::string &inputKey, const std::string &inputValue);
 
 
 }

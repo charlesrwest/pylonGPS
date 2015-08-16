@@ -1,0 +1,16 @@
+package pylongps;
+
+import "event_message.proto"; 
+
+//This message represents the timepoint at which the certficate associated with the given key has expired
+message signing_key_timeout_event
+{
+required bytes key = 10; //The official key which timed out
+required bool is_official = 20; //True if it is an "official" signing key and false if it is a "registered community" signing key 
+
+//Add to message container to allow simulated polymorphism
+extend event_message
+{
+optional signing_key_timeout_event signing_key_timeout_event_field = 30;
+}
+}  

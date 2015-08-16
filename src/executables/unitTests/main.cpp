@@ -46,7 +46,15 @@ decodedCasterPublicKey = std::string(buffer, 32);
 zmq_z85_decode((uint8_t *) buffer, z85CasterSecretKey);
 decodedCasterSecretKey = std::string(buffer, 32);
 
-caster myCaster(context.get(), 0,9001,9002,9003,9004, 9005, 9006, decodedCasterPublicKey, decodedCasterSecretKey);
+//Generate key manager signing key
+unsigned char keyManagerPublicKeyArray[crypto_sign_PUBLICKEYBYTES];
+unsigned char keyManagerSecretKeyArray[crypto_sign_SECRETKEYBYTES];
+crypto_sign_keypair(keyManagerPublicKeyArray, keyManagerSecretKeyArray);
+
+std::string keyManagerPublicKey((const char *) keyManagerPublicKeyArray, crypto_sign_PUBLICKEYBYTES);
+std::string keyManagerSecretKey((const char *) keyManagerSecretKeyArray, crypto_sign_SECRETKEYBYTES);
+
+caster myCaster(context.get(), 0,9001,9002,9003,9004, 9005, 9006, 9007, decodedCasterPublicKey, decodedCasterSecretKey, keyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
 
 REQUIRE( true == true);
 
@@ -305,7 +313,7 @@ REQUIRE(retrievedValues.size() == 0);
 TEST_CASE( "Test unauthenticated stream registration", "[test]")
 {
 
-SECTION( "Register a stream")
+SECTION( "Build a caster")
 {
 //Make ZMQ context
 std::unique_ptr<zmq::context_t> context;
@@ -331,6 +339,13 @@ decodedCasterPublicKey = std::string(buffer, 32);
 zmq_z85_decode((uint8_t *) buffer, z85CasterSecretKey);
 decodedCasterSecretKey = std::string(buffer, 32);
 
+//Generate key manager signing key
+unsigned char keyManagerPublicKeyArray[crypto_sign_PUBLICKEYBYTES];
+unsigned char keyManagerSecretKeyArray[crypto_sign_SECRETKEYBYTES];
+crypto_sign_keypair(keyManagerPublicKeyArray, keyManagerSecretKeyArray);
+
+std::string keyManagerPublicKey((const char *) keyManagerPublicKeyArray, crypto_sign_PUBLICKEYBYTES);
+std::string keyManagerSecretKey((const char *) keyManagerSecretKeyArray, crypto_sign_SECRETKEYBYTES);
 
 Poco::Int64 casterID = 989;
 int unauthenticatedRegistrationPort = 9010;
@@ -339,11 +354,14 @@ int clientRequestPort = 9013;
 int clientPublishingPort = 9014;
 int proxyPublishingPort = 9015;
 int streamStatusNotificationPort = 9016;
+int keyManagementPort = 9017;
 
 
-//caster myCaster(context.get(), casterID,unauthenticatedRegistrationPort,authenticatedRegistrationPort,clientRequestPort, clientPublishingPort, proxyPublishingPort, streamStatusNotificationPort, decodedCasterPublicKey, decodedCasterSecretKey);
-caster myCaster(context.get(), casterID,unauthenticatedRegistrationPort,authenticatedRegistrationPort,clientRequestPort, clientPublishingPort, proxyPublishingPort, streamStatusNotificationPort, decodedCasterPublicKey, decodedCasterSecretKey, "testSQLDatabase.db");
+caster myCaster(context.get(), casterID,unauthenticatedRegistrationPort,authenticatedRegistrationPort,clientRequestPort, clientPublishingPort, proxyPublishingPort, streamStatusNotificationPort, keyManagementPort, decodedCasterPublicKey, decodedCasterSecretKey, keyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
+//caster myCaster(context.get(), casterID,unauthenticatedRegistrationPort,authenticatedRegistrationPort,clientRequestPort, clientPublishingPort, proxyPublishingPort, streamStatusNotificationPort, decodedCasterPublicKey, decodedCasterSecretKey, keyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0), "testSQLDatabase.db");
 
+SECTION( "Register a unauthenticated stream")
+{
 //Create a basestation and register it
 std::string serializedRegistrationRequest;
 transmitter_registration_request registrationRequest;
@@ -395,6 +413,8 @@ REQUIRE(registrationReply.IsInitialized() == true);
 
 REQUIRE(registrationReply.request_succeeded() == true);
 
+SECTION( "Send/receive update")
+{
 //Base station registered, so subscribe and see if we get the next message send
 //Create socket to subscribe to caster
 std::unique_ptr<zmq::socket_t> subscriberSocket;
@@ -439,6 +459,10 @@ REQUIRE(Poco::ByteOrder::fromNetwork(*((Poco::Int64 *) messageBuffer->data())) =
 
 REQUIRE(std::string((((const char *) messageBuffer->data()) + sizeof(Poco::Int64)*2), testString.size()) == testString);
 
+} //Send/receive update
+
+SECTION( "Send a query")
+{
 //Send a query and see if we get a valid response
 std::string serializedClientRequest;
 client_query_request clientRequest; //Empty request should return all
@@ -596,6 +620,106 @@ REQUIRE(replyBaseStationInfo.has_message_format());
 REQUIRE(replyBaseStationInfo.message_format() == RTCM_V3_1);
 REQUIRE(replyBaseStationInfo.has_informal_name());
 REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation");
+} //Send queries
+} //Register unauthenticated stream
 
-}
+
+SECTION( "Register a official authenticated stream")
+{
+/////Create and register a official signing key////////
+
+//Generate the official signing key
+unsigned char officialSigningPublicKeyArray[crypto_sign_PUBLICKEYBYTES];
+unsigned char officialSigningSecretKeyArray[crypto_sign_SECRETKEYBYTES];
+crypto_sign_keypair(officialSigningPublicKeyArray, officialSigningSecretKeyArray);
+
+std::string officialSigningPublicKey((const char *) keyManagerPublicKeyArray, crypto_sign_PUBLICKEYBYTES);
+std::string officialSigningSecretKey((const char *) keyManagerSecretKeyArray, crypto_sign_SECRETKEYBYTES);
+
+//Construct request to add the key
+Poco::Timestamp currentTime;
+auto timeValue = currentTime.epochMicroseconds() + 1000000*60; //Times out a minute from now
+
+std::string serializedChangesToMake;
+key_status_changes changesToMake;
+changesToMake.add_official_signing_keys_to_add(officialSigningPublicKey);
+changesToMake.add_official_signing_keys_to_add_valid_until(timeValue);
+
+changesToMake.SerializeToString(&serializedChangesToMake);
+
+//Sign changes to make with keyManagerSecretKey
+unsigned char changesSignatureArray[crypto_sign_BYTES];
+std::string changesSignatureString;
+
+crypto_sign_detached(changesSignatureArray, nullptr, (const unsigned char *) serializedChangesToMake.c_str(), serializedChangesToMake.size(), (const unsigned char *) keyManagerSecretKey.c_str());
+changesSignatureString = std::string((const char *) changesSignatureArray, crypto_sign_BYTES);
+
+signature keyManagerSignature;
+keyManagerSignature.set_public_key(keyManagerPublicKey);
+keyManagerSignature.set_cryptographic_signature(changesSignatureString);
+
+std::string serializedKeyManagementRequest;
+key_management_request keyManagementRequest;
+keyManagementRequest.set_serialized_key_status_changes(serializedChangesToMake);
+*keyManagementRequest.mutable_signature() = keyManagerSignature;
+
+keyManagementRequest.SerializeToString(&serializedKeyManagementRequest);
+
+
+/*
+//Create a basestation and register it
+std::string serializedRegistrationRequest;
+transmitter_registration_request registrationRequest;
+auto basestationInfo = registrationRequest.mutable_stream_info();
+basestationInfo->set_latitude(1.0);
+basestationInfo->set_longitude(2.0);
+basestationInfo->set_expected_update_rate(3.0);
+basestationInfo->set_message_format(RTCM_V3_1);
+basestationInfo->set_informal_name("testBasestation");
+
+registrationRequest.SerializeToString(&serializedRegistrationRequest);
+
+
+//Create socket to talk with caster
+std::unique_ptr<zmq::socket_t> registrationSocket;
+
+SOM_TRY //Init socket
+registrationSocket.reset(new zmq::socket_t(*context, ZMQ_DEALER));
+SOM_CATCH("Error making socket\n")
+
+SOM_TRY
+int timeoutWaitTime = 5000; //Max 5 seconds
+registrationSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
+SOM_CATCH("Error setting socket timeout\n")
+
+SOM_TRY //Connect to caster
+std::string connectionString = "tcp://127.0.0.1:" +std::to_string(unauthenticatedRegistrationPort);
+registrationSocket->connect(connectionString.c_str());
+SOM_CATCH("Error connecting socket for registration with caster\n")
+
+SOM_TRY //Send registration request
+registrationSocket->send(serializedRegistrationRequest.c_str(), serializedRegistrationRequest.size());
+SOM_CATCH("Error sending base station registration request\n")
+
+std::unique_ptr<zmq::message_t> messageBuffer;
+
+SOM_TRY
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+REQUIRE(registrationSocket->recv(messageBuffer.get()) == true);
+
+transmitter_registration_reply registrationReply;
+
+std::string stringToPrint( (const char *) messageBuffer->data(), messageBuffer->size());
+
+registrationReply.ParseFromArray(messageBuffer->data(), messageBuffer->size());
+REQUIRE(registrationReply.IsInitialized() == true);
+
+REQUIRE(registrationReply.request_succeeded() == true);
+*/
+}//Register an authenticated stream
+
+
+} //Construct caster to test
 }

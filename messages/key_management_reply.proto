@@ -1,0 +1,16 @@
+package pylongps; //Put in pylongps namespace
+
+enum key_management_request_failure_reason
+{
+KEY_MESSAGE_FORMAT_INVALID = 1; //Deserialization failed
+KEY_STATUS_CHANGE_DESERIALIZATION_FAILED = 2;  //Unable to read desired change
+KEY_INSUFFICIENT_PERMISSIONS = 3; //Credentials not signed by recognized authorities or otherwise are not enough.
+KEY_MISSING_REQUIRED_FIELD = 4; //One or more needed fields are missing
+}
+
+//This message used used by a caster to reply to a transmitter_registration_request.  It indicates if the registration succeeded and if not, then why it failed.
+message key_management_reply
+{
+required bool request_succeeded = 10; //True if the registration request succeeded
+optional key_management_request_failure_reason failure_reason= 20; //The reason for the request being rejected 
+} 

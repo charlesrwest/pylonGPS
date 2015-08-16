@@ -1,0 +1,14 @@
+package pylongps; //Put in pylongps namespace
+
+//This message defines the permissions granted to the owner of the public key by those that sign a serialized version of this message.
+message key_status_changes
+{
+repeated bytes official_signing_keys_to_add = 10; //Signing keys to add to the list of accepted signing keys for official basestations
+repeated int64 official_signing_keys_to_add_valid_until = 20; //The date at which each of the official_signing_key_to_add become invalid (required, one for each key)
+
+repeated bytes registered_community_signing_keys_to_add = 30; //Signing keys to add to the list of accepted signing keys for registered community basestations
+repeated int64 registered_community_signing_keys_to_add_valid_until = 40; //The dates at which each of the registered_community_signing_keys_to_add become invalid (required, one for each key)
+
+repeated bytes keys_to_add_to_blacklist = 50; //Signing keys to add to the list of accepted signing keys for registered community basestations
+repeated int64 keys_to_add_to_blacklist_valid_until = 60; //The dates at which each of the keys should be removed from the blacklist (their certificates have expired by then) (required, one for each key)
+}

@@ -11,7 +11,7 @@ BASE_STATION_TERMINATED_CONNECTION = 2; //The base station indicated it wished t
 //This message is published by a caster to inform proxies or interested clients if a stream has been added or has been removed from the caster's list of information sources.  This allows clients and proxies to be aware of when their subscribed source disconnects and allow for waiting until a source comes online.  The registrations notifications include a  base_station_stream_information message with all of the details associated with the new source.
 message stream_status_update
 {
-optional base_station_stream_information new_base_station_info = 1; //Non-empty if there is a new base station available 
-optional uint64 base_station_removed = 2; //The 64 bit ID of the base station that is being removed from the caster
-optional base_station_removal_reason removal_reason = 3; //The reason the base station was removed from the caster
+optional base_station_stream_information new_base_station_info = 10; //Non-empty if there is a new base station available 
+optional uint64 base_station_removed = 20; //The 64 bit ID of the base station that is being removed from the caster
+optional base_station_removal_reason removal_reason = 30; //The reason the base station was removed from the caster
 }

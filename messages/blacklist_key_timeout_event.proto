@@ -1,0 +1,15 @@
+package pylongps;
+
+import "event_message.proto"; 
+
+//This message represents the timepoint at which the certficate associated with the given blacklisted key has expired
+message blacklist_key_timeout_event
+{
+required bytes blacklist_key = 10; //The blacklist key which timed out
+
+//Add to message container to allow simulated polymorphism
+extend event_message
+{
+optional blacklist_key_timeout_event blacklist_key_timeout_event_field = 20;
+}
+} 

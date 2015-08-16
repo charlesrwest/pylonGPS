@@ -1,4 +1,4 @@
- package pylongps; //Put in pylongps namespace
+package pylongps; //Put in pylongps namespace
 
 enum request_failure_reason
 {

@@ -1,0 +1,39 @@
+Need object with following functions:
+
+addSigningKeyEntry
+removeSigningKeyEntry
+
+addBlacklistEntry
+
+addConnectionKey
+removeConnectionKey
+
+addConnection
+removeConnection
+
+While maintaining the following:
+
+Maps:
+signingKeyToConnectionKeys
+connectionKeyToSigningKeys
+
+connectionKeyToAuthenticatedConnectionIDs
+authenticatedConnectionIDToConnectionKey
+
+authenticatedConnectionIDToConnectionStatus (authenticatedConnectionStatuses)
+
+Sets:
+officialSigningKeys
+registeredCommunitySigningKeys
+blacklistedKeys
+
+
+Events:
+scheduling timeouts associated with keys, connections and blacklists
+
+Database:
+add entry when connection is added
+removing the entry from the database whenever a connection ID is removed
+
+
+
