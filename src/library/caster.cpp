@@ -227,7 +227,7 @@ SOM_CATCH("Error setting secret key for caster\n")
 
 SOM_TRY //Bind port for socket
 std::string bindingAddress = "tcp://*:" + std::to_string(authenticatedTransmitterRegistrationAndStreamingPortNumber);
-transmitterRegistrationAndStreamingInterface->bind(bindingAddress.c_str());
+authenticatedTransmitterRegistrationAndStreamingInterface->bind(bindingAddress.c_str());
 SOM_CATCH("Error binding transmitterRegistrationAndStreamingInterface\n")
 
 //Initialize and bind keyRegistrationAndRemoval socket
@@ -334,6 +334,7 @@ authenticationIDCheckingThread->join();
 clientRequestHandlingThread->join();
 streamRegistrationAndPublishingThread->join();
 statisticsGatheringThread->join();
+printf("Caster destroyed\n");
 }
 
 /**
@@ -389,6 +390,7 @@ SOM_CATCH("Error polling\n")
 //Check if it is time to shutdown
 if(pollItems[2].revents & ZMQ_POLLIN)
 {
+printf("Shutting down database/client thread\n");
 return; //Shutdown message received, so return
 }
 
@@ -475,6 +477,7 @@ SOM_CATCH("Error polling\n")
 //Check if it is time to shutdown
 if(pollItems[0].revents & ZMQ_POLLIN)
 {
+printf("Shutting down registration thread\n");
 return; //Shutdown message received, so return
 }
 
@@ -482,6 +485,7 @@ return; //Shutdown message received, so return
 if(pollItems[1].revents & ZMQ_POLLIN)
 {//A message has been received, so process it (unauthenticated)
 SOM_TRY
+printf("Got unauthenticated stream message\n");
 processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(threadEventQueue, false);
 SOM_CATCH("Error processing registration request\n")
 }
@@ -489,6 +493,7 @@ SOM_CATCH("Error processing registration request\n")
 //Check if a key status change request has been received 
 if(pollItems[4].revents & ZMQ_POLLIN)
 {//A message has been received, so process it
+printf("Got key management request\n");
 SOM_TRY
 processKeyManagementRequest(threadEventQueue);
 SOM_CATCH("Error processing request\n")
@@ -497,6 +502,7 @@ SOM_CATCH("Error processing request\n")
 //Check if an authenticated registration or stream update has been received
 if(pollItems[2].revents & ZMQ_POLLIN)
 {//A message has been received, so process it (authenticated)
+printf("Got an authenticated message\n");
 SOM_TRY
 processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(threadEventQueue, true);
 SOM_CATCH("Error processing registration request\n")
@@ -573,6 +579,7 @@ SOM_CATCH("Error polling\n")
 //Check if it is time to shutdown
 if(pollItems[1].revents & ZMQ_POLLIN)
 {
+printf("Shutting down ZAP handler\n");
 return; //Shutdown message received, so return
 }
 
@@ -581,7 +588,7 @@ if(pollItems[0].revents & ZMQ_POLLIN)
 {//A ZAP authentication message (http://rfc.zeromq.org/spec:27) has been received, so process it (ZMQ identity must contain the 32 byte public key in the first 32 bytes of the identity, so that the key credentials can be checked at the router socket). 
 SOM_TRY
 processZAPAuthenticationRequest();
-SOM_CATCH("Error processing database request\n")
+SOM_CATCH("Error processing ZAP request\n")
 }
 
 }
@@ -1320,7 +1327,7 @@ void caster::processZAPAuthenticationRequest()
 auto sendReplyLambda = [&] (const std::string &inputRequestID, int inputStatusCode)
 { //Reply
 std::vector<std::string> contentToSend;
-contentToSend.push_back(""); //0. Zero length frame
+//contentToSend.push_back(""); //0. Zero length frame //Already sent by socket
 contentToSend.push_back("1.0"); //1. "1.0"
 contentToSend.push_back(inputRequestID); //2. requestID (echoed)
 contentToSend.push_back(std::to_string(inputStatusCode)); //3. status code -> "200" for success, "300" for temp error, "400" for auth failure, "500" for internal error
@@ -1328,14 +1335,26 @@ contentToSend.push_back(""); //4. Empty or custom error message
 contentToSend.push_back(""); //5. Could contain metadata about user if status is "200", must be empty otherwise
 contentToSend.push_back(""); //6. Empty or ZMQ format defined style metadata message 
 
+printf("Status code: %d\n", inputStatusCode);
+
 for(int i=0; i<contentToSend.size(); i++)
 {
+if(i == (contentToSend.size()-1))
+{ 
 SOM_TRY
 ZAPAuthenticationSocket->send(contentToSend[i].c_str(), contentToSend[i].size());
 SOM_CATCH("Error sending reply message\n")
 }
+else
+{
+SOM_TRY
+ZAPAuthenticationSocket->send(contentToSend[i].c_str(), contentToSend[i].size(), ZMQ_SNDMORE);
+SOM_CATCH("Error sending reply message\n")
+}
+}
 
 };
+
 
 std::vector<std::string> receivedContent; //Save all of the multi part message in a vector
 auto sendSystemFailedReply = [&] () 
@@ -1369,10 +1388,9 @@ SOM_CATCH("Error receiving server registration/deregistration message")
 
 if(!messageReceived)
 {
-SOM_TRY
-sendSystemFailedReply();
-SOM_CATCH("Error sending reply\n")
+break;
 }
+
 
 receivedContent.push_back(std::string((const char *) messageBuffer->data(), messageBuffer->size()));
 
@@ -1383,41 +1401,54 @@ break;
 
 }
 
-if(receivedContent.size() != 8)
+if(receivedContent.size() != 7)
 { //Received wrong number of messages
 SOM_TRY
 sendSystemFailedReply();
 SOM_CATCH("Error sending reply\n")
+return;
 }
 
 //REP socket, should receive a 8 part message (http://rfc.zeromq.org/spec:27)
 //Request:
-//0. zero length frame
-//1. "1.0"
-//2. requestID (reply must echo)
-//3. domain
-//4. Origin IP address (IPv4 or IPv6 string)
-//5. connectionIdentity (max 255 bytes)
-//6. "CURVE"
-//7. 32 byte long term public key
-if(receivedContent[0] != "" || receivedContent[1] != "1.0" || receivedContent[5].size() > 255 || receivedContent[6] != "CURVE" || receivedContent[7].size() != 32 || receivedContent[2].size() < 32)
+//Empty frame (already stripped by socket)
+//0. "1.0"
+//1. requestID (reply must echo)
+//2. domain
+//3. Origin IP address (IPv4 or IPv6 string)
+//4. connectionIdentity (max 255 bytes)
+//5. "CURVE"
+//6. 32 byte long term public key
+if(receivedContent[0] != "1.0" || receivedContent[4].size() > 255 || receivedContent[5] != "CURVE" || receivedContent[6].size() != 32 || receivedContent[1].size() < 32)
 {
-SOM_TRY //Send system failure message
-sendReplyLambda(receivedContent[2],500); 
-SOM_CATCH("Error sending reply\n")
+printf("This happened %d %d %d %d %d : %s\n", receivedContent[0] != "1.0", receivedContent[4].size() > 255, receivedContent[5] != "CURVE", receivedContent[6].size() != 32, receivedContent[4].size() < 32, receivedContent[4].c_str());
+
+for(int i=0; i<receivedContent.size(); i++)
+{
+printf("%d: %ld\n", i, receivedContent[i].size());
 }
 
-if(receivedContent[2].find(receivedContent[7]) != 0)
+
+SOM_TRY //Send system failure message
+sendReplyLambda(receivedContent[1],500); 
+SOM_CATCH("Error sending reply\n")
+return;
+}
+
+if(receivedContent[1].find(receivedContent[6]) != 0)
 { //The identity does not have the key preappended, so it is invalid
 SOM_TRY //Send system failure message
-sendReplyLambda(receivedContent[2],400); //Authentication failure
+sendReplyLambda(receivedContent[1],400); //Authentication failure
 SOM_CATCH("Error sending reply\n")
+return;
 }
+
 
 //Everything passed
 SOM_TRY //Send system failure message
-sendReplyLambda(receivedContent[2],200); //Authentication "succeeded"
+sendReplyLambda(receivedContent[1],200); //Authentication "succeeded"
 SOM_CATCH("Error sending reply\n")
+return;
 }
 
 /**
@@ -1485,6 +1516,8 @@ if(!messageRetrievalSuccessful)
 { //Invalid message, so ignore
 return;
 }
+
+printf("I got a message: (%d)\n", inputIsAuthenticated);
 
 std::string connectionID = receivedContent[0];
 //Get current time
@@ -1895,7 +1928,7 @@ for(int i=0; i<changes.official_signing_keys_to_add_size(); i++)
 addSigningKey(changes.official_signing_keys_to_add(i), true, changes.official_signing_keys_to_add_valid_until(i), inputEventQueue);
 }
 
-for(int i=0; i<changes.official_signing_keys_to_add_size(); i++)
+for(int i=0; i<changes.registered_community_signing_keys_to_add_size(); i++)
 {
 addSigningKey(changes.registered_community_signing_keys_to_add(i), false,  changes.registered_community_signing_keys_to_add_valid_until(i), inputEventQueue);
 }

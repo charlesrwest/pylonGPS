@@ -94,11 +94,11 @@ uint32_t clientStreamPublishingPortNumber;
 uint32_t proxyStreamPublishingPortNumber;
 uint32_t streamStatusNotificationPortNumber;
 std::string databaseConnectionString; //The connection string to use to connect to the associated SQLITE database
+std::string casterPublicKey;
 
 private:
 std::string shutdownPublishingConnectionString; //string to use for inproc connection for receiving notifications for when the threads associated with this object should shut down
 std::string databaseAccessConnectionString; //String to use for inproc connection to send requests to modify the database
-std::string casterPublicKey;
 std::string casterSecretKey;
 
 //Owned by streamRegistrationAndPublishingThread
