@@ -54,7 +54,7 @@ crypto_sign_keypair(keyManagerPublicKeyArray, keyManagerSecretKeyArray);
 std::string keyManagerPublicKey((const char *) keyManagerPublicKeyArray, crypto_sign_PUBLICKEYBYTES);
 std::string keyManagerSecretKey((const char *) keyManagerSecretKeyArray, crypto_sign_SECRETKEYBYTES);
 
-caster myCaster(context.get(), 0,9001,9002,9003,9004, 9005, 9006, 9007, decodedCasterPublicKey, decodedCasterSecretKey, keyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
+caster myCaster(context.get(), 0,9001,9002,9003, 9004, 9005, 9006, decodedCasterPublicKey, decodedCasterSecretKey, keyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
 
 REQUIRE( true == true);
 
@@ -348,8 +348,7 @@ std::string keyManagerPublicKey((const char *) keyManagerPublicKeyArray, crypto_
 std::string keyManagerSecretKey((const char *) keyManagerSecretKeyArray, crypto_sign_SECRETKEYBYTES);
 
 Poco::Int64 casterID = 989;
-int unauthenticatedRegistrationPort = 9010;
-int authenticatedRegistrationPort = 9011;
+int registrationPort = 9010;
 int clientRequestPort = 9013;
 int clientPublishingPort = 9014;
 int proxyPublishingPort = 9015;
@@ -357,8 +356,8 @@ int streamStatusNotificationPort = 9016;
 int keyManagementPort = 9017;
 
 
-caster myCaster(context.get(), casterID,unauthenticatedRegistrationPort,authenticatedRegistrationPort,clientRequestPort, clientPublishingPort, proxyPublishingPort, streamStatusNotificationPort, keyManagementPort, decodedCasterPublicKey, decodedCasterSecretKey, keyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
-//caster myCaster(context.get(), casterID,unauthenticatedRegistrationPort,authenticatedRegistrationPort,clientRequestPort, clientPublishingPort, proxyPublishingPort, streamStatusNotificationPort, decodedCasterPublicKey, decodedCasterSecretKey, keyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0), "testSQLDatabase.db");
+caster myCaster(context.get(), casterID,registrationPort,clientRequestPort, clientPublishingPort, proxyPublishingPort, streamStatusNotificationPort, keyManagementPort, decodedCasterPublicKey, decodedCasterSecretKey, keyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
+//caster myCaster(context.get(), casterID,registrationPort,clientRequestPort, clientPublishingPort, proxyPublishingPort, streamStatusNotificationPort, decodedCasterPublicKey, decodedCasterSecretKey, keyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0), "testSQLDatabase.db");
 
 SECTION( "Register a unauthenticated stream")
 {
@@ -388,7 +387,7 @@ registrationSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(t
 SOM_CATCH("Error setting socket timeout\n")
 
 SOM_TRY //Connect to caster
-std::string connectionString = "tcp://127.0.0.1:" +std::to_string(unauthenticatedRegistrationPort);
+std::string connectionString = "tcp://127.0.0.1:" +std::to_string(registrationPort);
 registrationSocket->connect(connectionString.c_str());
 SOM_CATCH("Error connecting socket for registration with caster\n")
 
@@ -682,7 +681,7 @@ std::string connectionString = "tcp://127.0.0.1:" +std::to_string(keyManagementP
 keyManagementSocket->connect(connectionString.c_str());
 SOM_CATCH("Error connecting socket for key management request to caster\n")
 
-SOM_TRY //Send registration request
+SOM_TRY //Send key management request
 keyManagementSocket->send(serializedKeyManagementRequest.c_str(), serializedKeyManagementRequest.size());
 SOM_CATCH("Error sending key management request\n")
 
@@ -701,24 +700,15 @@ REQUIRE(keyManagementReply.IsInitialized() == true);
 
 REQUIRE(keyManagementReply.request_succeeded() == true);
 
-///////Create a connection key sign it with the official signing key//
+//Create a connection signing key and sign it with the official signing key/
 
 //Create connection key
-char z85ConnectionPublicKey[41];
-char z85ConnectionSecretKey[41];
+unsigned char connectionSigningPublicKeyArray[crypto_sign_PUBLICKEYBYTES];
+unsigned char connectionSigningSecretKeyArray[crypto_sign_SECRETKEYBYTES];
+crypto_sign_keypair(connectionSigningPublicKeyArray, connectionSigningSecretKeyArray);
 
-REQUIRE(zmq_curve_keypair(z85ConnectionPublicKey, z85ConnectionSecretKey) == 0);
-
-//Convert to binary format
-char buffer[32];
-std::string decodedConnectionPublicKey;
-std::string decodedConnectionSecretKey;
-
-zmq_z85_decode((uint8_t *) buffer, z85ConnectionPublicKey);
-decodedConnectionPublicKey = std::string(buffer, 32);
-
-zmq_z85_decode((uint8_t *) buffer, z85ConnectionSecretKey);
-decodedConnectionSecretKey = std::string(buffer, 32);
+std::string connectionSigningPublicKey((const char *) connectionSigningPublicKeyArray, crypto_sign_PUBLICKEYBYTES);
+std::string connectionSigningSecretKey((const char *) connectionSigningSecretKeyArray, crypto_sign_SECRETKEYBYTES);
 
 //Construct credentials for basestation
 Poco::Timestamp currentTime1;
@@ -726,7 +716,7 @@ auto timeValue1 = currentTime1.epochMicroseconds() + 1000000*60; //Times out a m
 
 std::string serializedPermissions;
 authorized_permissions permissions;
-permissions.set_public_key(decodedConnectionPublicKey);
+permissions.set_public_key(connectionSigningPublicKey);
 permissions.set_valid_until(timeValue1);
 permissions.set_number_of_permitted_base_stations(10);
 permissions.SerializeToString(&serializedPermissions);
@@ -744,6 +734,7 @@ officialSigningSignature.set_cryptographic_signature(permissionsSignatureString)
 credentials connectionKeyCredentials;
 *connectionKeyCredentials.mutable_permissions() = serializedPermissions;
 (*connectionKeyCredentials.add_signatures()) = officialSigningSignature;
+
 
 //Create a basestation
 std::string serializedRegistrationRequest;
@@ -766,33 +757,13 @@ SOM_TRY //Init socket
 registrationSocket.reset(new zmq::socket_t(*context, ZMQ_DEALER));
 SOM_CATCH("Error making socket\n")
 
-SOM_TRY //Set client expected server key
-registrationSocket->setsockopt(ZMQ_CURVE_SERVERKEY, myCaster.casterPublicKey.c_str(), myCaster.casterPublicKey.size());
-SOM_CATCH("Error setting server public key for client socket\n")
-
-SOM_TRY //Set client public key
-registrationSocket->setsockopt(ZMQ_CURVE_PUBLICKEY, decodedConnectionPublicKey.c_str(), decodedConnectionPublicKey.size());
-SOM_CATCH("Error setting public key for client socket\n")
-
-SOM_TRY //Set secret key for socket
-registrationSocket->setsockopt(ZMQ_CURVE_SECRETKEY, decodedConnectionSecretKey.c_str(), decodedConnectionSecretKey.size());
-SOM_CATCH("Error setting secret key for client socket\n")
-
-//std::string identity = decodedConnectionPublicKey + "XYZ";
-std::string identity = "XYZ";
-printf("Identity: %s\n", identity.c_str());
-SOM_TRY //Set identity to public key + id string
-registrationSocket->setsockopt(ZMQ_IDENTITY, identity.c_str(), identity.size());
-SOM_CATCH("Error setting identity for client socket\n")
-
-
 SOM_TRY
 int timeoutWaitTime = 5000; //Max 5 seconds
 registrationSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
 SOM_CATCH("Error setting socket timeout\n")
 
 SOM_TRY //Connect to caster
-std::string connectionString = "tcp://127.0.0.1:" +std::to_string(authenticatedRegistrationPort);
+std::string connectionString = "tcp://127.0.0.1:" +std::to_string(registrationPort);
 registrationSocket->connect(connectionString.c_str());
 SOM_CATCH("Error connecting socket for registration with caster\n")
 
@@ -814,7 +785,218 @@ registrationReply.ParseFromArray(messageBuffer->data(), messageBuffer->size());
 REQUIRE(registrationReply.IsInitialized() == true);
 
 REQUIRE(registrationReply.request_succeeded() == true);
-printf("It went\n");
+
+//Generate an update and listen for it
+SECTION( "Send/receive update")
+{
+//Base station registered, so subscribe and see if we get the next message send
+//Create socket to subscribe to caster
+std::unique_ptr<zmq::socket_t> subscriberSocket;
+
+SOM_TRY //Init socket
+subscriberSocket.reset(new zmq::socket_t(*context, ZMQ_SUB));
+SOM_CATCH("Error making socket\n")
+
+SOM_TRY
+int timeoutWaitTime = 5000; //Max 5 seconds
+subscriberSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
+SOM_CATCH("Error setting socket timeout\n")
+
+SOM_TRY //Connect to caster
+std::string connectionString = "tcp://127.0.0.1:" +std::to_string(clientPublishingPort);
+subscriberSocket->connect(connectionString.c_str());
+SOM_CATCH("Error connecting socket for registration with caster\n")
+
+SOM_TRY //Set filter to allow any published messages to be received
+subscriberSocket->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
+SOM_CATCH("Error setting subscription for socket\n")
+
+//Sleep for a few milliseconds to allow connection to stabilize so no messages are missed
+std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+//Send message to caster and see if we get it back with the subscriber
+std::string testString = "This is a test string\n";
+std::string testStringWithSignature = calculateAndPreappendSignature(testString, connectionSigningSecretKey);
+SOM_TRY
+registrationSocket->send(testStringWithSignature.c_str(), testStringWithSignature.size());
+SOM_CATCH("Error sending message to caster\n")
+
+SOM_TRY
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+REQUIRE(subscriberSocket->recv(messageBuffer.get()) == true);
+
+//Check message format
+REQUIRE(messageBuffer->size() == (testString.size() + sizeof(Poco::Int64)*2));
+
+REQUIRE(Poco::ByteOrder::fromNetwork(*((Poco::Int64 *) messageBuffer->data())) == casterID);
+
+REQUIRE(std::string((((const char *) messageBuffer->data()) + sizeof(Poco::Int64)*2), testString.size()) == testString);
+
+} //Send/receive update
+
+SECTION( "Send a query")
+{
+//Send a query and see if we get a valid response
+std::string serializedClientRequest;
+client_query_request clientRequest; //Empty request should return all
+
+clientRequest.SerializeToString(&serializedClientRequest);
+
+std::unique_ptr<zmq::socket_t> clientSocket;
+
+SOM_TRY //Init socket
+clientSocket.reset(new zmq::socket_t(*context, ZMQ_REQ));
+SOM_CATCH("Error making socket\n")
+
+SOM_TRY
+int timeoutWaitTime = 5000; //Max 5 seconds
+clientSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
+SOM_CATCH("Error setting socket timeout\n")
+
+SOM_TRY //Connect to caster
+std::string connectionString = "tcp://127.0.0.1:" +std::to_string(clientRequestPort);
+clientSocket->connect(connectionString.c_str());
+SOM_CATCH("Error connecting socket for registration with caster\n")
+
+SOM_TRY
+clientSocket->send(serializedClientRequest.c_str(), serializedClientRequest.size());
+SOM_CATCH("Error, unable to send client request\n")
+
+SOM_TRY
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+REQUIRE(clientSocket->recv(messageBuffer.get()) == true);
+
+client_query_reply queryReply;
+queryReply.ParseFromArray(messageBuffer->data(), messageBuffer->size());
+
+REQUIRE(queryReply.IsInitialized() == true);
+REQUIRE(queryReply.has_caster_id() == true);
+REQUIRE(queryReply.caster_id() == casterID);
+REQUIRE(queryReply.has_failure_reason() == false);
+REQUIRE(queryReply.base_stations_size() == 1);
+
+auto replyBaseStationInfo = queryReply.base_stations(0);
+REQUIRE(replyBaseStationInfo.has_latitude());
+REQUIRE(replyBaseStationInfo.latitude() == Approx(1.0));
+REQUIRE(replyBaseStationInfo.has_longitude());
+REQUIRE(replyBaseStationInfo.longitude() == Approx(2.0));
+REQUIRE(replyBaseStationInfo.has_expected_update_rate());
+REQUIRE(replyBaseStationInfo.expected_update_rate() == Approx(3.0));
+REQUIRE(replyBaseStationInfo.has_message_format());
+REQUIRE(replyBaseStationInfo.message_format() == RTCM_V3_1);
+REQUIRE(replyBaseStationInfo.has_informal_name());
+REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation");
+REQUIRE(replyBaseStationInfo.has_base_station_id());
+
+//Store station ID so it can be used for later checks
+auto baseStationID = replyBaseStationInfo.base_station_id();
+
+//Do it again with a more complex query
+
+//Let the base station entry age a bit, so we can check uptime
+std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+client_query_request clientRequest0; //Empty request should return all
+
+client_subquery subQuery0; //Shouldn't return any results
+subQuery0.add_acceptable_classes(COMMUNITY);
+
+sql_double_condition doubleCondition;
+sql_integer_condition integerCondition;
+sql_string_condition stringCondition;
+
+client_subquery subQuery1; //Should return 1
+subQuery1.add_acceptable_classes(OFFICIAL);
+subQuery1.add_acceptable_formats(RTCM_V3_1);
+
+doubleCondition.set_value(0.9); 
+doubleCondition.set_relation(GREATER_THAN); 
+auto doubleConditionBuffer = subQuery1.add_latitude_condition();
+(*doubleConditionBuffer) = doubleCondition;
+doubleCondition.set_value(1.1); 
+doubleCondition.set_relation(LESS_THAN);
+doubleConditionBuffer = subQuery1.add_latitude_condition(); 
+(*doubleConditionBuffer) = doubleCondition;
+
+
+
+doubleCondition.set_value(1.9); 
+doubleCondition.set_relation(GREATER_THAN_EQUAL_TO); 
+doubleConditionBuffer = subQuery1.add_longitude_condition();
+(*doubleConditionBuffer) = doubleCondition;
+doubleCondition.set_value(2.1); 
+doubleCondition.set_relation(LESS_THAN_EQUAL_TO); 
+doubleConditionBuffer = subQuery1.add_longitude_condition();
+(*doubleConditionBuffer) = doubleCondition;
+
+
+doubleCondition.set_value(.01); //Up longer than .01 seconds
+doubleCondition.set_relation(GREATER_THAN_EQUAL_TO); 
+doubleConditionBuffer = subQuery1.add_uptime_condition();
+(*doubleConditionBuffer) = doubleCondition;
+
+doubleCondition.set_value(2.9); 
+doubleCondition.set_relation(GREATER_THAN_EQUAL_TO); 
+doubleConditionBuffer = subQuery1.add_expected_update_rate_condition();
+(*doubleConditionBuffer) = doubleCondition;
+
+
+stringCondition.set_value("testBasestat%");
+stringCondition.set_relation(LIKE);
+(*subQuery1.mutable_informal_name_condition()) = stringCondition;
+
+integerCondition.set_value(baseStationID);
+integerCondition.set_relation(EQUAL_TO);
+auto integerConditionBuffer = subQuery1.add_base_station_id_condition();
+(*integerConditionBuffer) = integerCondition;
+
+
+base_station_radius_subquery circleSubQueryPart;
+circleSubQueryPart.set_latitude(1.0);
+circleSubQueryPart.set_longitude(2.0);
+circleSubQueryPart.set_radius(10);
+(*subQuery1.mutable_circular_search_region()) = circleSubQueryPart;
+
+//Add subqueries to request
+(*clientRequest.add_subqueries()) = subQuery0;
+(*clientRequest.add_subqueries()) = subQuery1;
+
+clientRequest.SerializeToString(&serializedClientRequest);
+
+SOM_TRY
+clientSocket->send(serializedClientRequest.c_str(), serializedClientRequest.size());
+SOM_CATCH("Error, unable to send client request\n")
+
+SOM_TRY
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+REQUIRE(clientSocket->recv(messageBuffer.get()) == true);
+
+queryReply.ParseFromArray(messageBuffer->data(), messageBuffer->size());
+REQUIRE(queryReply.IsInitialized() == true);
+REQUIRE(queryReply.has_caster_id() == true);
+REQUIRE(queryReply.caster_id() == casterID);
+REQUIRE(queryReply.has_failure_reason() == false);
+REQUIRE(queryReply.base_stations_size() == 1);
+
+replyBaseStationInfo = queryReply.base_stations(0);
+REQUIRE(replyBaseStationInfo.has_latitude());
+REQUIRE(replyBaseStationInfo.latitude() == Approx(1.0));
+REQUIRE(replyBaseStationInfo.has_longitude());
+REQUIRE(replyBaseStationInfo.longitude() == Approx(2.0));
+REQUIRE(replyBaseStationInfo.has_expected_update_rate());
+REQUIRE(replyBaseStationInfo.expected_update_rate() == Approx(3.0));
+REQUIRE(replyBaseStationInfo.has_message_format());
+REQUIRE(replyBaseStationInfo.message_format() == RTCM_V3_1);
+REQUIRE(replyBaseStationInfo.has_informal_name());
+REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation");
+} //Finish query
+
 }//Register an authenticated stream
 
 

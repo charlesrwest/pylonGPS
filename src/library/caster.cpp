@@ -7,7 +7,6 @@ This function initializes the class, creates the associated database, and starts
 @param inputContext: The ZMQ context that this object should use
 @param inputCasterID: The 64 bit ID associated with this caster (make sure it does not collide with caster IDs the clients are likely to run into)
 @param inputTransmitterRegistrationAndStreamingPortNumber: The port number to register the ZMQ router socket used for receiving PylonGPS transmitter registrations/streams
-@param inputAuthenticatedTransmitterRegistrationAndStreamingPortNumber: The port number to register the ZMQ router socket used for receiving authenticated PylonGPS transmitter registrations/streams
 @param inputClientRequestPortNumber: The port to open to receive client requests (including requests from proxies for the list of sources)
 @param inputClientStreamPublishingPortNumber: The port to open for the interface to publish stream data to clients
 @param inputProxyStreamPublishingPortNumber: The port to open for the interface to publish stream data to proxies (potentially higher priority)
@@ -23,7 +22,7 @@ This function initializes the class, creates the associated database, and starts
 
 @throws: This function can throw exceptions
 */
-caster::caster(zmq::context_t *inputContext, int64_t inputCasterID, uint32_t inputTransmitterRegistrationAndStreamingPortNumber, uint32_t inputAuthenticatedTransmitterRegistrationAndStreamingPortNumber, uint32_t inputClientRequestPortNumber, uint32_t inputClientStreamPublishingPortNumber, uint32_t inputProxyStreamPublishingPortNumber, uint32_t inputStreamStatusNotificationPortNumber, uint32_t inputKeyRegistrationAndRemovalPortNumber, const std::string &inputCasterPublicKey, const std::string &inputCasterSecretKey, const std::string &inputSigningKeysManagementKey, const std::vector<std::string> &inputOfficialSigningKeys, const std::vector<std::string> &inputRegisteredCommunitySigningKeys, const std::vector<std::string> &inputBlacklistedKeys, const std::string &inputCasterSQLITEConnectionString) : databaseConnection(nullptr, &sqlite3_close_v2)
+caster::caster(zmq::context_t *inputContext, int64_t inputCasterID, uint32_t inputTransmitterRegistrationAndStreamingPortNumber, uint32_t inputClientRequestPortNumber, uint32_t inputClientStreamPublishingPortNumber, uint32_t inputProxyStreamPublishingPortNumber, uint32_t inputStreamStatusNotificationPortNumber, uint32_t inputKeyRegistrationAndRemovalPortNumber, const std::string &inputCasterPublicKey, const std::string &inputCasterSecretKey, const std::string &inputSigningKeysManagementKey, const std::vector<std::string> &inputOfficialSigningKeys, const std::vector<std::string> &inputRegisteredCommunitySigningKeys, const std::vector<std::string> &inputBlacklistedKeys, const std::string &inputCasterSQLITEConnectionString)  : databaseConnection(nullptr, &sqlite3_close_v2)
 {
 if(inputContext == nullptr)
 {
@@ -31,7 +30,7 @@ throw SOMException("Invalid ZMQ context\n", INVALID_FUNCTION_INPUT, __FILE__, __
 }
 
 //Check that keys are the right size
-if((inputCasterPublicKey.size() != 32 && inputCasterPublicKey.size() != 40) || (inputCasterSecretKey.size() != 32 && inputCasterSecretKey.size() != 40))
+if((inputCasterPublicKey.size() != 32) || (inputCasterSecretKey.size() != 32 ))
 {
 throw SOMException("Invalid ZMQ key(s)\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
 }
@@ -40,7 +39,6 @@ throw SOMException("Invalid ZMQ key(s)\n", INVALID_FUNCTION_INPUT, __FILE__, __L
 context = inputContext;
 casterID = inputCasterID;
 transmitterRegistrationAndStreamingPortNumber = inputTransmitterRegistrationAndStreamingPortNumber;
-authenticatedTransmitterRegistrationAndStreamingPortNumber = inputAuthenticatedTransmitterRegistrationAndStreamingPortNumber;
 clientRequestPortNumber = inputClientRequestPortNumber;
 clientStreamPublishingPortNumber = inputClientStreamPublishingPortNumber;
 proxyStreamPublishingPortNumber = inputProxyStreamPublishingPortNumber;
@@ -143,7 +141,7 @@ std::tie(shutdownPublishingConnectionString,extensionStringNumber) = bindZMQSock
 SOM_CATCH("Error binding shutdownPublishingSocket\n")
 
 //Initialize, connect and subscribe sockets which listen for shutdown signal
-std::vector<std::unique_ptr<zmq::socket_t> *> signalListeningSockets = {&clientRequestHandlingThreadShutdownListeningSocket, &streamRegistrationAndPublishingThreadShutdownListeningSocket, &authenticationIDCheckingThreadShutdownListeningSocket, &statisticsGatheringThreadShutdownListeningSocket};
+std::vector<std::unique_ptr<zmq::socket_t> *> signalListeningSockets = {&clientRequestHandlingThreadShutdownListeningSocket, &streamRegistrationAndPublishingThreadShutdownListeningSocket, &statisticsGatheringThreadShutdownListeningSocket};
 
 for(int i=0; i<signalListeningSockets.size(); i++)
 {
@@ -178,29 +176,6 @@ SOM_TRY
 registrationDatabaseRequestSocket->connect(databaseAccessConnectionString.c_str());
 SOM_CATCH("Error connecting registration database request socket")
 
-//Attempt to register socket for authentication ID verification via ZAP protocol (could already be registered by another object)
-SOM_TRY
-ZAPAuthenticationSocket.reset(new zmq::socket_t(*(context), ZMQ_REP));
-SOM_CATCH("Error intializing ZAPAuthenticationSocket\n")
-
-SOM_TRY
-try
-{
-ZAPAuthenticationSocket->bind("inproc://zeromq.zap.01");
-}
-catch(const zmq::error_t &inputError)
-{
-if(inputError.num() == EADDRINUSE)
-{
-ZAPAuthenticationSocket.reset(nullptr); //There is already a ZAP handler, so we don't need one 
-}
-else
-{
-throw; //It was some other error, so pass the exception along
-}
-}
-SOM_CATCH("Error binding ZAP inproc socket\n")
-
 //Initialize and bind transmitterRegistrationAndStreaming socket
 SOM_TRY
 transmitterRegistrationAndStreamingInterface.reset(new zmq::socket_t(*(context), ZMQ_ROUTER));
@@ -209,25 +184,6 @@ SOM_CATCH("Error intializing transmitterRegistrationAndStreamingInterface\n")
 SOM_TRY
 std::string bindingAddress = "tcp://*:" + std::to_string(transmitterRegistrationAndStreamingPortNumber);
 transmitterRegistrationAndStreamingInterface->bind(bindingAddress.c_str());
-SOM_CATCH("Error binding transmitterRegistrationAndStreamingInterface\n")
-
-//Initialize and bind authenticatedTransmitterRegistrationAndStreamingPortNumber socket
-SOM_TRY
-authenticatedTransmitterRegistrationAndStreamingInterface.reset(new zmq::socket_t(*(context), ZMQ_ROUTER));
-SOM_CATCH("Error intializing authenticatedTransmitterRegistrationAndStreamingInterface\n")
-
-SOM_TRY //Set socket mode to CURVE server for authentication/encryption
-int serverRole = 1;
-authenticatedTransmitterRegistrationAndStreamingInterface->setsockopt(ZMQ_CURVE_SERVER, &serverRole, sizeof(serverRole));
-SOM_CATCH("Error setting authenticatedTransmitterRegistrationAndStreamingInterface role\n")
-
-SOM_TRY //Set secret key for socket
-authenticatedTransmitterRegistrationAndStreamingInterface->setsockopt(ZMQ_CURVE_SECRETKEY, casterSecretKey.c_str(), casterSecretKey.size());
-SOM_CATCH("Error setting secret key for caster\n")
-
-SOM_TRY //Bind port for socket
-std::string bindingAddress = "tcp://*:" + std::to_string(authenticatedTransmitterRegistrationAndStreamingPortNumber);
-authenticatedTransmitterRegistrationAndStreamingInterface->bind(bindingAddress.c_str());
 SOM_CATCH("Error binding transmitterRegistrationAndStreamingInterface\n")
 
 //Initialize and bind keyRegistrationAndRemoval socket
@@ -239,9 +195,6 @@ SOM_TRY
 std::string bindingAddress = "tcp://*:" + std::to_string(inputKeyRegistrationAndRemovalPortNumber);
 keyRegistrationAndRemovalInterface->bind(bindingAddress.c_str());
 SOM_CATCH("Error binding keyRegistrationAndRemovalInterface\n")
-
-
-
 
 //Initialize and bind clientRequestInterface socket
 SOM_TRY
@@ -292,13 +245,6 @@ SOM_TRY
 streamRegistrationAndPublishingThread.reset(new std::thread(&caster::streamRegistrationAndPublishingThreadFunction, this)); 
 SOM_CATCH("Error initializing thread\n")
 
-if(ZAPAuthenticationSocket.get() != nullptr)
-{
-SOM_TRY
-authenticationIDCheckingThread.reset(new std::thread(&caster::authenticationIDCheckingThreadFunction, this)); 
-SOM_CATCH("Error initializing thread\n")
-}
-
 SOM_TRY
 statisticsGatheringThread.reset(new std::thread(&caster::statisticsGatheringThreadFunction, this)); 
 SOM_CATCH("Error initializing thread\n")
@@ -310,9 +256,6 @@ This function signals for the threads to shut down and then waits for them to do
 */
 caster::~caster()
 {
-//Ensure that all exits points still unregister connector
-//SOMScopeGuard connectorGuard([](){ Poco::Data::SQLite::Connector::unregisterConnector();});
-
 //Publish shutdown signal and wait for threads
 try
 { //Send empty message to signal shutdown
@@ -326,15 +269,9 @@ fprintf(stderr, "%s", inputException.what());
 }
 
 //Wait for threads to finish
-if(authenticationIDCheckingThread.get() != nullptr)
-{
-authenticationIDCheckingThread->join(); 
-}
-
 clientRequestHandlingThread->join();
 streamRegistrationAndPublishingThread->join();
 statisticsGatheringThread->join();
-printf("Caster destroyed\n");
 }
 
 /**
@@ -390,7 +327,6 @@ SOM_CATCH("Error polling\n")
 //Check if it is time to shutdown
 if(pollItems[2].revents & ZMQ_POLLIN)
 {
-printf("Shutting down database/client thread\n");
 return; //Shutdown message received, so return
 }
 
@@ -428,13 +364,13 @@ void caster::streamRegistrationAndPublishingThreadFunction()
 {
 try
 {
-//Responsible for streamRegistrationAndPublishingThreadShutdownListeningSocket, authenticatedTransmitterRegistrationAndStreamingInterface, transmitterRegistrationAndStreamingInterface, registrationDatabaseRequestSocket, keyRegistrationAndRemovalInterface
+//Responsible for streamRegistrationAndPublishingThreadShutdownListeningSocket, transmitterRegistrationAndStreamingInterface, registrationDatabaseRequestSocket, keyRegistrationAndRemovalInterface
 //Publishes to clientStreamPublishingInterface, proxyStreamPublishingInterface, streamStatusNotificationInterface
 
 //Create priority queue for event queue and poll items, then start polling/event cycle
 std::priority_queue<event> threadEventQueue;
 std::unique_ptr<zmq::pollitem_t[]> pollItems;
-int numberOfPollItems = 5;
+int numberOfPollItems = 4;
 
 SOM_TRY
 pollItems.reset(new zmq::pollitem_t[numberOfPollItems]);
@@ -443,9 +379,8 @@ SOM_CATCH("Error creating poll items\n")
 //Populate the poll object list
 pollItems[0] = {(void *) (*streamRegistrationAndPublishingThreadShutdownListeningSocket), 0, ZMQ_POLLIN, 0};
 pollItems[1] = {(void *) (*transmitterRegistrationAndStreamingInterface), 0, ZMQ_POLLIN, 0};
-pollItems[2] = {(void *) (*authenticatedTransmitterRegistrationAndStreamingInterface), 0, ZMQ_POLLIN, 0};
-pollItems[3] = {(void *) (*registrationDatabaseRequestSocket), 0, ZMQ_POLLIN, 0};
-pollItems[4] = {(void *) (*keyRegistrationAndRemovalInterface), 0, ZMQ_POLLIN, 0};
+pollItems[2] = {(void *) (*registrationDatabaseRequestSocket), 0, ZMQ_POLLIN, 0};
+pollItems[3] = {(void *) (*keyRegistrationAndRemovalInterface), 0, ZMQ_POLLIN, 0};
 
 
 //Determine if an event has timed out (and deal with it if so) and then calculate the time until the next event timeout
@@ -477,7 +412,6 @@ SOM_CATCH("Error polling\n")
 //Check if it is time to shutdown
 if(pollItems[0].revents & ZMQ_POLLIN)
 {
-printf("Shutting down registration thread\n");
 return; //Shutdown message received, so return
 }
 
@@ -485,31 +419,20 @@ return; //Shutdown message received, so return
 if(pollItems[1].revents & ZMQ_POLLIN)
 {//A message has been received, so process it (unauthenticated)
 SOM_TRY
-printf("Got unauthenticated stream message\n");
-processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(threadEventQueue, false);
+processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(threadEventQueue);
 SOM_CATCH("Error processing registration request\n")
 }
 
 //Check if a key status change request has been received 
-if(pollItems[4].revents & ZMQ_POLLIN)
+if(pollItems[3].revents & ZMQ_POLLIN)
 {//A message has been received, so process it
-printf("Got key management request\n");
 SOM_TRY
 processKeyManagementRequest(threadEventQueue);
 SOM_CATCH("Error processing request\n")
 }
 
-//Check if an authenticated registration or stream update has been received
-if(pollItems[2].revents & ZMQ_POLLIN)
-{//A message has been received, so process it (authenticated)
-printf("Got an authenticated message\n");
-SOM_TRY
-processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(threadEventQueue, true);
-SOM_CATCH("Error processing registration request\n")
-}
-
 //Check if we've received a reply from the database server
-if(pollItems[3].revents & ZMQ_POLLIN)
+if(pollItems[2].revents & ZMQ_POLLIN)
 {//A message has been received, so process it
 SOM_TRY
 processTransmitterRegistrationAndStreamingDatabaseReply();
@@ -524,82 +447,6 @@ catch(const std::exception &inputException)
 fprintf(stderr, "clientRequestHandlingThreadFunction: %s\n", inputException.what());
 return;
 }
-
-}
-
-/**
-This function is called in the authenticationIDCheckingThread to verify if the ZMQ connection ID of authenticated connections matches the public key the connection is using.
-*/
-void caster::authenticationIDCheckingThreadFunction()
-{
-
-try
-{
-//Responsible for ZAPAuthenticationSocket, authenticationIDCheckingThreadShutdownListeningSocket
-
-//Create priority queue for event queue and poll items, then start polling/event cycle
-std::priority_queue<event> threadEventQueue;
-std::unique_ptr<zmq::pollitem_t[]> pollItems;
-int numberOfPollItems = 2;
-
-SOM_TRY
-pollItems.reset(new zmq::pollitem_t[numberOfPollItems]);
-SOM_CATCH("Error creating poll items\n")
-
-//Populate the poll object list
-pollItems[0] = {(void *) (*ZAPAuthenticationSocket), 0, ZMQ_POLLIN, 0};
-pollItems[1] = {(void *) (*authenticationIDCheckingThreadShutdownListeningSocket), 0, ZMQ_POLLIN, 0};
-
-//Determine if an event has timed out (and deal with it if so) and then calculate the time until the next event timeout
-Poco::Timestamp nextEventTime;
-int64_t timeUntilNextEventInMilliseconds = 0;
-while(true)
-{
-nextEventTime = handleEvents(threadEventQueue);
-
-if(nextEventTime < 0)
-{
-timeUntilNextEventInMilliseconds = -1; //No events, so block until a message is received
-}
-else
-{
-timeUntilNextEventInMilliseconds = (nextEventTime - Poco::Timestamp())/1000 + 1; //Time in milliseconds till the next event, rounding up
-}
-
-//Poll until the next event timeout and resolve any messages that are received
-SOM_TRY
-if(zmq::poll(pollItems.get(), numberOfPollItems, timeUntilNextEventInMilliseconds) == 0)
-{
-continue; //Poll returned without indicating any messages have been received, so check events and go back to polling
-}
-SOM_CATCH("Error polling\n")
-
-//Handle received messages
-
-//Check if it is time to shutdown
-if(pollItems[1].revents & ZMQ_POLLIN)
-{
-printf("Shutting down ZAP handler\n");
-return; //Shutdown message received, so return
-}
-
-//Check if a database request has been received
-if(pollItems[0].revents & ZMQ_POLLIN)
-{//A ZAP authentication message (http://rfc.zeromq.org/spec:27) has been received, so process it (ZMQ identity must contain the 32 byte public key in the first 32 bytes of the identity, so that the key credentials can be checked at the router socket). 
-SOM_TRY
-processZAPAuthenticationRequest();
-SOM_CATCH("Error processing ZAP request\n")
-}
-
-}
-
-}
-catch(const std::exception &inputException)
-{ //If an exception is thrown, swallow it, send error message and terminate
-fprintf(stderr, "clientRequestHandlingThreadFunction: %s\n", inputException.what());
-return;
-}
-
 
 }
 
@@ -647,18 +494,7 @@ if(eventToProcess.HasExtension(possible_base_station_event_timeout::possible_bas
 { //possible_base_station_event_timeout
 possible_base_station_event_timeout eventInstance = eventToProcess.GetExtension(possible_base_station_event_timeout::possible_base_station_event_timeout_field);
 
-std::map<std::string, connectionStatus> *mapPointer = nullptr;
-if(eventInstance.is_authenticated())
-{
-mapPointer = &authenticatedConnectionIDToConnectionStatus;
-}
-else
-{
-mapPointer = &unauthenticatedConnectionIDToConnectionStatus;
-}
-
-
-if((mapPointer->at(eventInstance.connection_id()).timeLastMessageWasReceived.epochMicroseconds() + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0) <= eventToProcess.time.epochMicroseconds())
+if((connectionIDToConnectionStatus.at(eventInstance.connection_id()).timeLastMessageWasReceived.epochMicroseconds() + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0) <= eventToProcess.time.epochMicroseconds())
 {//It has been more than SECONDS_BEFORE_CONNECTION_TIMEOUT since a message was received, so drop connection
 if(eventInstance.is_authenticated())
 {
@@ -723,7 +559,7 @@ return; //Connection key entry not found, so the connection cannot be registered
 //Add to maps/sets
 authenticatedConnectionIDToConnectionKey.emplace(inputConnectionID, inputConnectionKey);
 connectionKeyToAuthenticatedConnectionIDs.emplace(inputConnectionKey, inputConnectionID);
-authenticatedConnectionIDToConnectionStatus[inputConnectionID] = inputConnectionStatus;
+connectionIDToConnectionStatus[inputConnectionID] = inputConnectionStatus;
 
 //Send registration request to database
 std::string serializedDatabaseRequest;
@@ -772,8 +608,8 @@ authenticatedConnectionIDToConnectionKey.erase(inputConnectionID);
 
 removeKeyValuePairFromStringMultimap(connectionKeyToAuthenticatedConnectionIDs, connectionKey, inputConnectionID);
 
-auto basestationID = authenticatedConnectionIDToConnectionStatus.at(inputConnectionID).baseStationID;
-authenticatedConnectionIDToConnectionStatus.erase(inputConnectionID);
+auto basestationID = connectionIDToConnectionStatus.at(inputConnectionID).baseStationID;
+connectionIDToConnectionStatus.erase(inputConnectionID);
 
 //Remove from database
 std::string serializedDatabaseRequest;
@@ -821,7 +657,7 @@ listOfRegisteredCommunitySigningKeys.insert(inputSigningKeys[i]);
 }
 }
 
-if(listOfOfficialSigningKeys.size() && listOfRegisteredCommunitySigningKeys.size() == 0)
+if(listOfOfficialSigningKeys.size() == 0 && listOfRegisteredCommunitySigningKeys.size() == 0)
 {
 return false; //Doesn't have a valid signing key
 }
@@ -997,14 +833,14 @@ This function removes a unauthenticated connection and updates the associated da
 void caster::removeUnauthenticatedConnection(const std::string &inputConnectionID)
 {
 //Check if it has already been erased
-if(unauthenticatedConnectionIDToConnectionStatus.count(inputConnectionID) == 0)
+if(connectionIDToConnectionStatus.count(inputConnectionID) == 0)
 {
 return;
 }
 
 //Remove from maps/sets
-auto basestationID = unauthenticatedConnectionIDToConnectionStatus.at(inputConnectionID).baseStationID;
-unauthenticatedConnectionIDToConnectionStatus.erase(inputConnectionID);
+auto basestationID = connectionIDToConnectionStatus.at(inputConnectionID).baseStationID;
+connectionIDToConnectionStatus.erase(inputConnectionID);
 
 //Remove from database
 std::string serializedDatabaseRequest;
@@ -1317,151 +1153,15 @@ SOM_CATCH("Error sending reply\n")
 }
 
 /**
-This process checks if ZAPAuthenticationSocket has received a ZAP request.  If so, it checks to make sure that the first 32 bytes of the connection identity contains the public key in the credentials, so that the key associated with a connection can be checked using the identity at the authenticatedTransmitterRegistrationAndStreamingInterface using a credentials message sent over that connection
-
-@throws: This function can throw exceptions
-*/
-void caster::processZAPAuthenticationRequest()
-{
-//Create lambda to make it easy to send replies
-auto sendReplyLambda = [&] (const std::string &inputRequestID, int inputStatusCode)
-{ //Reply
-std::vector<std::string> contentToSend;
-//contentToSend.push_back(""); //0. Zero length frame //Already sent by socket
-contentToSend.push_back("1.0"); //1. "1.0"
-contentToSend.push_back(inputRequestID); //2. requestID (echoed)
-contentToSend.push_back(std::to_string(inputStatusCode)); //3. status code -> "200" for success, "300" for temp error, "400" for auth failure, "500" for internal error
-contentToSend.push_back(""); //4. Empty or custom error message
-contentToSend.push_back(""); //5. Could contain metadata about user if status is "200", must be empty otherwise
-contentToSend.push_back(""); //6. Empty or ZMQ format defined style metadata message 
-
-printf("Status code: %d\n", inputStatusCode);
-
-for(int i=0; i<contentToSend.size(); i++)
-{
-if(i == (contentToSend.size()-1))
-{ 
-SOM_TRY
-ZAPAuthenticationSocket->send(contentToSend[i].c_str(), contentToSend[i].size());
-SOM_CATCH("Error sending reply message\n")
-}
-else
-{
-SOM_TRY
-ZAPAuthenticationSocket->send(contentToSend[i].c_str(), contentToSend[i].size(), ZMQ_SNDMORE);
-SOM_CATCH("Error sending reply message\n")
-}
-}
-
-};
-
-
-std::vector<std::string> receivedContent; //Save all of the multi part message in a vector
-auto sendSystemFailedReply = [&] () 
-{
-if(receivedContent.size() >= 3)
-{
-SOM_TRY
-sendReplyLambda(receivedContent[1],500);
-SOM_CATCH("Error sending reply\n")
-}
-else
-{
-SOM_TRY
-sendReplyLambda("",500);
-SOM_CATCH("Error sending reply\n")
-}
-};
-
-std::unique_ptr<zmq::message_t> messageBuffer;
-
-while(true)
-{
-SOM_TRY //Receive message
-messageBuffer.reset(new zmq::message_t);
-SOM_CATCH("Error initializing ZMQ message")
-
-bool messageReceived = false;
-SOM_TRY //Receive message
-messageReceived = ZAPAuthenticationSocket->recv(messageBuffer.get(), ZMQ_DONTWAIT);
-SOM_CATCH("Error receiving server registration/deregistration message")
-
-if(!messageReceived)
-{
-break;
-}
-
-
-receivedContent.push_back(std::string((const char *) messageBuffer->data(), messageBuffer->size()));
-
-if(!messageBuffer->more())
-{ //Multi-part message completed, so exit loop
-break;
-}
-
-}
-
-if(receivedContent.size() != 7)
-{ //Received wrong number of messages
-SOM_TRY
-sendSystemFailedReply();
-SOM_CATCH("Error sending reply\n")
-return;
-}
-
-//REP socket, should receive a 8 part message (http://rfc.zeromq.org/spec:27)
-//Request:
-//Empty frame (already stripped by socket)
-//0. "1.0"
-//1. requestID (reply must echo)
-//2. domain
-//3. Origin IP address (IPv4 or IPv6 string)
-//4. connectionIdentity (max 255 bytes)
-//5. "CURVE"
-//6. 32 byte long term public key
-if(receivedContent[0] != "1.0" || receivedContent[4].size() > 255 || receivedContent[5] != "CURVE" || receivedContent[6].size() != 32 || receivedContent[1].size() < 32)
-{
-printf("This happened %d %d %d %d %d : %s\n", receivedContent[0] != "1.0", receivedContent[4].size() > 255, receivedContent[5] != "CURVE", receivedContent[6].size() != 32, receivedContent[4].size() < 32, receivedContent[4].c_str());
-
-for(int i=0; i<receivedContent.size(); i++)
-{
-printf("%d: %ld\n", i, receivedContent[i].size());
-}
-
-
-SOM_TRY //Send system failure message
-sendReplyLambda(receivedContent[1],500); 
-SOM_CATCH("Error sending reply\n")
-return;
-}
-
-if(receivedContent[1].find(receivedContent[6]) != 0)
-{ //The identity does not have the key preappended, so it is invalid
-SOM_TRY //Send system failure message
-sendReplyLambda(receivedContent[1],400); //Authentication failure
-SOM_CATCH("Error sending reply\n")
-return;
-}
-
-
-//Everything passed
-SOM_TRY //Send system failure message
-sendReplyLambda(receivedContent[1],200); //Authentication "succeeded"
-SOM_CATCH("Error sending reply\n")
-return;
-}
-
-/**
-This function processes messages from the either the  authenticatedTransmitterRegistrationAndStreamingInterface or the transmitterRegistrationAndStreamingInterface.  A connection is expected to start with a transmitter_registration_request, to which this object replies with a transmitter_registration_reply.  Thereafter, the messages received are forwarded to the associated publisher interfaces until the publisher stops sending for an unacceptably long period (SECONDS_BEFORE_CONNECTION_TIMEOUT), at which point the object erases the associated the associated metadata and publishes that the base station disconnected.  In the authenticated case, the permissions of the key associated with the connection are also checked.
+This function processes messages from the transmitterRegistrationAndStreamingInterface.  A connection is expected to start with a transmitter_registration_request, to which this object replies with a transmitter_registration_reply.  Thereafter, the messages received are forwarded to the associated publisher interfaces until the publisher stops sending for an unacceptably long period (SECONDS_BEFORE_CONNECTION_TIMEOUT), at which point the object erases the associated the associated metadata and publishes that the base station disconnected.  In the authenticated case, the preapended signature is removed and checked.  If authentication fails, packet is dropped (eventually timing out).
 @param inputEventQueue: The event queue to register events to
-@param inputIsAuthenticated: True if the message is from the authenticated port
 
 @throws: This function can throw exceptions
 */
-void caster::processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(std::priority_queue<event> &inputEventQueue, bool inputIsAuthenticated)
+void caster::processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(std::priority_queue<event> &inputEventQueue)
 {
 //Send reply
-auto sendReplyLambda = [&] (const std::string &inputAddress, bool inputRequestSucceeded, zmq::socket_t *inputSocketToSendFrom, request_failure_reason inputFailureReason = MESSAGE_FORMAT_INVALID)
+auto sendReplyLambda = [&] (const std::string &inputAddress, bool inputRequestSucceeded, request_failure_reason inputFailureReason = MESSAGE_FORMAT_INVALID)
 {
 //Send: address, empty, data
 transmitter_registration_reply reply;
@@ -1476,40 +1176,20 @@ reply.set_failure_reason(inputFailureReason);
 reply.SerializeToString(&serializedReply);
 
 SOM_TRY
-inputSocketToSendFrom->send(inputAddress.c_str(), inputAddress.size(), ZMQ_SNDMORE);
+transmitterRegistrationAndStreamingInterface->send(inputAddress.c_str(), inputAddress.size(), ZMQ_SNDMORE);
 SOM_CATCH("Error sending reply messages\n")
 
 SOM_TRY
-inputSocketToSendFrom->send(serializedReply.c_str(), serializedReply.size());
+transmitterRegistrationAndStreamingInterface->send(serializedReply.c_str(), serializedReply.size());
 SOM_CATCH("Error sending reply messages\n")
 };
-
-zmq::socket_t *sourceSocket = nullptr;
-if(inputIsAuthenticated)
-{
-sourceSocket = authenticatedTransmitterRegistrationAndStreamingInterface.get();
-}
-else
-{
-sourceSocket = transmitterRegistrationAndStreamingInterface.get();
-} 
-
-std::map<std::string, connectionStatus> *associatedMap = nullptr;
-if(inputIsAuthenticated)
-{
-associatedMap = &authenticatedConnectionIDToConnectionStatus;
-}
-else
-{
-associatedMap = &unauthenticatedConnectionIDToConnectionStatus;
-} 
 
 
 //Receive messages
 std::vector<std::string> receivedContent;
 bool messageRetrievalSuccessful = false;
 SOM_TRY
-messageRetrievalSuccessful = retrieveRouterMessage(*sourceSocket, receivedContent);
+messageRetrievalSuccessful = retrieveRouterMessage(*transmitterRegistrationAndStreamingInterface, receivedContent);
 SOM_CATCH("Error retrieving router message\n")
 
 if(!messageRetrievalSuccessful)
@@ -1517,16 +1197,17 @@ if(!messageRetrievalSuccessful)
 return;
 }
 
-printf("I got a message: (%d)\n", inputIsAuthenticated);
 
 std::string connectionID = receivedContent[0];
 //Get current time
 Poco::Timestamp currentTime;
 auto timeValue = currentTime.epochMicroseconds();
 
+//Check if 
+bool connectionIsAuthenticated = false;
 
 //See if this base station has been registered yet
-if(associatedMap->count(connectionID) == 0)
+if(connectionIDToConnectionStatus.count(connectionID) == 0)
 {
 
 //This connection has not been seen before, so it should have a transmitter_registration_request
@@ -1537,17 +1218,25 @@ request.ParseFromArray(receivedContent[1].c_str(), receivedContent[1].size());
 if(!request.IsInitialized())
 {//Message header serialization failed, so send back message saying request failed
 SOM_TRY
-sendReplyLambda(connectionID, false, sourceSocket, MESSAGE_FORMAT_INVALID);
+sendReplyLambda(connectionID, false, MESSAGE_FORMAT_INVALID);
 return;
 SOM_CATCH("Error sending reply");
 }
+
+credentials *credentialsPointer = nullptr;
+if(request.has_transmitter_credentials())
+{ //This is a request to register an authenticated connection
+connectionIsAuthenticated = true;
+credentialsPointer = request.mutable_transmitter_credentials();
+}
+
 
 base_station_stream_information *streamInfo = request.mutable_stream_info();
 
 if(!streamInfo->has_message_format())
 {//Missing a required field
 SOM_TRY
-sendReplyLambda(connectionID, false, sourceSocket, MISSING_REQUIRED_FIELD);
+sendReplyLambda(connectionID, false, MISSING_REQUIRED_FIELD);
 return;
 SOM_CATCH("Error sending reply")
 }
@@ -1558,26 +1247,25 @@ bool credentialsMessageIsValid = false;
 bool signedByRecognizedOfficialKey = false;
 bool signedByRecognizedCommunityKey = false;
 authorized_permissions permissionsBuffer;
-if(inputIsAuthenticated)
+if(connectionIsAuthenticated)
 {
-std::tie(credentialsMessageIsValid, signedByRecognizedOfficialKey, signedByRecognizedCommunityKey) = checkCredentials(*request.mutable_transmitter_credentials(), permissionsBuffer);
+std::tie(credentialsMessageIsValid, signedByRecognizedOfficialKey, signedByRecognizedCommunityKey) = checkCredentials(*credentialsPointer, permissionsBuffer);
 
-if(!credentialsMessageIsValid || connectionID.find(permissionsBuffer.public_key()) != 0)
+if(!credentialsMessageIsValid)
 { //Either authorized_permissions could not be deserialized or one of the signatures didn't match or the key didn't match
 SOM_TRY
-sendReplyLambda(connectionID, false, sourceSocket, CREDENTIALS_DESERIALIZATION_FAILED);
+sendReplyLambda(connectionID, false, CREDENTIALS_DESERIALIZATION_FAILED);
 return;
 SOM_CATCH("Error sending reply");
 }
 
 
-
 if(permissionsBuffer.has_valid_until())
-{ //Permissions recognized but expired
+{ 
 if(timeValue > permissionsBuffer.valid_until())
-{
+{ //Permissions recognized but expired
 SOM_TRY
-sendReplyLambda(connectionID, false, sourceSocket, CREDENTIALS_DESERIALIZATION_FAILED);
+sendReplyLambda(connectionID, false, CREDENTIALS_DESERIALIZATION_FAILED);
 return;
 SOM_CATCH("Error sending reply");
 }
@@ -1585,41 +1273,41 @@ SOM_CATCH("Error sending reply");
 else
 {
 SOM_TRY
-sendReplyLambda(connectionID, false, sourceSocket, CREDENTIALS_DESERIALIZATION_FAILED);
+sendReplyLambda(connectionID, false, CREDENTIALS_DESERIALIZATION_FAILED);
 return;
 SOM_CATCH("Error sending reply");
 }
 
-if(connectionID.find(permissionsBuffer.public_key()) != 0 || permissionsBuffer.public_key().size() != 32) //ZMQ key size
-{ //The connection ID doesn't match the certificate key
+
+if(permissionsBuffer.public_key().size() != crypto_sign_PUBLICKEYBYTES) 
+{ //The public key is not a valid size
 SOM_TRY
-sendReplyLambda(connectionID, false, sourceSocket, CREDENTIALS_DESERIALIZATION_FAILED);
+sendReplyLambda(connectionID, false, CREDENTIALS_DESERIALIZATION_FAILED);
 return;
 SOM_CATCH("Error sending reply");
 }
 
 //Connection appears to be valid, so add it
-auto credentialsPointer = *request.mutable_transmitter_credentials();
 std::vector<std::string> signingKeys;
 
-for(int i=0; i<credentialsPointer.signatures_size(); i++)
+for(int i=0; i<credentialsPointer->signatures_size(); i++)
 {
-signingKeys.push_back(credentialsPointer.signatures(i).public_key());
+signingKeys.push_back(credentialsPointer->signatures(i).public_key());
 }
+
 
 //Add connection key
 if(addConnectionKey(permissionsBuffer.public_key(), permissionsBuffer.valid_until(), signingKeys, inputEventQueue) != true)
 {
 SOM_TRY
-sendReplyLambda(connectionID, false, sourceSocket, INSUFFICIENT_PERMISSIONS);
+sendReplyLambda(connectionID, false, INSUFFICIENT_PERMISSIONS);
 return;
 SOM_CATCH("Error sending reply");
 }
 }
 
-
 //Set caster assigned fields
-if(!inputIsAuthenticated)
+if(!connectionIsAuthenticated)
 {
 streamInfo->set_station_class(COMMUNITY);
 }
@@ -1636,14 +1324,16 @@ streamInfo->set_station_class(REGISTERED_COMMUNITY);
 else
 {
 SOM_TRY
-sendReplyLambda(connectionID, false, sourceSocket, INSUFFICIENT_PERMISSIONS);
+sendReplyLambda(connectionID, false, INSUFFICIENT_PERMISSIONS);
 return;
 SOM_CATCH("Error sending reply");
 }
 }
 
+
+
 streamInfo->clear_signing_keys();
-if(inputIsAuthenticated)
+if(connectionIsAuthenticated)
 { //Add signing keys
 for(int i=0; i<request.mutable_transmitter_credentials()->signatures_size(); i++)
 {
@@ -1659,7 +1349,7 @@ streamInfo->clear_uptime();
 streamInfo->set_start_time(timeValue);
 
 //Make/send request to database
-if(!inputIsAuthenticated)
+if(!connectionIsAuthenticated)
 {
 std::string serializedDatabaseRequest;
 database_request databaseRequest;
@@ -1679,7 +1369,7 @@ connectionStatus associatedConnectionStatus;
 associatedConnectionStatus.requestToTheDatabaseHasBeenSent = true;
 associatedConnectionStatus.baseStationID = streamID;
 associatedConnectionStatus.timeLastMessageWasReceived = timeValue;
-if(inputIsAuthenticated)
+if(connectionIsAuthenticated)
 {
 SOM_TRY
 addAuthenticatedConnection(connectionID, permissionsBuffer.public_key(), associatedConnectionStatus, *streamInfo, inputEventQueue);
@@ -1687,16 +1377,16 @@ SOM_CATCH("Error adding authenticated connection\n")
 }
 else
 {
-unauthenticatedConnectionIDToConnectionStatus[connectionID] = associatedConnectionStatus;
+connectionIDToConnectionStatus[connectionID] = associatedConnectionStatus;
 }
 
 
-if(!inputIsAuthenticated)
+if(!connectionIsAuthenticated)
 {
 //Register possible stream timeout event
 possible_base_station_event_timeout timeoutEventSubMessage;
 timeoutEventSubMessage.set_connection_id(connectionID);
-timeoutEventSubMessage.set_is_authenticated(inputIsAuthenticated);
+timeoutEventSubMessage.set_is_authenticated(connectionIsAuthenticated);
 
 event timeoutEvent(timeValue + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0);
 (*timeoutEvent.MutableExtension(possible_base_station_event_timeout::possible_base_station_event_timeout_field)) = timeoutEventSubMessage;
@@ -1707,7 +1397,7 @@ inputEventQueue.push(timeoutEvent);
 
 //Tell base station that its registration succeeded
 SOM_TRY
-sendReplyLambda(connectionID, true, sourceSocket);
+sendReplyLambda(connectionID, true);
 SOM_CATCH("Error sending registration succeeded message")
 
 //Make message to announce new station
@@ -1725,23 +1415,59 @@ SOM_CATCH("Error publishing new station registration\n")
 return;//Registration finished
 }//End station registration
 
+
 //Base station has already been registered, so forward it and update the timeout info
+
+//Mark if it is an authenticated connection
+connectionIsAuthenticated = authenticatedConnectionIDToConnectionKey.count(connectionID) != 0;
+
+if(connectionIsAuthenticated && receivedContent[1].size() < crypto_sign_BYTES)
+{ //Authenticated message isn't long enough to have a signature, so ignore it
+return; 
+}
+
+if(connectionIsAuthenticated)
+{//Check the signature
+std::string messageSignature = receivedContent[1].substr(0,crypto_sign_BYTES);
+
+if(crypto_sign_verify_detached((const unsigned char *) messageSignature.c_str(), (const unsigned char *) receivedContent[1].c_str() + crypto_sign_BYTES, receivedContent[1].size() - crypto_sign_BYTES, (const unsigned char *) authenticatedConnectionIDToConnectionKey.at(connectionID).c_str()) != 0) 
+{ //Signature did not match, so ignore invalid message
+return;
+}
+}
+
 //Allocate memory and copy the caster ID, stream ID and data to it
+int totalMessageSize = 0;
+
+if(connectionIsAuthenticated)
 {
-int totalMessageSize = receivedContent[1].size() + sizeof(Poco::Int64)+sizeof(Poco::Int64);
+totalMessageSize = receivedContent[1].size() + sizeof(Poco::Int64)+sizeof(Poco::Int64) - crypto_sign_BYTES; //Subtract size of signature since it is not forwarded
+}
+else
+{
+totalMessageSize = receivedContent[1].size() + sizeof(Poco::Int64)+sizeof(Poco::Int64);
+}
+
 char *memoryBuffer = new char[totalMessageSize];
 SOMScopeGuard memoryBufferScopeGuard([&]() { delete[] memoryBuffer; }); 
 
 //Poco saves the day again (good serialization functions)
 //Update map
 Poco::Int64 streamID = 0;
-streamID = associatedMap->at(connectionID).baseStationID;
+streamID = connectionIDToConnectionStatus.at(connectionID).baseStationID;
 
 *((Poco::Int64 *) memoryBuffer) = Poco::ByteOrder::toNetwork(Poco::Int64(casterID));
 *(((Poco::Int64 *) memoryBuffer) + 1) = Poco::ByteOrder::toNetwork(Poco::Int64(streamID));
 
 //Copy message to buffer
+if(connectionIsAuthenticated)
+{
+memcpy((void *) &memoryBuffer[sizeof(Poco::Int64)*2], (void *) receivedContent[1].c_str() + crypto_sign_BYTES, receivedContent[1].size() - crypto_sign_BYTES);
+}
+else
+{
 memcpy((void *) &memoryBuffer[sizeof(Poco::Int64)*2], (void *) receivedContent[1].c_str(), receivedContent[1].size());
+}
 
 //Forward message
 SOM_TRY
@@ -1754,19 +1480,17 @@ SOM_CATCH("Error, unable to forward message\n")
 
 //Update map and register potential timeout event
 //Update map
-associatedMap->at(connectionID).timeLastMessageWasReceived = timeValue;
+connectionIDToConnectionStatus.at(connectionID).timeLastMessageWasReceived = timeValue;
 
 //Register possible stream timeout event
 possible_base_station_event_timeout timeoutEventSubMessage;
 timeoutEventSubMessage.set_connection_id(connectionID);
-timeoutEventSubMessage.set_is_authenticated(inputIsAuthenticated);
+timeoutEventSubMessage.set_is_authenticated(connectionIsAuthenticated);
 
 event timeoutEvent(timeValue + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0);
 (*timeoutEvent.MutableExtension(possible_base_station_event_timeout::possible_base_station_event_timeout_field)) = timeoutEventSubMessage;
 
 inputEventQueue.push(timeoutEvent);
-}
-
 }
 
 
@@ -2327,6 +2051,13 @@ isSignedByRegisteredCommunityKey = true;
 
 }
 
+inputAuthorizedPermissionsBuffer.ParseFromString(inputCredentials.permissions());
+
+if(!inputAuthorizedPermissionsBuffer.IsInitialized())
+{ //Authorized permissions are invalid
+return std::tuple<bool, bool, bool>(false, isSignedByOfficialEntityKey, isSignedByRegisteredCommunityKey);
+}
+
 return std::tuple<bool, bool, bool>(true, isSignedByOfficialEntityKey, isSignedByRegisteredCommunityKey);
 }
 
@@ -2334,14 +2065,13 @@ return std::tuple<bool, bool, bool>(true, isSignedByOfficialEntityKey, isSignedB
 /**
 This function removes a basestation connection from both the maps and the database.
 @param inputConnectionID: The connection to remove
-@param inputIsAuthenticated: True if the associated connection is authenticated
 
 @throws: This function can throw exceptions
 */
-void caster::removeConnection(const std::string &inputConnectionID, bool inputIsAuthenticated)
+void caster::removeConnection(const std::string &inputConnectionID)
 {
 
-if(inputIsAuthenticated)
+if(authenticatedConnectionIDToConnectionKey.count(inputConnectionID) > 0)
 { //Handle if authenticated
 SOM_TRY
 removeAuthenticatedConnection(inputConnectionID);
@@ -2532,5 +2262,27 @@ iter++; //Just go to the next entry to check
 }
 }
 
+}
+
+/**
+This function calculates the signature for the given string/private signing key and preappends it to the message.
+@param inputMessage: The message to sign
+@param inputSigningSecretKey: The secret key to sign with (must be crypto_sign_SECRETKEYBYTES bytes)
+
+@throws: This function can throw exceptions
+*/
+std::string pylongps::calculateAndPreappendSignature(const std::string &inputMessage, const std::string &inputSigningSecretKey)
+{
+if(inputSigningSecretKey.size() != crypto_sign_SECRETKEYBYTES)
+{
+throw SOMException("Invalid signing secret key\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
+}
+
+//Generate signature
+unsigned char cryptoSignature[crypto_sign_BYTES];
+
+crypto_sign_detached(cryptoSignature, nullptr, (const unsigned char *) inputMessage.c_str(), inputMessage.size(), (const unsigned char *) inputSigningSecretKey.c_str());
+
+return std::string((const char *) cryptoSignature, crypto_sign_BYTES) + inputMessage;
 }
 

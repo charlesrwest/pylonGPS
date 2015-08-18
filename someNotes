@@ -36,4 +36,6 @@ add entry when connection is added
 removing the entry from the database whenever a connection ID is removed
 
 
+There is difficulty in getting the key associated with a particular ZMQ router connection, at least with the current version of ZMQ.  zmq_msg_gets would solve this problem, but that is not available without ZMQ 4.1.
+
 

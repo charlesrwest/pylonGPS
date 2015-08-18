@@ -62,7 +62,6 @@ This function initializes the class, creates the associated database, and starts
 @param inputContext: The ZMQ context that this object should use
 @param inputCasterID: The 64 bit ID associated with this caster (make sure it does not collide with caster IDs the clients are likely to run into)
 @param inputTransmitterRegistrationAndStreamingPortNumber: The port number to register the ZMQ router socket used for receiving PylonGPS transmitter registrations/streams
-@param inputAuthenticatedTransmitterRegistrationAndStreamingPortNumber: The port number to register the ZMQ router socket used for receiving authenticated PylonGPS transmitter registrations/streams
 @param inputClientRequestPortNumber: The port to open to receive client requests (including requests from proxies for the list of sources)
 @param inputClientStreamPublishingPortNumber: The port to open for the interface to publish stream data to clients
 @param inputProxyStreamPublishingPortNumber: The port to open for the interface to publish stream data to proxies (potentially higher priority)
@@ -78,7 +77,7 @@ This function initializes the class, creates the associated database, and starts
 
 @throws: This function can throw exceptions
 */
-caster(zmq::context_t *inputContext, int64_t inputCasterID, uint32_t inputTransmitterRegistrationAndStreamingPortNumber, uint32_t inputAuthenticatedTransmitterRegistrationAndStreamingPortNumber, uint32_t inputClientRequestPortNumber, uint32_t inputClientStreamPublishingPortNumber, uint32_t inputProxyStreamPublishingPortNumber, uint32_t inputStreamStatusNotificationPortNumber, uint32_t inputKeyRegistrationAndRemovalPortNumber, const std::string &inputCasterPublicKey, const std::string &inputCasterSecretKey, const std::string &inputSigningKeysManagementKey, const std::vector<std::string> &inputOfficialSigningKeys, const std::vector<std::string> &inputRegisteredCommunitySigningKeys, const std::vector<std::string> &inputBlacklistedKeys, const std::string &inputCasterSQLITEConnectionString = "");
+caster(zmq::context_t *inputContext, int64_t inputCasterID, uint32_t inputTransmitterRegistrationAndStreamingPortNumber, uint32_t inputClientRequestPortNumber, uint32_t inputClientStreamPublishingPortNumber, uint32_t inputProxyStreamPublishingPortNumber, uint32_t inputStreamStatusNotificationPortNumber, uint32_t inputKeyRegistrationAndRemovalPortNumber, const std::string &inputCasterPublicKey, const std::string &inputCasterSecretKey, const std::string &inputSigningKeysManagementKey, const std::vector<std::string> &inputOfficialSigningKeys, const std::vector<std::string> &inputRegisteredCommunitySigningKeys, const std::vector<std::string> &inputBlacklistedKeys, const std::string &inputCasterSQLITEConnectionString = "");
 
 /**
 This function signals for the threads to shut down and then waits for them to do so.
@@ -88,7 +87,6 @@ This function signals for the threads to shut down and then waits for them to do
 zmq::context_t *context;
 int64_t casterID;
 uint32_t transmitterRegistrationAndStreamingPortNumber;
-uint32_t authenticatedTransmitterRegistrationAndStreamingPortNumber;
 uint32_t clientRequestPortNumber;
 uint32_t clientStreamPublishingPortNumber;
 uint32_t proxyStreamPublishingPortNumber;
@@ -115,8 +113,7 @@ std::map<std::string, std::string> authenticatedConnectionIDToConnectionKey;
 
 //Used to keep track of the current status of each basestation connection
 int64_t lastAssignedConnectionID = 0; //Incremented to make unique streamIDs
-std::map<std::string, connectionStatus> unauthenticatedConnectionIDToConnectionStatus;
-std::map<std::string, connectionStatus> authenticatedConnectionIDToConnectionStatus;
+std::map<std::string, connectionStatus> connectionIDToConnectionStatus;
 
 /**
 This function is called in the clientRequestHandlingThread to handle client requests and manage access to the SQLite database.
@@ -127,11 +124,6 @@ void clientRequestHandlingThreadFunction();
 This function is called in the streamRegistrationAndPublishingThread to handle stream registration and publishing updates.
 */
 void streamRegistrationAndPublishingThreadFunction();
-
-/**
-This function is called in the authenticationIDCheckingThread to verify if the ZMQ connection ID of authenticated connections matches the public key the connection is using.
-*/
-void authenticationIDCheckingThreadFunction();
 
 /**
 This function monitors published updates, collects the associated statistics and periodically reports them to the database.
@@ -152,24 +144,20 @@ std::unique_ptr<zmq::socket_t> shutdownPublishingSocket; //This inproc PUB socke
 //Set of sockets use to listen for the signal from shutdownPublishingSocket
 std::unique_ptr<zmq::socket_t> clientRequestHandlingThreadShutdownListeningSocket;
 std::unique_ptr<zmq::socket_t> streamRegistrationAndPublishingThreadShutdownListeningSocket;
-std::unique_ptr<zmq::socket_t> authenticationIDCheckingThreadShutdownListeningSocket;
 std::unique_ptr<zmq::socket_t> statisticsGatheringThreadShutdownListeningSocket;
 
-std::unique_ptr<zmq::socket_t> ZAPAuthenticationSocket; //A inproc REP socket that handles ID verification for the ZAP protocol (if another object has not already bound inproc://zeromq.zap.01)
 std::unique_ptr<zmq::socket_t> databaseAccessSocket; //A inproc REP socket that handles requests to make changes to the database.  Used by clientRequestHandlingThread.
 std::unique_ptr<zmq::socket_t> registrationDatabaseRequestSocket; //A inproc dealer socket used in the streamRegistrationAndPublishingThread to send database requests/get replies
 
 std::unique_ptr<std::thread> clientRequestHandlingThread; //Handles client requests and requests by the stream registration and statistics threads to make changes to the database
 std::unique_ptr<std::thread> streamRegistrationAndPublishingThread;
-std::unique_ptr<std::thread> authenticationIDCheckingThread; //A thread that is enabled/started to do ZMQ authentication if the inproc address "inproc://zeromq.zap.01" has not been bound already 
 std::unique_ptr<std::thread> statisticsGatheringThread; //This thread analyzes the statistics of the stream messages that are published and periodically updates the associated entries in the database.
 
 std::unique_ptr<sqlite3, decltype(&sqlite3_close_v2)> databaseConnection; //Pointer to created database connection
 std::unique_ptr<protobufSQLConverter<base_station_stream_information> > basestationToSQLInterface; //Allows storage/retrieval of base_station_stream_information objects in the database
 
 //Interfaces
-std::unique_ptr<zmq::socket_t> transmitterRegistrationAndStreamingInterface; ///A ZMQ ROUTER socket which expects unencrypted data (transmitter_registration_request to which it responses with a transmitter_registration_reply. If accepted, the request is followed by the data to broadcast).  Used by streamRegistrationAndPublishingThread.
-std::unique_ptr<zmq::socket_t> authenticatedTransmitterRegistrationAndStreamingInterface; ///A ZMQ ROUTER socket which expects encrypted data (transmitter_registration_request with credentials to which it responses with a transmitter_registration_reply. If accepted, the request is followed by the data to broadcast) and checks the key (ZMQ connection ID must match public key).  Used by streamRegistrationAndPublishingThread.
+std::unique_ptr<zmq::socket_t> transmitterRegistrationAndStreamingInterface; ///A ZMQ ROUTER socket which expects a transmitter_registration_request to which it responses with a transmitter_registration_reply. If accepted, the request is followed by the data to broadcast.  If the data is athenticated, the data message has a preappended sodium signature of length crypto_sign_BYTES.  Used by streamRegistrationAndPublishingThread.
 std::unique_ptr<zmq::socket_t> keyRegistrationAndRemovalInterface; ///A ZMQ REP socket which expects a key_management_request message and sends back a key_management_reply message.  Used by streamRegistrationAndPublishingThread.
 std::unique_ptr<zmq::socket_t> clientRequestInterface;  ///A ZMQ REP socket which expects a client_query_request and responds with a client_query_reply.  Used by clientRequestHandlingThread.
 std::unique_ptr<zmq::socket_t> clientStreamPublishingInterface; ///A ZMQ PUB socket which publishes all data associated with all streams with the caster ID and stream ID preappended for clients to subscribe.  Used by streamRegistrationAndPublishingThread.
@@ -256,11 +244,10 @@ void removeUnauthenticatedConnection(const std::string &inputConnectionID);
 /**
 This function removes a basestation connection from both the maps and the database.
 @param inputConnectionID: The connection to remove
-@param inputIsAuthenticated: True if the associated connection is authenticated
 
 @throws: This function can throw exceptions
 */
-void removeConnection(const std::string &inputConnectionID, bool inputIsAuthenticated);
+void removeConnection(const std::string &inputConnectionID);
 
 /**
 This function sets up the basestationToSQLInterface and generates the associated tables so that basestations can be stored and returned.  databaseConnection must be setup before this function is called.
@@ -283,21 +270,14 @@ This function checks if the clientRequestInterface has received a client_query_r
 */
 void processClientQueryRequest();
 
-/**
-This process checks if ZAPAuthenticationSocket has received a ZAP request.  If so, it checks to make sure that the first 32 bytes of the connection identity contains the public key in the credentials, so that the key associated with a connection can be checked using the identity at the authenticatedTransmitterRegistrationAndStreamingInterface using a credentials message sent over that connection
-
-@throws: This function can throw exceptions
-*/
-void processZAPAuthenticationRequest();
 
 /**
-This function processes messages from the either the  authenticatedTransmitterRegistrationAndStreamingInterface or the transmitterRegistrationAndStreamingInterface.  A connection is expected to start with a transmitter_registration_request, to which this object replies with a transmitter_registration_reply.  Thereafter, the messages received are forwarded to the associated publisher interfaces until the publisher stops sending for an unacceptably long period (SECONDS_BEFORE_CONNECTION_TIMEOUT), at which point the object erases the associated the associated metadata and publishes that the base station disconnected.  In the authenticated case, the permissions of the key associated with the connection are also checked.
+This function processes messages from the transmitterRegistrationAndStreamingInterface.  A connection is expected to start with a transmitter_registration_request, to which this object replies with a transmitter_registration_reply.  Thereafter, the messages received are forwarded to the associated publisher interfaces until the publisher stops sending for an unacceptably long period (SECONDS_BEFORE_CONNECTION_TIMEOUT), at which point the object erases the associated the associated metadata and publishes that the base station disconnected.  In the authenticated case, the preapended signature is removed and checked.  If authentication fails, packet is dropped (eventually timing out).
 @param inputEventQueue: The event queue to register events to
-@param inputIsAuthenticated: True if the message is from the authenticated port
 
 @throws: This function can throw exceptions
 */
-void processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(std::priority_queue<event> &inputEventQueue, bool inputIsAuthenticated);
+void processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(std::priority_queue<event> &inputEventQueue);
 
 /**
 This function processes reply messages sent to registrationDatabaseRequestSocket.  It expects database operations to succeed, so it throws an exception upon receiving a failure message.
@@ -436,6 +416,14 @@ This function removes all entries of the map with the specific key/value.
 */
 void removeKeyValuePairFromStringMultimap(std::multimap<std::string, std::string> &inputMultimap, const std::string &inputKey, const std::string &inputValue);
 
+/**
+This function calculates the signature for the given string/private signing key and preappends it to the message.
+@param inputMessage: The message to sign
+@param inputSigningSecretKey: The secret key to sign with (must be crypto_sign_SECRETKEYBYTES bytes)
+
+@throws: This function can throw exceptions
+*/
+std::string calculateAndPreappendSignature(const std::string &inputMessage, const std::string &inputSigningSecretKey);
 
 }
 #endif
