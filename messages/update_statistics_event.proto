@@ -1,0 +1,14 @@
+package pylongps;
+
+import "event_message.proto"; 
+
+//This message represents the timepoint at which the the next wave of real_update_rate entries should be updated
+message update_statistics_event
+{
+
+//Add to message container to allow simulated polymorphism
+extend event_message
+{
+optional update_statistics_event update_statistics_event_field = 60;
+}
+}  

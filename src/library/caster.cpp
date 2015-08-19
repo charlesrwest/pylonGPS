@@ -176,6 +176,15 @@ SOM_TRY
 registrationDatabaseRequestSocket->connect(databaseAccessConnectionString.c_str());
 SOM_CATCH("Error connecting registration database request socket")
 
+//Initialize and connect the statistics thread's database request socket
+SOM_TRY
+statisticsDatabaseRequestSocket.reset(new zmq::socket_t(*(context), ZMQ_DEALER));
+SOM_CATCH("Error intializing statisticsDatabaseRequestSocket\n")
+
+SOM_TRY
+statisticsDatabaseRequestSocket->connect(databaseAccessConnectionString.c_str());
+SOM_CATCH("Error connecting statistics database request socket")
+
 //Initialize and bind transmitterRegistrationAndStreaming socket
 SOM_TRY
 transmitterRegistrationAndStreamingInterface.reset(new zmq::socket_t(*(context), ZMQ_ROUTER));
@@ -235,6 +244,34 @@ SOM_TRY
 std::string bindingAddress = "tcp://*:" + std::to_string(streamStatusNotificationPortNumber);
 streamStatusNotificationInterface->bind(bindingAddress.c_str());
 SOM_CATCH("Error binding streamStatusNotificationInterface\n")
+
+//Initialize and connect the statistic thread's streamStatusNotificationListener
+SOM_TRY
+streamStatusNotificationListener.reset(new zmq::socket_t(*(context), ZMQ_SUB));
+SOM_CATCH("Error intializing streamStatusNotificationListener\n")
+
+SOM_TRY //Set filter to allow any published messages to be received
+streamStatusNotificationListener->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
+SOM_CATCH("Error setting subscription for socket listening for socket notifications\n")
+
+SOM_TRY
+std::string connectionAddress = "tcp://127.0.0.1:" + std::to_string(streamStatusNotificationPortNumber);
+streamStatusNotificationListener->connect(connectionAddress.c_str());
+SOM_CATCH("Error connecting streamStatusNotificationListener socket")
+
+//Initialize and connect the statistic thread's proxyStreamListener
+SOM_TRY
+proxyStreamListener.reset(new zmq::socket_t(*(context), ZMQ_SUB));
+SOM_CATCH("Error intializing proxyStreamListener\n")
+
+SOM_TRY //Set filter to allow any published messages to be received
+proxyStreamListener->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
+SOM_CATCH("Error setting subscription for socket listening for proxy stream\n")
+
+SOM_TRY
+std::string connectionAddress = "tcp://127.0.0.1:" + std::to_string(proxyStreamPublishingPortNumber);
+proxyStreamListener->connect(connectionAddress.c_str());
+SOM_CATCH("Error connecting proxyStreamListener socket")
 
 //Start threads
 SOM_TRY
@@ -455,7 +492,101 @@ This function monitors published updates, collects the associated statistics and
 */
 void caster::statisticsGatheringThreadFunction()
 {
+try
+{
+//Responsible for statisticsGatheringThreadShutdownListeningSocket, streamStatusNotificationListener, proxyStreamListener, statisticsDatabaseRequestSocket
 
+
+//Create priority queue for event queue and poll items, then start polling/event cycle
+std::priority_queue<event> threadEventQueue;
+std::unique_ptr<zmq::pollitem_t[]> pollItems;
+int numberOfPollItems = 4;
+
+SOM_TRY
+pollItems.reset(new zmq::pollitem_t[numberOfPollItems]);
+SOM_CATCH("Error creating poll items\n")
+
+//Populate the poll object list
+pollItems[0] = {(void *) (*statisticsGatheringThreadShutdownListeningSocket), 0, ZMQ_POLLIN, 0};
+pollItems[1] = {(void *) (*streamStatusNotificationListener), 0, ZMQ_POLLIN, 0};
+pollItems[2] = {(void *) (*proxyStreamListener), 0, ZMQ_POLLIN, 0};
+pollItems[3] = {(void *) (*statisticsDatabaseRequestSocket), 0, ZMQ_POLLIN, 0};
+
+//Add event to manage the update cycle
+Poco::Timestamp currentTime;
+auto timeValue = currentTime.epochMicroseconds();
+
+update_statistics_event updateEventSubMessage;
+
+event updateEvent(timeValue + 1000000.0); //Active in 1 second
+(*updateEvent.MutableExtension(update_statistics_event::update_statistics_event_field)) = updateEventSubMessage;
+
+threadEventQueue.push(updateEvent);
+
+//Determine if an event has timed out (and deal with it if so) and then calculate the time until the next event timeout
+Poco::Timestamp nextEventTime;
+int64_t timeUntilNextEventInMilliseconds = 0;
+while(true)
+{
+nextEventTime = handleEvents(threadEventQueue);
+
+if(nextEventTime < 0)
+{
+timeUntilNextEventInMilliseconds = -1; //No events, so block until a message is received
+}
+else
+{
+timeUntilNextEventInMilliseconds = (nextEventTime - Poco::Timestamp())/1000 + 1; //Time in milliseconds till the next event, rounding up
+}
+
+//Poll until the next event timeout and resolve any messages that are received
+SOM_TRY
+if(zmq::poll(pollItems.get(), numberOfPollItems, timeUntilNextEventInMilliseconds) == 0)
+{
+continue; //Poll returned without indicating any messages have been received, so check events and go back to polling
+}
+SOM_CATCH("Error polling\n")
+
+//Handle received messages
+
+//Check if it is time to shutdown
+if(pollItems[0].revents & ZMQ_POLLIN)
+{
+return; //Shutdown message received, so return
+}
+
+//Check if an stream status notification has been received
+if(pollItems[1].revents & ZMQ_POLLIN)
+{//A message has been received, so process it (unauthenticated)
+SOM_TRY
+statisticsProcessStreamStatusNotification(threadEventQueue);
+SOM_CATCH("Error processing stream status notification\n")
+}
+
+//Check if a proxy stream message has been published 
+if(pollItems[2].revents & ZMQ_POLLIN)
+{//A message has been received, so process it
+SOM_TRY
+statisticsProcessStreamMessage(threadEventQueue);
+SOM_CATCH("Error processing request\n")
+}
+
+//Check if we've received a reply from the database server
+if(pollItems[3].revents & ZMQ_POLLIN)
+{//A message has been received, so process it
+SOM_TRY
+statisticsProcessDatabaseReply(threadEventQueue);
+SOM_CATCH("Error processing request\n")
+}
+
+}
+
+}
+catch(const std::exception &inputException)
+{ //If an exception is thrown, swallow it, send error message and terminate
+fprintf(stderr, "statistics thread: %s\n", inputException.what());
+return;
+}
 }
 
 /**
@@ -535,7 +666,84 @@ SOM_CATCH("Error removing signing key\n")
 continue;
 }
 
+if(eventToProcess.HasExtension(update_statistics_event::update_statistics_event_field))
+{ //It is time to update the real update rates in the database
+//Update database lambda
+
+auto updateBasestationEntryLambda = [&] (int64_t inputBasestationID, double inputRealUpdateRate)
+{
+//Send registration request to database
+std::string serializedDatabaseRequest;
+database_request databaseRequest;
+databaseRequest.set_base_station_to_update_id(inputBasestationID);
+databaseRequest.set_real_update_rate(inputRealUpdateRate);
+
+databaseRequest.SerializeToString(&serializedDatabaseRequest);
+
+SOM_TRY
+statisticsDatabaseRequestSocket->send(nullptr, 0, ZMQ_SNDMORE);
+statisticsDatabaseRequestSocket->send(serializedDatabaseRequest.c_str(), serializedDatabaseRequest.size());
+SOM_CATCH("Error sending database request\n")
+};
+
+
+Poco::Timestamp currentTime;
+auto timeValue = currentTime.epochMicroseconds();
+
+if(basestationIDToCreationTime.size() < UPDATE_RATES_TO_UPDATE_PER_SECOND)
+{ //We can just update all of the entries
+for(auto iter = basestationIDToCreationTime.begin(); iter != basestationIDToCreationTime.end(); iter++)
+{
+double updateRate = basestationIDToNumberOfSentMessages.at(iter->first)/((timeValue-iter->second)*1000000.0);
+SOM_TRY
+updateBasestationEntryLambda(iter->first, updateRate);
+SOM_CATCH("Error updating update rate")
+} 
+mapUpdateIndex = 0;
 }
+else
+{ //Update subset
+if(mapUpdateIndex >= basestationIDToCreationTime.size())
+{
+mapUpdateIndex = 0;
+}
+
+auto iter = basestationIDToCreationTime.begin();
+for(int i=0; i<mapUpdateIndex; i++)
+{
+iter++; //Advance until the index is met
+}
+
+int count = 0; //Number of updates performed
+for(; iter != basestationIDToCreationTime.end() && count < UPDATE_RATES_TO_UPDATE_PER_SECOND; count++)
+{
+if(iter == basestationIDToCreationTime.end())
+{ //Modulo increment
+iter = basestationIDToCreationTime.begin();
+}
+
+double updateRate = basestationIDToNumberOfSentMessages.at(iter->first)/((timeValue-iter->second)*1000000.0);
+SOM_TRY
+updateBasestationEntryLambda(iter->first, updateRate);
+SOM_CATCH("Error updating update rate")
+
+iter++;
+mapUpdateIndex++; //Update index
+} 
+
+
+}
+
+//add new update_statistics_event to trigger next update
+update_statistics_event updateEventSubMessage;
+
+event updateEvent(timeValue + 1000000.0); //Active in 1 second
+(*updateEvent.MutableExtension(update_statistics_event::update_statistics_event_field)) = updateEventSubMessage;
+
+inputEventQueue.push(updateEvent);
+}//end update_statistics_event
+
+}//end while
 
 }
 
@@ -1407,9 +1615,15 @@ stream_status_update updateMessage;
 
 updateMessage.SerializeToString(&serializedUpdateMessage);
 
+//Preappend casterID, streamID
+auto networkOrderCasterID = Poco::ByteOrder::toNetwork(Poco::Int64(casterID));
+auto networkOrderStreamID = Poco::ByteOrder::toNetwork(Poco::Int64(streamID));
+
+std::string notificiationMessage = std::string((const char *) &networkOrderCasterID, sizeof(networkOrderCasterID)) + std::string((const char *) &networkOrderStreamID, sizeof(networkOrderStreamID)) + serializedUpdateMessage;
+
 //Send the message
 SOM_TRY
-streamStatusNotificationInterface->send(serializedUpdateMessage.c_str(), serializedUpdateMessage.size());
+streamStatusNotificationInterface->send(notificiationMessage.c_str(), notificiationMessage.size());
 SOM_CATCH("Error publishing new station registration\n")
 
 return;//Registration finished
@@ -1660,6 +1874,143 @@ addSigningKey(changes.registered_community_signing_keys_to_add(i), false,  chang
 SOM_TRY
 sendReplyLambda(false); //Operation succeeded
 SOM_CATCH("Error, unable to send reply")
+}
+
+/**
+This function processes stream status notification messages from the streamStatusNotificationListener socket in the statistics gathering thread.
+@param inputEventQueue: The event queue to register events to
+
+@throws: This function can throw exceptions
+*/
+void caster::statisticsProcessStreamStatusNotification(std::priority_queue<event> &inputEventQueue)
+{
+std::unique_ptr<zmq::message_t> messageBuffer;
+
+SOM_TRY //Receive message
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+bool messageReceived = false;
+SOM_TRY
+messageReceived = streamStatusNotificationListener->recv(messageBuffer.get(), ZMQ_DONTWAIT);
+SOM_CATCH("Error receiving key registration message")
+
+if(!messageReceived)
+{
+return;
+}
+
+if(messageBuffer->size() < 2*sizeof(Poco::Int64))
+{
+return; //Message is invalid
+}
+
+Poco::Int64 casterID = Poco::ByteOrder::fromNetwork(*((Poco::Int64 *) messageBuffer->data()));
+Poco::Int64 streamID = Poco::ByteOrder::fromNetwork(*(((Poco::Int64 *) messageBuffer->data())+1));
+
+stream_status_update update;
+update.ParseFromArray(((const char *) messageBuffer->data())+2*sizeof(Poco::Int64), messageBuffer->size() - 2*sizeof(Poco::Int64));
+
+if(!update.IsInitialized())
+{
+return; //Invalid message
+}
+
+if(update.has_new_base_station_info())
+{ //Add basestation to maps
+Poco::Timestamp currentTime;
+auto timeValue = currentTime.epochMicroseconds();
+basestationIDToCreationTime[streamID]  = timeValue;
+basestationIDToNumberOfSentMessages[streamID] = 0;
+}
+
+if(update.has_base_station_removed())
+{//Remove from maps
+basestationIDToCreationTime.erase(update.base_station_removed());
+basestationIDToNumberOfSentMessages.erase(update.base_station_removed());
+}
+
+}
+
+/**
+This function processes stream messages from the proxyStreamListener socket in the statistics gathering thread.
+@param inputEventQueue: The event queue to register events to
+
+@throws: This function can throw exceptions
+*/
+void caster::statisticsProcessStreamMessage(std::priority_queue<event> &inputEventQueue)
+{
+std::unique_ptr<zmq::message_t> messageBuffer;
+
+SOM_TRY //Receive message
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+bool messageReceived = false;
+SOM_TRY
+messageReceived = proxyStreamListener->recv(messageBuffer.get(), ZMQ_DONTWAIT);
+SOM_CATCH("Error receiving key registration message")
+
+if(!messageReceived)
+{
+return;
+}
+
+if(messageBuffer->size() < 2*sizeof(Poco::Int64))
+{
+return; //Message is invalid
+}
+
+Poco::Int64 casterID = Poco::ByteOrder::fromNetwork(*((Poco::Int64 *) messageBuffer->data()));
+Poco::Int64 streamID = Poco::ByteOrder::fromNetwork(*(((Poco::Int64 *) messageBuffer->data())+1));
+
+//Got a message, so update associated map
+if(basestationIDToNumberOfSentMessages.count(streamID) != 0)
+{//Add one to the message count for that stream
+basestationIDToNumberOfSentMessages[streamID]++;
+}
+}
+
+/**
+This function processes database_reply messages from the statisticsDatabaseRequestSocket socket in the statistics gathering thread.
+@param inputEventQueue: The event queue to register events to
+
+@throws: This function can throw exceptions
+*/
+void caster::statisticsProcessDatabaseReply(std::priority_queue<event> &inputEventQueue)
+{
+std::unique_ptr<zmq::message_t> messageBuffer;
+
+SOM_TRY //Receive message
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+bool messageReceived = false;
+SOM_TRY //Receive first message part (should be empty)
+messageReceived = statisticsDatabaseRequestSocket->recv(messageBuffer.get(), ZMQ_DONTWAIT);
+SOM_CATCH("Error receiving database reply message")
+
+if(!messageReceived || messageBuffer->size() != 0 || !messageBuffer->more())
+{
+return;
+}
+
+SOM_TRY //Receive message
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+messageReceived = false;
+SOM_TRY //Receive message
+messageReceived = statisticsDatabaseRequestSocket->recv(messageBuffer.get(), ZMQ_DONTWAIT);
+SOM_CATCH("Error receiving server registration message")
+
+database_reply reply;
+reply.ParseFromArray(messageBuffer->data(), messageBuffer->size());
+
+if(reply.has_reason())
+{
+throw SOMException("Database request failed (" +std::to_string((int) reply.reason())+ "\n", SQLITE3_ERROR, __FILE__, __LINE__);
+}
 }
 
 

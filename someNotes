@@ -38,4 +38,18 @@ removing the entry from the database whenever a connection ID is removed
 
 There is difficulty in getting the key associated with a particular ZMQ router connection, at least with the current version of ZMQ.  zmq_msg_gets would solve this problem, but that is not available without ZMQ 4.1.
 
+Statistics gathering thread:
+
+//Needs to listen to: stream status change socket (SUB), stream proxy publishing socket (SUB), shutdown socket (SUB)
+
+//Listen to stream status change socket
+When a new station registers, make a new entry for it and mark time of creation.
+
+When an station is disconnected, the associated entry is removed.
+
+//Listen to the proxy publishing port
+Maintain count of published messages per station.  Average update rate is computed by dividing the number of messages published by the time elapsed since the 
+
+//SQLITE entries are updated in a rolling basis.  Every second, up to X entries are updated (using modulo arithmatic unless that results in some being updated more than once in a single update cycle).  This means that the update rate of the entries will decrease linearly once the number stations goes past X, but the computational load should be finite.  For now, X will be set to 100.  
+
 

@@ -12,6 +12,6 @@ BASE_STATION_TERMINATED_CONNECTION = 2; //The base station indicated it wished t
 message stream_status_update
 {
 optional base_station_stream_information new_base_station_info = 10; //Non-empty if there is a new base station available 
-optional uint64 base_station_removed = 20; //The 64 bit ID of the base station that is being removed from the caster
+optional int64 base_station_removed = 20; //The 64 bit ID of the base station that is being removed from the caster
 optional base_station_removal_reason removal_reason = 30; //The reason the base station was removed from the caster
 }

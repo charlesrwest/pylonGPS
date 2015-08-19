@@ -40,12 +40,16 @@
 #include "blacklist_key_timeout_event.pb.h"
 #include "connection_key_timeout_event.pb.h"
 #include "signing_key_timeout_event.pb.h"
+#include "update_statistics_event.pb.h"
 
 namespace pylongps
 {
 
 //How long to wait before a connection is considered to have timed out and is closed
 const double SECONDS_BEFORE_CONNECTION_TIMEOUT = 5.0; 
+
+//How many basestation updates rates to update in the database per second
+const int UPDATE_RATES_TO_UPDATE_PER_SECOND = 100;
 
 /**
 This class represents a pylonGPS 2.0 caster.  It opens several ZMQ ports to provide caster services, an in-memory SQLITE database and creates 2 threads to manage its duties.
@@ -115,6 +119,11 @@ std::map<std::string, std::string> authenticatedConnectionIDToConnectionKey;
 int64_t lastAssignedConnectionID = 0; //Incremented to make unique streamIDs
 std::map<std::string, connectionStatus> connectionIDToConnectionStatus;
 
+//Owned by statistics gathering thread
+int mapUpdateIndex = 0; //The appropriate position to start in the map with the next update cycle.
+std::map<int64_t, int64_t> basestationIDToCreationTime; //Resolves when basestation was made (Poco timestamp timevalue)
+std::map<int64_t, int64_t> basestationIDToNumberOfSentMessages; //Keeps track of how many messages each basestation has sent
+
 /**
 This function is called in the clientRequestHandlingThread to handle client requests and manage access to the SQLite database.
 */
@@ -148,6 +157,9 @@ std::unique_ptr<zmq::socket_t> statisticsGatheringThreadShutdownListeningSocket;
 
 std::unique_ptr<zmq::socket_t> databaseAccessSocket; //A inproc REP socket that handles requests to make changes to the database.  Used by clientRequestHandlingThread.
 std::unique_ptr<zmq::socket_t> registrationDatabaseRequestSocket; //A inproc dealer socket used in the streamRegistrationAndPublishingThread to send database requests/get replies
+std::unique_ptr<zmq::socket_t> streamStatusNotificationListener; //A TCP SUB socket used in the statisticsGatheringThread to listen to the streamStatusNotificationInterface
+std::unique_ptr<zmq::socket_t> proxyStreamListener; //A TCP SUB socket used in the statisticsGatheringThread to listen to the proxyStreamPublishingInterface
+std::unique_ptr<zmq::socket_t> statisticsDatabaseRequestSocket; //A inproc dealer socket used in the statisticsGatheringThread to send database requests/get replies
 
 std::unique_ptr<std::thread> clientRequestHandlingThread; //Handles client requests and requests by the stream registration and statistics threads to make changes to the database
 std::unique_ptr<std::thread> streamRegistrationAndPublishingThread;
@@ -294,6 +306,29 @@ This function processes key_management_request messages and accordingly modifies
 */
 void processKeyManagementRequest(std::priority_queue<event> &inputEventQueue);
 
+/**
+This function processes stream status notification messages from the streamStatusNotificationListener socket in the statistics gathering thread.
+@param inputEventQueue: The event queue to register events to
+
+@throws: This function can throw exceptions
+*/
+void statisticsProcessStreamStatusNotification(std::priority_queue<event> &inputEventQueue);
+
+/**
+This function processes stream messages from the proxyStreamListener socket in the statistics gathering thread.
+@param inputEventQueue: The event queue to register events to
+
+@throws: This function can throw exceptions
+*/
+void statisticsProcessStreamMessage(std::priority_queue<event> &inputEventQueue);
+
+/**
+This function processes database_reply messages from the statisticsDatabaseRequestSocket socket in the statistics gathering thread.
+@param inputEventQueue: The event queue to register events to
+
+@throws: This function can throw exceptions
+*/
+void statisticsProcessDatabaseReply(std::priority_queue<event> &inputEventQueue);
 
 /**
 This function generates the complete query string required to get all of the ids of the stations that meet the query's requirements.
