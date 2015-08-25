@@ -10,11 +10,108 @@
 #include<functional>
 #include "protobufSQLConverter.hpp"
 #include "protobuf_sql_converter_test_message.pb.h"
-
+#include "utilityFunctions.hpp"
+#include "reactor.hpp"
 
 
 using namespace pylongps; //Use pylongps classes without alteration for now
 using namespace pylongps_protobuf_sql_converter; //Use protobuf/sql converter test message
+
+TEST_CASE("Test template deduction", "[template deduction]")
+{
+SECTION("See if type deduction works as I understand it", "[template deduction]")
+{
+int testInt = 5;
+double testDouble = 10.0;
+std::string testString = "ABC";
+printf("Testing type deduction\n");
+//print(testInt);
+//print(testDouble);
+//print(testString);
+
+}
+}
+
+TEST_CASE("Test ZMQ/Protobuf convenence functions", "[send/receive protobuf]")
+{
+SECTION("Test send/receive and RPC", "[send/receive protobuf]")
+{
+//Make ZMQ context
+std::unique_ptr<zmq::context_t> context;
+
+SOM_TRY
+context.reset(new zmq::context_t);
+SOM_CATCH("Error initializing ZMQ context\n")
+
+std::unique_ptr<zmq::socket_t> testReplySocket; //TODO
+
+SOM_TRY //Init socket
+testReplySocket.reset(new zmq::socket_t(*context, ZMQ_REP));
+SOM_CATCH("Error making socket\n")
+
+SOM_TRY
+int timeoutWaitTime = 5000; //Max 5 seconds
+testReplySocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
+SOM_CATCH("Error setting socket timeout\n")
+
+std::string replySocketAddressString = "ipc://replySocketAddress";
+
+SOM_TRY
+testReplySocket->bind(replySocketAddressString.c_str());
+SOM_CATCH("Error binding socket\n")
+
+std::unique_ptr<zmq::socket_t> testRequestSocket; //TODO
+
+SOM_TRY //Init socket
+testRequestSocket.reset(new zmq::socket_t(*context, ZMQ_REQ));
+SOM_CATCH("Error making socket\n")
+
+SOM_TRY
+int timeoutWaitTime = 5000; //Max 5 seconds
+testRequestSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
+SOM_CATCH("Error setting socket timeout\n")
+
+SOM_TRY
+testRequestSocket->connect(replySocketAddressString.c_str());
+SOM_CATCH("Error connecting socket\n")
+
+SECTION("Test send/receive", "[send/receive protobuf]")
+{
+database_request testDatabaseRequest;
+testDatabaseRequest.set_registration_connection_id("Hello!");
+testDatabaseRequest.set_delete_base_station_id(-10);
+testDatabaseRequest.set_base_station_to_update_id(20);
+testDatabaseRequest.set_real_update_rate(31.1);
+
+SOM_TRY
+sendProtobufMessage(*testRequestSocket, testDatabaseRequest);
+SOM_CATCH("Error, unable to send protobuf message\n")
+
+//Attempt to receive the send object
+database_request receivedMessage;
+bool messageReceived = false;
+bool messageDeserialized = false;
+
+SOM_TRY
+std::tie(messageReceived, messageDeserialized) = receiveProtobufMessage(*testReplySocket, receivedMessage);
+SOM_CATCH("Error receiving message object\n") //TODO
+
+REQUIRE(messageReceived == true);
+REQUIRE(messageDeserialized == true);
+REQUIRE(receivedMessage.has_registration_connection_id() == true);
+REQUIRE(receivedMessage.has_delete_base_station_id() == true);
+REQUIRE(receivedMessage.has_base_station_to_update_id() == true);
+REQUIRE(receivedMessage.has_real_update_rate() == true);
+REQUIRE(receivedMessage.registration_connection_id() == "Hello!");
+REQUIRE(receivedMessage.delete_base_station_id() == -10);
+REQUIRE(receivedMessage.base_station_to_update_id() == 20);
+REQUIRE(receivedMessage.real_update_rate() == Approx(31.1));
+}
+
+
+}
+
+}
 
 
 TEST_CASE( "Caster Initializes", "[test]")

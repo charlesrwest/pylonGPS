@@ -1,0 +1,15 @@
+package pylongps; //Put in pylongps namespace
+
+import "client_query_reply.proto";
+
+//This message is used to request an that the caster add a new proxy.  This usually takes 2 transactions.  In the first, just the connect_disconnect_notification_connection_string field is expected.  In the second, query_results and base_station_publishing_connection are expected.  query_results is suppose to contain the results of a query to the basestation
+//This message can also be used to remove a caster from proxying, by specifying the caster to remove.  In this case, the caster_id_to_remove field is expected.
+message add_remove_proxy_request
+{
+optional bytes connect_disconnect_notification_connection_string = 10; //The connection ID associated with the base_station_to_register in the registration thread
+
+optional client_query_reply query_results = 20;
+optional bytes base_station_publishing_connection = 30;
+
+optional int64 caster_id_to_remove = 40;
+} 

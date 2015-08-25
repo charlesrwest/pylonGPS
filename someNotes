@@ -52,4 +52,43 @@ Maintain count of published messages per station.  Average update rate is comput
 
 //SQLITE entries are updated in a rolling basis.  Every second, up to X entries are updated (using modulo arithmatic unless that results in some being updated more than once in a single update cycle).  This means that the update rate of the entries will decrease linearly once the number stations goes past X, but the computational load should be finite.  For now, X will be set to 100.  
 
+Proxying:
+IPC socket added which allows a new proxy to be added.
+A easy to use function which can construct request to add a new proxy and send it to the IPC interface.
+
+required arguments: 
+zmq string to source client request interface
+zmq string to source proxyPublishing socket
+zmq string to source connect/disconnect notifier
+
+Probably have the registration/deregistration thread handle operations
+
+required sockets:
+zmq sub socket to listen to connect/disconnect notifier (permanent)
+zmq sub socket to get proxy messages (permanent)
+zmq req socket to get all basestation metadata (potentially ephemeral)
+
+Process:
+Subscribe to connect/disconnect notifier (store until client request returned) -> add any new basestations to database with caster/stream ids changed (updating conversion map), remove deleted basestations (updating conversion map)
+
+Send request to get all basestation entries from source
+
+Add all basestations with caster ID/stream ID updated and conversion map created
+
+Process any accumlated connect/disconnect messages
+
+forward proxy messages from source and process connect/disconnect events
+
+Could get around the polling ephemeral REQ socket issue by having the requester handle the sending the open request to the client.
+
+The workflow would be:
+-> Send IPC proxy request (thread starts listening to connect/disconnect socket)
+<- request acknowledged (listening started, maintain queue of unprocessed messages from caster which is pending)
+
+-> send query to source for all basestations
+get back results from source
+
+-> Send IPC follow up request with basestations
+<- request acknowledged (basestation metadata added)
+
 

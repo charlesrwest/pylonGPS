@@ -41,6 +41,8 @@
 #include "connection_key_timeout_event.pb.h"
 #include "signing_key_timeout_event.pb.h"
 #include "update_statistics_event.pb.h"
+#include "add_remove_proxy_request.pb.h"
+#include "add_remove_proxy_reply.pb.h"
 
 namespace pylongps
 {
@@ -50,6 +52,9 @@ const double SECONDS_BEFORE_CONNECTION_TIMEOUT = 5.0;
 
 //How many basestation updates rates to update in the database per second
 const int UPDATE_RATES_TO_UPDATE_PER_SECOND = 100;
+
+//How long to wait for add proxy related requests
+const int ADD_PROXY_MAX_WAIT_TIME = 5000; //5000 milliseconds
 
 /**
 This class represents a pylonGPS 2.0 caster.  It opens several ZMQ ports to provide caster services, an in-memory SQLITE database and creates 2 threads to manage its duties.
@@ -84,6 +89,17 @@ This function initializes the class, creates the associated database, and starts
 caster(zmq::context_t *inputContext, int64_t inputCasterID, uint32_t inputTransmitterRegistrationAndStreamingPortNumber, uint32_t inputClientRequestPortNumber, uint32_t inputClientStreamPublishingPortNumber, uint32_t inputProxyStreamPublishingPortNumber, uint32_t inputStreamStatusNotificationPortNumber, uint32_t inputKeyRegistrationAndRemovalPortNumber, const std::string &inputCasterPublicKey, const std::string &inputCasterSecretKey, const std::string &inputSigningKeysManagementKey, const std::vector<std::string> &inputOfficialSigningKeys, const std::vector<std::string> &inputRegisteredCommunitySigningKeys, const std::vector<std::string> &inputBlacklistedKeys, const std::string &inputCasterSQLITEConnectionString = "");
 
 /**
+This thread safe function adds a new caster to proxy.  The function may have some lag as a query needs to be sent to the caster to proxy and the results returned before this function does.
+@param inputClientRequestConnectionString: The ZMQ connection string to use to connect to the client query answering port of the caster to proxy
+@param inputBasestationPublishingConnectionString: The ZMQ connection string to use to connect to the interface that publishes the basestation updates
+@param inputConnectionDisconnectionNotificationConnectionString: The ZMQ connection string to use to connect to the basestation connect/disconnect notification port on the caster to proxy
+@return: The ID of the proxied caster
+
+@throws: This function can throw exceptions
+*/
+int64_t addProxy(const std::string &inputClientRequestConnectionString, const std::string &inputBasestationPublishingConnectionString, const std::string &inputConnectDisconnectNotificationConnectionString);
+
+/**
 This function signals for the threads to shut down and then waits for them to do so.
 */
 ~caster();
@@ -97,6 +113,7 @@ uint32_t proxyStreamPublishingPortNumber;
 uint32_t streamStatusNotificationPortNumber;
 std::string databaseConnectionString; //The connection string to use to connect to the associated SQLITE database
 std::string casterPublicKey;
+std::string addRemoveProxyConnectionString;
 
 private:
 std::string shutdownPublishingConnectionString; //string to use for inproc connection for receiving notifications for when the threads associated with this object should shut down
@@ -123,6 +140,8 @@ std::map<std::string, connectionStatus> connectionIDToConnectionStatus;
 int mapUpdateIndex = 0; //The appropriate position to start in the map with the next update cycle.
 std::map<int64_t, int64_t> basestationIDToCreationTime; //Resolves when basestation was made (Poco timestamp timevalue)
 std::map<int64_t, int64_t> basestationIDToNumberOfSentMessages; //Keeps track of how many messages each basestation has sent
+
+std::map<int64_t, std::map<int64_t, int64_t> > casterIDToMapForForeignBasestationIDToLocalBasestationID;
 
 /**
 This function is called in the clientRequestHandlingThread to handle client requests and manage access to the SQLite database.
@@ -160,6 +179,11 @@ std::unique_ptr<zmq::socket_t> registrationDatabaseRequestSocket; //A inproc dea
 std::unique_ptr<zmq::socket_t> streamStatusNotificationListener; //A TCP SUB socket used in the statisticsGatheringThread to listen to the streamStatusNotificationInterface
 std::unique_ptr<zmq::socket_t> proxyStreamListener; //A TCP SUB socket used in the statisticsGatheringThread to listen to the proxyStreamPublishingInterface
 std::unique_ptr<zmq::socket_t> statisticsDatabaseRequestSocket; //A inproc dealer socket used in the statisticsGatheringThread to send database requests/get replies
+
+std::unique_ptr<zmq::socket_t> addRemoveProxiesSocket; //A inproc REP socket which accepts add_remove_proxy_requests and responds with a add_remove_proxy_reply.  Used in the streamRegistrationAndPublishingThread.
+std::unique_ptr<zmq::socket_t> proxiesUpdatesListeningSocket; //A TCP SUB socket which subscribes to other casters so that it can republish the updates it received.  Used in the streamRegistrationAndPublishingThread.
+std::unique_ptr<zmq::socket_t> proxiesNotificationsListeningSocket; //A TCP SUB socket which subscribes to other casters so that it can know when they add/remove a basestation. Used in the streamRegistrationAndPublishingThread.
+
 
 std::unique_ptr<std::thread> clientRequestHandlingThread; //Handles client requests and requests by the stream registration and statistics threads to make changes to the database
 std::unique_ptr<std::thread> streamRegistrationAndPublishingThread;
@@ -267,6 +291,13 @@ This function sets up the basestationToSQLInterface and generates the associated
 @throws: This function can throw exceptions
 */
 void setupBaseStationToSQLInterface();
+
+/**
+This function handles requests to add or remove a caster proxy.  This generally consists of two part requests to add a proxy or single part requests to remove one.
+
+@throws: This function can throw exceptions
+*/
+void processAddRemoveProxyRequest();
 
 /**
 This function checks if the databaseAccessSocket has received a database_request message and (if so) processes the message and sends a database_reply in response.

@@ -7,5 +7,5 @@ import "client_subquery.proto";
 message client_query_request
 {
 optional uint32 max_number_of_results = 10; //The maximum number of base station entries that should be returned
-repeated client_subquery subqueries = 20; //One or more subqueries, with the results from each subquery "ORed" together
+repeated client_subquery subqueries = 20; //Zero or more subqueries, with the results from each subquery "ORed" together
 }

@@ -195,6 +195,34 @@ std::string bindingAddress = "tcp://*:" + std::to_string(transmitterRegistration
 transmitterRegistrationAndStreamingInterface->bind(bindingAddress.c_str());
 SOM_CATCH("Error binding transmitterRegistrationAndStreamingInterface\n")
 
+//Initialize and add filter for proxiesUpdatesListeningSocket
+SOM_TRY
+proxiesUpdatesListeningSocket.reset(new zmq::socket_t(*(context), ZMQ_SUB));
+SOM_CATCH("Error intializing proxiesUpdatesListeningSocket\n")
+
+SOM_TRY //Set filter to allow any published messages to be received
+proxiesUpdatesListeningSocket->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
+SOM_CATCH("Error setting subscription for proxiesUpdatesListeningSocket\n")
+
+//Initialize and add filter for proxiesNotificationsListeningSocket
+SOM_TRY
+proxiesNotificationsListeningSocket.reset(new zmq::socket_t(*(context), ZMQ_SUB));
+SOM_CATCH("Error intializing proxiesNotificationsListeningSocket\n")
+
+SOM_TRY //Set filter to allow any published messages to be received
+proxiesNotificationsListeningSocket->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
+SOM_CATCH("Error setting subscription for proxiesNotificationsListeningSocket\n")
+
+SOM_TRY
+addRemoveProxiesSocket.reset(new zmq::socket_t(*(context), ZMQ_REP));
+SOM_CATCH("Error intializing shutdownPublishingSocket\n")
+
+extensionStringNumber = 0;
+SOM_TRY //Bind to an dynamically generated address
+std::tie(addRemoveProxyConnectionString,extensionStringNumber) = bindZMQSocketWithAutomaticAddressGeneration(*addRemoveProxiesSocket, "addRemoveProxiesSocket");
+SOM_CATCH("Error binding addRemoveProxiesSocket\n")
+
+
 //Initialize and bind keyRegistrationAndRemoval socket
 SOM_TRY
 keyRegistrationAndRemovalInterface.reset(new zmq::socket_t(*(context), ZMQ_REP));
@@ -286,6 +314,163 @@ SOM_TRY
 statisticsGatheringThread.reset(new std::thread(&caster::statisticsGatheringThreadFunction, this)); 
 SOM_CATCH("Error initializing thread\n")
 
+}
+
+/**
+This thread safe function adds a new caster to proxy.  The function may have some lag as a query needs to be sent to the caster to proxy and the results returned before this function does.
+@param inputClientRequestConnectionString: The ZMQ connection string to use to connect to the client query answering port of the caster to proxy
+@param inputBasestationPublishingConnectionString: The ZMQ connection string to use to connect to the interface that publishes the basestation updates
+@param inputConnectionDisconnectionNotificationConnectionString: The ZMQ connection string to use to connect to the basestation connect/disconnect notification port on the caster to proxy
+@return: The ID of the proxied caster
+
+@throws: This function can throw exceptions
+*/
+int64_t caster::addProxy(const std::string &inputClientRequestConnectionString, const std::string &inputBasestationPublishingConnectionString, const std::string &inputConnectDisconnectNotificationConnectionString)
+{
+//TODO: Finish this function
+//Create message buffer
+std::unique_ptr<zmq::message_t> messageBuffer;
+
+
+
+//Create request socket to send request to caster
+std::unique_ptr<zmq::socket_t> addProxyRequestSocket;
+SOM_TRY
+addProxyRequestSocket.reset(new zmq::socket_t(*(context), ZMQ_REQ));
+SOM_CATCH("Error intializing addProxyRequestSocket\n")
+
+SOM_TRY
+addProxyRequestSocket->connect(addRemoveProxyConnectionString.c_str());
+SOM_CATCH("Error connecting addProxyRequestSocket")
+
+//Set requests to timeout
+SOM_TRY
+addProxyRequestSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &ADD_PROXY_MAX_WAIT_TIME, sizeof(ADD_PROXY_MAX_WAIT_TIME));
+SOM_CATCH("Error, unable to set socket option\n")
+
+//Send request to have caster start listening to this specific source for connect/disconnect notifications
+std::string serializedFirstRequest;
+add_remove_proxy_request firstRequest;
+firstRequest.set_connect_disconnect_notification_connection_string(inputConnectDisconnectNotificationConnectionString);
+firstRequest.SerializeToString(&serializedFirstRequest);
+
+SOM_TRY
+addProxyRequestSocket->send(serializedFirstRequest.c_str(), serializedFirstRequest.size());
+SOM_CATCH("Error sending add proxy request\n")
+
+SOM_TRY
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+//Receive message
+SOM_TRY //Receive message
+if(addProxyRequestSocket->recv(messageBuffer.get()) != true)
+{
+throw SOMException("Didn't get reply from add proxy request\n", INCORRECT_SERVER_RESPONSE, __FILE__, __LINE__);
+}
+SOM_CATCH("Error receiving add proxy reply message")
+
+//Deserialize reply
+add_remove_proxy_reply firstReply;
+firstReply.ParseFromArray(messageBuffer->data(), messageBuffer->size());
+
+if(!firstReply.IsInitialized())
+{//Message deserialization failed
+throw SOMException("Couldn't deserialize reply from add proxy request\n", INCORRECT_SERVER_RESPONSE, __FILE__, __LINE__);
+}
+
+if(firstReply.has_reason() || !firstReply.has_caster_id())
+{
+throw SOMException("Add proxy request failed\n", INCORRECT_SERVER_RESPONSE, __FILE__, __LINE__);
+}
+
+//Create request socket and send client request to get all of the basestations from the source
+std::unique_ptr<zmq::socket_t> getBasestationInformationRequestSocket;
+SOM_TRY
+getBasestationInformationRequestSocket.reset(new zmq::socket_t(*(context), ZMQ_REQ));
+SOM_CATCH("Error intializing getBasestationInformationRequestSocket\n")
+
+SOM_TRY
+getBasestationInformationRequestSocket->connect(inputClientRequestConnectionString.c_str());
+SOM_CATCH("Error connecting getBasestationInformationRequestSocket")
+
+//Set request socket have receive timeout
+SOM_TRY
+getBasestationInformationRequestSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &ADD_PROXY_MAX_WAIT_TIME, sizeof(ADD_PROXY_MAX_WAIT_TIME));
+SOM_CATCH("Error, unable to set socket option\n")
+
+std::string serializedQueryRequest;
+client_query_request queryRequest; //No conditions, so get all
+queryRequest.SerializeToString(&serializedQueryRequest);
+
+SOM_TRY
+getBasestationInformationRequestSocket->send(serializedQueryRequest.c_str(), serializedQueryRequest.size());
+SOM_CATCH("Error, could not send query request\n")
+
+SOM_TRY
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+//Receive message
+SOM_TRY //Receive message
+if(getBasestationInformationRequestSocket->recv(messageBuffer.get()) != true)
+{
+throw SOMException("Didn't get reply from source\n", INCORRECT_SERVER_RESPONSE, __FILE__, __LINE__);
+}
+SOM_CATCH("Error receiving add source reply message")
+
+//Deserialize reply
+client_query_reply queryReply;
+queryReply.ParseFromArray(messageBuffer->data(), messageBuffer->size());
+
+if(!queryReply.IsInitialized())
+{//Message deserialization failed
+throw SOMException("Couldn't deserialize reply from query request\n", INCORRECT_SERVER_RESPONSE, __FILE__, __LINE__);
+}
+
+if(!queryReply.has_caster_id())
+{//Message deserialization failed
+throw SOMException("Query reply missing caster ID\n", INCORRECT_SERVER_RESPONSE, __FILE__, __LINE__);
+}
+
+//Send second request to finalize establishing the proxy
+std::string serializedSecondRequest;
+add_remove_proxy_request secondRequest;
+(*secondRequest.mutable_query_results()) = queryReply;
+secondRequest.set_base_station_publishing_connection(inputBasestationPublishingConnectionString);
+
+
+SOM_TRY
+addProxyRequestSocket->send(serializedSecondRequest.c_str(), serializedSecondRequest.size());
+SOM_CATCH("Error sending add proxy request\n")
+
+SOM_TRY
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+//Receive message
+SOM_TRY //Receive message
+if(addProxyRequestSocket->recv(messageBuffer.get()) != true)
+{
+throw SOMException("Didn't get reply from add proxy request\n", INCORRECT_SERVER_RESPONSE, __FILE__, __LINE__);
+}
+SOM_CATCH("Error receiving add proxy reply message")
+
+//Deserialize reply
+add_remove_proxy_reply secondReply;
+secondReply.ParseFromArray(messageBuffer->data(), messageBuffer->size());
+
+if(!secondReply.IsInitialized())
+{//Message deserialization failed
+throw SOMException("Couldn't deserialize reply from add proxy request\n", INCORRECT_SERVER_RESPONSE, __FILE__, __LINE__);
+}
+
+if(secondReply.has_reason() || !secondReply.has_caster_id())
+{
+throw SOMException("Add proxy request failed\n", INCORRECT_SERVER_RESPONSE, __FILE__, __LINE__);
+}
+
+return secondReply.caster_id();
 }
 
 /**
@@ -401,24 +586,26 @@ void caster::streamRegistrationAndPublishingThreadFunction()
 {
 try
 {
-//Responsible for streamRegistrationAndPublishingThreadShutdownListeningSocket, transmitterRegistrationAndStreamingInterface, registrationDatabaseRequestSocket, keyRegistrationAndRemovalInterface
+//Responsible for streamRegistrationAndPublishingThreadShutdownListeningSocket, transmitterRegistrationAndStreamingInterface, registrationDatabaseRequestSocket, keyRegistrationAndRemovalInterface, addRemoveProxiesSocket, proxiesUpdatesListeningSocket, proxiesNotificationsListeningSocket
 //Publishes to clientStreamPublishingInterface, proxyStreamPublishingInterface, streamStatusNotificationInterface
 
 //Create priority queue for event queue and poll items, then start polling/event cycle
 std::priority_queue<event> threadEventQueue;
 std::unique_ptr<zmq::pollitem_t[]> pollItems;
-int numberOfPollItems = 4;
+int numberOfPollItems = 7;
 
 SOM_TRY
 pollItems.reset(new zmq::pollitem_t[numberOfPollItems]);
 SOM_CATCH("Error creating poll items\n")
 
-//Populate the poll object list
+//Populate the poll object list , , 
 pollItems[0] = {(void *) (*streamRegistrationAndPublishingThreadShutdownListeningSocket), 0, ZMQ_POLLIN, 0};
 pollItems[1] = {(void *) (*transmitterRegistrationAndStreamingInterface), 0, ZMQ_POLLIN, 0};
 pollItems[2] = {(void *) (*registrationDatabaseRequestSocket), 0, ZMQ_POLLIN, 0};
 pollItems[3] = {(void *) (*keyRegistrationAndRemovalInterface), 0, ZMQ_POLLIN, 0};
-
+pollItems[4] = {(void *) (*addRemoveProxiesSocket), 0, ZMQ_POLLIN, 0};
+pollItems[5] = {(void *) (*proxiesUpdatesListeningSocket), 0, ZMQ_POLLIN, 0};
+pollItems[6] = {(void *) (*proxiesNotificationsListeningSocket), 0, ZMQ_POLLIN, 0};
 
 //Determine if an event has timed out (and deal with it if so) and then calculate the time until the next event timeout
 Poco::Timestamp nextEventTime;
@@ -467,6 +654,33 @@ SOM_TRY
 processKeyManagementRequest(threadEventQueue);
 SOM_CATCH("Error processing request\n")
 }
+
+//Handle potential proxy's add/remove station notification (proxiesUpdatesListeningSocket)
+if(pollItems[5].revents & ZMQ_POLLIN)
+{//A message has been received, so process it
+SOM_TRY
+//TODO: Handle potential proxy's add/remove station notification (proxiesUpdatesListeningSocket)
+SOM_CATCH("Error processing request\n")
+continue; //All notifications must be processed before add/remove requests are to minimize the window for a notification to be queued after the 
+}
+
+//Handle potential add/remove proxy request (addRemoveProxiesSocket)
+if(pollItems[4].revents & ZMQ_POLLIN)
+{//A message has been received, so process it
+SOM_TRY
+processAddRemoveProxyRequest();
+SOM_CATCH("Error processing request\n")
+}
+
+//Handle potential proxy's update to send (proxiesNotificationsListeningSocket)
+if(pollItems[6].revents & ZMQ_POLLIN)
+{//A message has been received, so process it
+SOM_TRY
+//TODO: Handle potential proxy's update to send (proxiesNotificationsListeningSocket)
+SOM_CATCH("Error processing request\n")
+}
+
+
 
 //Check if we've received a reply from the database server
 if(pollItems[2].revents & ZMQ_POLLIN)
@@ -1094,6 +1308,101 @@ basestationToSQLInterface->addField(PYLON_GPS_GEN_OPTIONAL_INT64_FIELD(base_stat
 SOM_TRY
 basestationToSQLInterface->createTables();
 SOM_CATCH("Error creating tables for basestationToSQLInterface")
+}
+
+/**
+This function handles requests to add or remove a caster proxy.  This generally consists of two part requests to add a proxy or single part requests to remove one.
+
+@throws: This function can throw exceptions
+*/
+void caster::processAddRemoveProxyRequest()
+{
+//Receive message
+std::unique_ptr<zmq::message_t> messageBuffer;
+
+SOM_TRY
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+SOM_TRY //Receive message
+if(addRemoveProxiesSocket->recv(messageBuffer.get(), ZMQ_DONTWAIT) != true)
+{
+return; //No message to be had
+}
+SOM_CATCH("Error receiving add/remove proxy message")
+
+//Create lambda to make it easy to send request failed replies
+auto sendReplyLambda = [&] (bool inputRequestFailed, enum proxy_request_failure_reason inputReason = PROXY_REQUEST_DESERIALIZATION_FAILED, int64_t inputCasterID = 0)
+{
+add_remove_proxy_reply reply;
+std::string serializedReply;
+
+if(inputRequestFailed)
+{ //Only set the reason if the request failed
+reply.set_reason(inputReason);
+}
+else
+{
+reply.set_caster_id(inputCasterID);
+}
+
+reply.SerializeToString(&serializedReply);
+
+SOM_TRY
+addRemoveProxiesSocket->send(serializedReply.c_str(), serializedReply.size());
+SOM_CATCH("Error sending reply message\n")
+};
+
+//Attempt to deserialize
+add_remove_proxy_request request;
+request.ParseFromArray(messageBuffer->data(), messageBuffer->size());
+
+if(!request.IsInitialized())
+{
+//Message header serialization failed, so send back message saying request failed
+SOM_TRY
+sendReplyLambda(true, PROXY_REQUEST_DESERIALIZATION_FAILED);
+return;
+SOM_CATCH("Error sending reply");
+}
+
+//TODOTODO: Finish this function
+bool aRequestPartWasProcessed = false; //Keep track of if it had any valid parts to process
+
+//Handle first part of add proxy transaction
+if(request.has_connect_disconnect_notification_connection_string())
+{
+SOM_TRY
+proxiesNotificationsListeningSocket->connect(request.connect_disconnect_notification_connection_string().c_str());
+SOM_CATCH("Error connecting to proxy basestation add/remove notifications\n")
+aRequestPartWasProcessed = true;
+}
+
+if(request.has_query_results() && request.has_base_station_publishing_connection())
+{
+int64_t foreignCasterID = 0;
+if(request.query_results().has_caster_id() && !request.query_results().failure_reason())
+{
+foreignCasterID = request.query_results().caster_id();
+}
+else
+{
+SOM_TRY
+sendReplyLambda(true, PROXY_REQUEST_FORMAT_INVALID);
+return;
+SOM_CATCH("Error sending reply");
+}
+
+//TODOTODO
+if(casterIDToMapForForeignBasestationIDToLocalBasestationID.count(foreignCasterID) == 0)
+{//Make new map
+casterIDToMapForForeignBasestationIDToLocalBasestationID[foreignCasterID] = std::map<int64_t, int64_t>();
+}
+
+
+aRequestPartWasProcessed = true;
+}
+
 }
 
 /**
