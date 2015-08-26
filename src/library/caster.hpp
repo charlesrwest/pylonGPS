@@ -23,6 +23,7 @@
 #include "sqlite3.h"
 #include "connectionStatus.hpp"
 #include <sodium.h>
+#include "reactor.hpp"
 
 #include "database_request.pb.h"
 #include "database_reply.pb.h"
@@ -167,18 +168,24 @@ This function processes any events that are scheduled to have occurred by now an
 */
 Poco::Timestamp handleEvents(std::priority_queue<pylongps::event> &inputEventQueue);
 
+/**
+This function processes any events that are scheduled to have occurred by now and returns when the next event is scheduled to occur.
+@param inputReactor: The reactor to process events for
+@return: The time point associated with the soonest event timeout (negative if there are no outstanding events)
+
+@throws: This function can throw exceptions
+*/
+Poco::Timestamp handleReactorEvents(reactor<caster> &inputReactor);
+
 //Threads/shutdown socket for operations
 std::unique_ptr<zmq::socket_t> shutdownPublishingSocket; //This inproc PUB socket publishes an empty message when it is time for threads to shut down.
 //Set of sockets use to listen for the signal from shutdownPublishingSocket
 std::unique_ptr<zmq::socket_t> clientRequestHandlingThreadShutdownListeningSocket;
 std::unique_ptr<zmq::socket_t> streamRegistrationAndPublishingThreadShutdownListeningSocket;
-std::unique_ptr<zmq::socket_t> statisticsGatheringThreadShutdownListeningSocket;
 
 std::unique_ptr<zmq::socket_t> databaseAccessSocket; //A inproc REP socket that handles requests to make changes to the database.  Used by clientRequestHandlingThread.
 std::unique_ptr<zmq::socket_t> registrationDatabaseRequestSocket; //A inproc dealer socket used in the streamRegistrationAndPublishingThread to send database requests/get replies
-std::unique_ptr<zmq::socket_t> streamStatusNotificationListener; //A TCP SUB socket used in the statisticsGatheringThread to listen to the streamStatusNotificationInterface
-std::unique_ptr<zmq::socket_t> proxyStreamListener; //A TCP SUB socket used in the statisticsGatheringThread to listen to the proxyStreamPublishingInterface
-std::unique_ptr<zmq::socket_t> statisticsDatabaseRequestSocket; //A inproc dealer socket used in the statisticsGatheringThread to send database requests/get replies
+
 
 std::unique_ptr<zmq::socket_t> addRemoveProxiesSocket; //A inproc REP socket which accepts add_remove_proxy_requests and responds with a add_remove_proxy_reply.  Used in the streamRegistrationAndPublishingThread.
 std::unique_ptr<zmq::socket_t> proxiesUpdatesListeningSocket; //A TCP SUB socket which subscribes to other casters so that it can republish the updates it received.  Used in the streamRegistrationAndPublishingThread.
@@ -187,7 +194,7 @@ std::unique_ptr<zmq::socket_t> proxiesNotificationsListeningSocket; //A TCP SUB 
 
 std::unique_ptr<std::thread> clientRequestHandlingThread; //Handles client requests and requests by the stream registration and statistics threads to make changes to the database
 std::unique_ptr<std::thread> streamRegistrationAndPublishingThread;
-std::unique_ptr<std::thread> statisticsGatheringThread; //This thread analyzes the statistics of the stream messages that are published and periodically updates the associated entries in the database.
+std::unique_ptr<reactor<caster> > statisticsGatheringReactor; //This reactor analyzes the statistics of the stream messages that are published and periodically updates the associated entries in the database.
 
 std::unique_ptr<sqlite3, decltype(&sqlite3_close_v2)> databaseConnection; //Pointer to created database connection
 std::unique_ptr<protobufSQLConverter<base_station_stream_information> > basestationToSQLInterface; //Allows storage/retrieval of base_station_stream_information objects in the database
@@ -339,19 +346,23 @@ void processKeyManagementRequest(std::priority_queue<event> &inputEventQueue);
 
 /**
 This function processes stream status notification messages from the streamStatusNotificationListener socket in the statistics gathering thread.
-@param inputEventQueue: The event queue to register events to
+@param inputReactor: The reactor this function is processing messages for
+@param inputSocket: The socket which probably has a message waiting
+@return: true if the function would like the reactor message processing loop to start at the beginning before processing any more messages
 
 @throws: This function can throw exceptions
 */
-void statisticsProcessStreamStatusNotification(std::priority_queue<event> &inputEventQueue);
+bool statisticsProcessStreamStatusNotification(reactor<caster> &inputReactor, zmq::socket_t &inputSocket);
 
 /**
 This function processes stream messages from the proxyStreamListener socket in the statistics gathering thread.
-@param inputEventQueue: The event queue to register events to
+@param inputReactor: The reactor this function is processing messages for
+@param inputSocket: The socket which probably has a message waiting
+@return: true if the function would like the reactor message processing loop to start at the beginning before processing any more messages
 
 @throws: This function can throw exceptions
 */
-void statisticsProcessStreamMessage(std::priority_queue<event> &inputEventQueue);
+bool statisticsProcessStreamMessage(reactor<caster> &inputReactor, zmq::socket_t &inputSocket);
 
 /**
 This function processes database_reply messages from the statisticsDatabaseRequestSocket socket in the statistics gathering thread.
@@ -359,7 +370,7 @@ This function processes database_reply messages from the statisticsDatabaseReque
 
 @throws: This function can throw exceptions
 */
-void statisticsProcessDatabaseReply(std::priority_queue<event> &inputEventQueue);
+bool statisticsProcessDatabaseReply(reactor<caster> &inputReactor, zmq::socket_t &inputSocket);
 
 /**
 This function generates the complete query string required to get all of the ids of the stations that meet the query's requirements.

@@ -29,16 +29,27 @@ This function initializes the reactor with the function that should be called to
 
 @throws: This function can throw exceptions
 */
-reactor(zmq::context_t *inputContext, classType *inputClassInstance, std::function<Poco::Timestamp &(classType*, reactor<classType> *)> inputEventHandler);
+reactor(zmq::context_t *inputContext, classType *inputClassInstance, std::function<Poco::Timestamp (classType*, reactor<classType> &)> inputEventHandler);
 
 /**
 This (not thread safe) function adds a new socket for the reactor to take ownership of and the member function to call/pass the socket reference to when a message is waiting on that interface.
 @param inputSocket: The socket to take ownership of
 @param inputMessageHandler: The function to call to handle messages waiting on the interface (returns true if the poll loop should restart rather than continuing and expects a pointer to this object)
+@param inputInterfaceName: The (required unique) name to associated with the interface
 
 @throws: This function can throw exceptions
 */
-void addInterface(zmq::socket_t *inputSocket, std::function<bool (classType*, reactor<classType> *, zmq::socket_t &)> inputMessageHandler);
+void addInterface(std::unique_ptr<zmq::socket_t> &inputSocket, std::function<bool (classType*, reactor<classType> &, zmq::socket_t &)> inputMessageHandler, const std::string &inputInterfaceName = "");
+
+/**
+This (not thread safe) function adds a new socket for the reactor to take ownership of and the member function to call/pass the socket reference to when a message is waiting on that interface.
+@param inputSocket: The socket to take ownership of
+@param inputMessageHandler: The function to call to handle messages waiting on the interface (returns true if the poll loop should restart rather than continuing and expects a pointer to this object)
+@param inputInterfaceName: The (required unique) name to associated with the interface
+
+@throws: This function can throw exceptions
+*/
+//void addInterface(zmq::socket_t *inputSocket, std::function<bool (classType*, reactor<classType> &, zmq::socket_t &)> inputMessageHandler, const std::string &inputInterfaceName = "");
 
 /**
 This (not threadsafe) function removes an interface from the reactor.
@@ -55,6 +66,14 @@ This function starts the reactor so that it begins to process events and message
 @throws: This function can throw exceptions
 */
 void start(const std::vector<event> &inputStartingEvents);
+
+/**
+This function returns a pointer to the socket for the interface associated with the given name.  If the name is not found, an exception is thrown.
+@param inputInterfaceName: The name of the interface with the socket
+
+@throws: This function can throw exceptions
+*/
+zmq::socket_t *getSocket(const std::string &inputInterfaceName);
 
 /**
 This function sends the termination signal to the reactor's thread and waits for it to shut down. 
@@ -78,10 +97,11 @@ void regenerateZMQPollArray();
 
 std::priority_queue<pylongps::event> eventQueue;
 std::map<zmq::socket_t *, std::unique_ptr<zmq::socket_t> > interfaces;
-std::map<zmq::socket_t *, std::function<bool (classType*, reactor<classType> *, zmq::socket_t &)> > socketToHandlerFunction;
+std::map<zmq::socket_t *, std::function<bool (classType*, reactor<classType> &, zmq::socket_t &)> > socketToHandlerFunction;
+std::map<std::string, zmq::socket_t *> nameToSocket;
 
 private:
-std::function<Poco::Timestamp &(classType*, reactor<classType> *)> eventHandlerFunction;
+std::function<Poco::Timestamp (classType*, reactor<classType> &)> eventHandlerFunction;
 
 zmq::context_t *context;
 classType *classInstance;
