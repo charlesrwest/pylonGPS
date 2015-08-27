@@ -65,7 +65,7 @@ This function starts the reactor so that it begins to process events and message
 
 @throws: This function can throw exceptions
 */
-void start(const std::vector<event> &inputStartingEvents);
+void start(const std::vector<event> &inputStartingEvents = std::vector<event>());
 
 /**
 This function returns a pointer to the socket for the interface associated with the given name.  If the name is not found, an exception is thrown.

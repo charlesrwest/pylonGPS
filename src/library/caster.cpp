@@ -141,7 +141,7 @@ std::tie(shutdownPublishingConnectionString,extensionStringNumber) = bindZMQSock
 SOM_CATCH("Error binding shutdownPublishingSocket\n")
 
 //Initialize, connect and subscribe sockets which listen for shutdown signal
-std::vector<std::unique_ptr<zmq::socket_t> *> signalListeningSockets = {&clientRequestHandlingThreadShutdownListeningSocket, &streamRegistrationAndPublishingThreadShutdownListeningSocket};
+std::vector<std::unique_ptr<zmq::socket_t> *> signalListeningSockets = {&streamRegistrationAndPublishingThreadShutdownListeningSocket};
 
 for(int i=0; i<signalListeningSockets.size(); i++)
 {
@@ -159,6 +159,8 @@ SOM_CATCH("Error setting subscription for socket listening for shutdown signal\n
 }
 
 //Initialize and bind database access socket
+ //A inproc REP socket that handles requests to make changes to the database.  Used by clientRequestHandlingReactor.
+std::unique_ptr<zmq::socket_t> databaseAccessSocket;
 SOM_TRY
 databaseAccessSocket.reset(new zmq::socket_t(*(context), ZMQ_REP));
 SOM_CATCH("Error intializing databaseAccessSocket\n")
@@ -168,6 +170,8 @@ std::tie(databaseAccessConnectionString,extensionStringNumber) = bindZMQSocketWi
 SOM_CATCH("Error binding databaseAccessSocket\n")
 
 //Initialize and connect the registration thread's database request socket
+//A inproc dealer socket used in the streamRegistrationAndPublishingThread to send database requests/get replies
+std::unique_ptr<zmq::socket_t> registrationDatabaseRequestSocket; 
 SOM_TRY
 registrationDatabaseRequestSocket.reset(new zmq::socket_t(*(context), ZMQ_DEALER));
 SOM_CATCH("Error intializing registrationDatabaseRequestSocket\n")
@@ -188,6 +192,8 @@ statisticsDatabaseRequestSocket->connect(databaseAccessConnectionString.c_str())
 SOM_CATCH("Error connecting statistics database request socket")
 
 //Initialize and bind transmitterRegistrationAndStreaming socket
+///A ZMQ ROUTER socket which expects a transmitter_registration_request to which it responses with a transmitter_registration_reply. If accepted, the request is followed by the data to broadcast.  If the data is athenticated, the data message has a preappended sodium signature of length crypto_sign_BYTES.  Used by streamRegistrationAndPublishingReactor.
+std::unique_ptr<zmq::socket_t> transmitterRegistrationAndStreamingInterface; 
 SOM_TRY
 transmitterRegistrationAndStreamingInterface.reset(new zmq::socket_t(*(context), ZMQ_ROUTER));
 SOM_CATCH("Error intializing transmitterRegistrationAndStreamingInterface\n")
@@ -197,7 +203,11 @@ std::string bindingAddress = "tcp://*:" + std::to_string(transmitterRegistration
 transmitterRegistrationAndStreamingInterface->bind(bindingAddress.c_str());
 SOM_CATCH("Error binding transmitterRegistrationAndStreamingInterface\n")
 
+
+
 //Initialize and add filter for proxiesUpdatesListeningSocket
+//A TCP SUB socket which subscribes to other casters so that it can republish the updates it received.  Used in the streamRegistrationAndPublishingThread.
+std::unique_ptr<zmq::socket_t> proxiesUpdatesListeningSocket; 
 SOM_TRY
 proxiesUpdatesListeningSocket.reset(new zmq::socket_t(*(context), ZMQ_SUB));
 SOM_CATCH("Error intializing proxiesUpdatesListeningSocket\n")
@@ -207,6 +217,8 @@ proxiesUpdatesListeningSocket->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
 SOM_CATCH("Error setting subscription for proxiesUpdatesListeningSocket\n")
 
 //Initialize and add filter for proxiesNotificationsListeningSocket
+ //A TCP SUB socket which subscribes to other casters so that it can know when they add/remove a basestation. Used in the streamRegistrationAndPublishingThread.
+std::unique_ptr<zmq::socket_t> proxiesNotificationsListeningSocket;
 SOM_TRY
 proxiesNotificationsListeningSocket.reset(new zmq::socket_t(*(context), ZMQ_SUB));
 SOM_CATCH("Error intializing proxiesNotificationsListeningSocket\n")
@@ -215,6 +227,8 @@ SOM_TRY //Set filter to allow any published messages to be received
 proxiesNotificationsListeningSocket->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
 SOM_CATCH("Error setting subscription for proxiesNotificationsListeningSocket\n")
 
+//A inproc REP socket which accepts add_remove_proxy_requests and responds with a add_remove_proxy_reply.  Used in the streamRegistrationAndPublishingThread.
+std::unique_ptr<zmq::socket_t> addRemoveProxiesSocket; 
 SOM_TRY
 addRemoveProxiesSocket.reset(new zmq::socket_t(*(context), ZMQ_REP));
 SOM_CATCH("Error intializing shutdownPublishingSocket\n")
@@ -226,6 +240,8 @@ SOM_CATCH("Error binding addRemoveProxiesSocket\n")
 
 
 //Initialize and bind keyRegistrationAndRemoval socket
+///A ZMQ REP socket which expects a key_management_request message and sends back a key_management_reply message.  Used by streamRegistrationAndPublishingThread.
+std::unique_ptr<zmq::socket_t> keyRegistrationAndRemovalInterface;
 SOM_TRY
 keyRegistrationAndRemovalInterface.reset(new zmq::socket_t(*(context), ZMQ_REP));
 SOM_CATCH("Error intializing keyRegistrationAndRemovalInterface\n")
@@ -236,6 +252,8 @@ keyRegistrationAndRemovalInterface->bind(bindingAddress.c_str());
 SOM_CATCH("Error binding keyRegistrationAndRemovalInterface\n")
 
 //Initialize and bind clientRequestInterface socket
+///A ZMQ REP socket which expects a client_query_request and responds with a client_query_reply.  Used by clientRequestHandlingThread.
+std::unique_ptr<zmq::socket_t> clientRequestInterface;  
 SOM_TRY
 clientRequestInterface.reset(new zmq::socket_t(*(context), ZMQ_REP));
 SOM_CATCH("Error intializing clientRequestInterface\n")
@@ -307,21 +325,21 @@ std::string connectionAddress = "tcp://127.0.0.1:" + std::to_string(proxyStreamP
 proxyStreamListener->connect(connectionAddress.c_str());
 SOM_CATCH("Error connecting proxyStreamListener socket")
 
-//Responsible for streamStatusNotificationListener, proxyStreamListener, statisticsDatabaseRequestSocket //TODOTODO
+//Responsible for streamStatusNotificationListener, proxyStreamListener, statisticsDatabaseRequestSocket
 SOM_TRY
 statisticsGatheringReactor.reset(new reactor<caster>(context, this, &caster::handleReactorEvents));
 SOM_CATCH("Error creating reactor\n")
 
 SOM_TRY
-statisticsGatheringReactor->addInterface(streamStatusNotificationListener, &caster::statisticsProcessStreamStatusNotification, "statisticsProcessStreamStatusNotification"); //Reactor takes ownership
+statisticsGatheringReactor->addInterface(streamStatusNotificationListener, &caster::statisticsProcessStreamStatusNotification, "streamStatusNotificationListener"); //Reactor takes ownership
 SOM_CATCH("Error adding interface to reactor\n")
 
 SOM_TRY
-statisticsGatheringReactor->addInterface(proxyStreamListener, &caster::statisticsProcessStreamMessage, "statisticsProcessStreamMessage"); //Reactor takes ownership
+statisticsGatheringReactor->addInterface(proxyStreamListener, &caster::statisticsProcessStreamMessage, "proxyStreamListener"); //Reactor takes ownership
 SOM_CATCH("Error adding interface to reactor\n")
 
 SOM_TRY
-statisticsGatheringReactor->addInterface(statisticsDatabaseRequestSocket, &caster::statisticsProcessDatabaseReply, "statisticsProcessDatabaseReply"); //Reactor takes ownership
+statisticsGatheringReactor->addInterface(statisticsDatabaseRequestSocket, &caster::statisticsProcessDatabaseReply, "statisticsDatabaseRequestSocket"); //Reactor takes ownership
 SOM_CATCH("Error adding interface to reactor\n")
 
 //Add event to manage the update cycle
@@ -334,16 +352,64 @@ event updateEvent(timeValue + 1000000.0); //Active in 1 second
 std::vector<event> statisticsStartingEvents;
 statisticsStartingEvents.push_back(updateEvent);
 
+SOM_TRY
 statisticsGatheringReactor->start(statisticsStartingEvents);
+SOM_CATCH("Error starting reactor\n")
 
-//Start threads
+//Create reactor to handle client requests
+//Responsible for databaseAccessSocket, clientRequestInterface
 SOM_TRY
-clientRequestHandlingThread.reset(new std::thread(&caster::clientRequestHandlingThreadFunction, this)); 
-SOM_CATCH("Error initializing thread\n")
+clientRequestHandlingReactor.reset(new reactor<caster>(context, this, &caster::handleReactorEvents));
+SOM_CATCH("Error creating reactor\n")
 
 SOM_TRY
-streamRegistrationAndPublishingThread.reset(new std::thread(&caster::streamRegistrationAndPublishingThreadFunction, this)); 
-SOM_CATCH("Error initializing thread\n")
+clientRequestHandlingReactor->addInterface(databaseAccessSocket, &caster::processDatabaseRequest, "databaseAccessSocket"); //Reactor takes ownership
+SOM_CATCH("Error adding interface to reactor\n")
+
+SOM_TRY
+clientRequestHandlingReactor->addInterface(clientRequestInterface, &caster::processClientQueryRequest, "clientRequestInterface"); //Reactor takes ownership
+SOM_CATCH("Error adding interface to reactor\n")
+
+SOM_TRY
+clientRequestHandlingReactor->start();
+SOM_CATCH("Error starting reactor\n")
+
+//Create reactor to handle registrations, key addition/deletion, and update publishing TODOTODO
+//Responsible for transmitterRegistrationAndStreamingInterface, registrationDatabaseRequestSocket, keyRegistrationAndRemovalInterface, addRemoveProxiesSocket, proxiesUpdatesListeningSocket, proxiesNotificationsListeningSocket
+//Publishes to clientStreamPublishingInterface, proxyStreamPublishingInterface, streamStatusNotificationInterface
+SOM_TRY
+streamRegistrationAndPublishingReactor.reset(new reactor<caster>(context, this, &caster::handleReactorEvents));
+SOM_CATCH("Error creating reactor\n")
+
+SOM_TRY
+streamRegistrationAndPublishingReactor->addInterface(transmitterRegistrationAndStreamingInterface, &caster::processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage, "transmitterRegistrationAndStreamingInterface"); //Reactor takes ownership
+SOM_CATCH("Error adding interface to reactor\n")
+
+SOM_TRY
+streamRegistrationAndPublishingReactor->addInterface(registrationDatabaseRequestSocket, &caster::processTransmitterRegistrationAndStreamingDatabaseReply, "registrationDatabaseRequestSocket"); //Reactor takes ownership
+SOM_CATCH("Error adding interface to reactor\n")
+
+SOM_TRY
+streamRegistrationAndPublishingReactor->addInterface(keyRegistrationAndRemovalInterface, &caster::processKeyManagementRequest, "keyRegistrationAndRemovalInterface"); //Reactor takes ownership
+SOM_CATCH("Error adding interface to reactor\n")
+
+/*
+SOM_TRY
+streamRegistrationAndPublishingReactor->addInterface(addRemoveProxiesSocket, &caster::addRemoveProxies, "addRemoveProxiesSocket"); //Reactor takes ownership
+SOM_CATCH("Error adding interface to reactor\n")
+
+SOM_TRY
+streamRegistrationAndPublishingReactor->addInterface(proxiesUpdatesListeningSocket, &caster::listenForProxyUpdates, "proxiesUpdatesListeningSocket"); //Reactor takes ownership
+SOM_CATCH("Error adding interface to reactor\n")
+
+SOM_TRY
+streamRegistrationAndPublishingReactor->addInterface(proxiesNotificationsListeningSocket, &caster::listenForProxyNotifications, "proxiesNotificationsListeningSocket"); //Reactor takes ownership
+SOM_CATCH("Error adding interface to reactor\n")
+*/
+
+SOM_TRY
+streamRegistrationAndPublishingReactor->start();
+SOM_CATCH("Error starting reactor\n")
 }
 
 /**
@@ -521,375 +587,8 @@ fprintf(stderr, "%s", inputException.what());
 }
 
 //Wait for threads to finish
-clientRequestHandlingThread->join();
-streamRegistrationAndPublishingThread->join();
 }
 
-/**
-This function is called in the clientRequestHandlingThread to handle client requests and manage access to the SQLite database.
-*/
-void caster::clientRequestHandlingThreadFunction()
-{
-try
-{
-//Responsible for databaseAccessSocket, clientRequestInterface and clientRequestHandlingThreadShutdownListeningSocket
-
-//Create priority queue for event queue and poll items, then start polling/event cycle
-std::priority_queue<event> threadEventQueue;
-std::unique_ptr<zmq::pollitem_t[]> pollItems;
-int numberOfPollItems = 3;
-
-SOM_TRY
-pollItems.reset(new zmq::pollitem_t[numberOfPollItems]);
-SOM_CATCH("Error creating poll items\n")
-
-//Populate the poll object list
-pollItems[0] = {(void *) (*databaseAccessSocket), 0, ZMQ_POLLIN, 0};
-pollItems[1] = {(void *) (*clientRequestInterface), 0, ZMQ_POLLIN, 0};
-pollItems[2] = {(void *) (*clientRequestHandlingThreadShutdownListeningSocket), 0, ZMQ_POLLIN, 0};
-
-
-//Determine if an event has timed out (and deal with it if so) and then calculate the time until the next event timeout
-Poco::Timestamp nextEventTime;
-int64_t timeUntilNextEventInMilliseconds = 0;
-while(true)
-{
-nextEventTime = handleEvents(threadEventQueue);
-
-if(nextEventTime < 0)
-{
-timeUntilNextEventInMilliseconds = -1; //No events, so block until a message is received
-}
-else
-{
-timeUntilNextEventInMilliseconds = (nextEventTime - Poco::Timestamp())/1000 + 1; //Time in milliseconds till the next event, rounding up
-}
-
-//Poll until the next event timeout and resolve any messages that are received
-SOM_TRY
-if(zmq::poll(pollItems.get(), numberOfPollItems, timeUntilNextEventInMilliseconds) == 0)
-{
-continue; //Poll returned without indicating any messages have been received, so check events and go back to polling
-}
-SOM_CATCH("Error polling\n")
-
-//Handle received messages
-
-//Check if it is time to shutdown
-if(pollItems[2].revents & ZMQ_POLLIN)
-{
-return; //Shutdown message received, so return
-}
-
-//Check if a database request has been received
-if(pollItems[0].revents & ZMQ_POLLIN)
-{//A database request has been received, so process it
-SOM_TRY
-processDatabaseRequest();
-SOM_CATCH("Error processing database request\n")
-}
-
-//Check if a client request has been received
-if(pollItems[1].revents & ZMQ_POLLIN)
-{//A client request has been received, so process it
-SOM_TRY
-processClientQueryRequest();
-SOM_CATCH("Error processing request\n")
-}
-
-}
-
-}
-catch(const std::exception &inputException)
-{ //If an exception is thrown, swallow it, send error message and terminate
-fprintf(stderr, "clientRequestHandlingThreadFunction: %s\n", inputException.what());
-return;
-}
-
-}
-
-/**
-This function is called in the streamRegistrationAndPublishingThread to handle stream registration and publishing updates.
-*/
-void caster::streamRegistrationAndPublishingThreadFunction()
-{
-try
-{
-//Responsible for streamRegistrationAndPublishingThreadShutdownListeningSocket, transmitterRegistrationAndStreamingInterface, registrationDatabaseRequestSocket, keyRegistrationAndRemovalInterface, addRemoveProxiesSocket, proxiesUpdatesListeningSocket, proxiesNotificationsListeningSocket
-//Publishes to clientStreamPublishingInterface, proxyStreamPublishingInterface, streamStatusNotificationInterface
-
-//Create priority queue for event queue and poll items, then start polling/event cycle
-std::priority_queue<event> threadEventQueue;
-std::unique_ptr<zmq::pollitem_t[]> pollItems;
-int numberOfPollItems = 7;
-
-SOM_TRY
-pollItems.reset(new zmq::pollitem_t[numberOfPollItems]);
-SOM_CATCH("Error creating poll items\n")
-
-//Populate the poll object list , , 
-pollItems[0] = {(void *) (*streamRegistrationAndPublishingThreadShutdownListeningSocket), 0, ZMQ_POLLIN, 0};
-pollItems[1] = {(void *) (*transmitterRegistrationAndStreamingInterface), 0, ZMQ_POLLIN, 0};
-pollItems[2] = {(void *) (*registrationDatabaseRequestSocket), 0, ZMQ_POLLIN, 0};
-pollItems[3] = {(void *) (*keyRegistrationAndRemovalInterface), 0, ZMQ_POLLIN, 0};
-pollItems[4] = {(void *) (*addRemoveProxiesSocket), 0, ZMQ_POLLIN, 0};
-pollItems[5] = {(void *) (*proxiesUpdatesListeningSocket), 0, ZMQ_POLLIN, 0};
-pollItems[6] = {(void *) (*proxiesNotificationsListeningSocket), 0, ZMQ_POLLIN, 0};
-
-//Determine if an event has timed out (and deal with it if so) and then calculate the time until the next event timeout
-Poco::Timestamp nextEventTime;
-int64_t timeUntilNextEventInMilliseconds = 0;
-while(true)
-{
-nextEventTime = handleEvents(threadEventQueue);
-
-if(nextEventTime < 0)
-{
-timeUntilNextEventInMilliseconds = -1; //No events, so block until a message is received
-}
-else
-{
-timeUntilNextEventInMilliseconds = (nextEventTime - Poco::Timestamp())/1000 + 1; //Time in milliseconds till the next event, rounding up
-}
-
-//Poll until the next event timeout and resolve any messages that are received
-SOM_TRY
-if(zmq::poll(pollItems.get(), numberOfPollItems, timeUntilNextEventInMilliseconds) == 0)
-{
-continue; //Poll returned without indicating any messages have been received, so check events and go back to polling
-}
-SOM_CATCH("Error polling\n")
-
-//Handle received messages
-
-//Check if it is time to shutdown
-if(pollItems[0].revents & ZMQ_POLLIN)
-{
-return; //Shutdown message received, so return
-}
-
-//Check if an unauthenticated registration or stream update has been received
-if(pollItems[1].revents & ZMQ_POLLIN)
-{//A message has been received, so process it (unauthenticated)
-SOM_TRY
-processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(threadEventQueue);
-SOM_CATCH("Error processing registration request\n")
-}
-
-//Check if a key status change request has been received 
-if(pollItems[3].revents & ZMQ_POLLIN)
-{//A message has been received, so process it
-SOM_TRY
-processKeyManagementRequest(threadEventQueue);
-SOM_CATCH("Error processing request\n")
-}
-
-//Handle potential proxy's add/remove station notification (proxiesUpdatesListeningSocket)
-if(pollItems[5].revents & ZMQ_POLLIN)
-{//A message has been received, so process it
-SOM_TRY
-//TODO: Handle potential proxy's add/remove station notification (proxiesUpdatesListeningSocket)
-SOM_CATCH("Error processing request\n")
-continue; //All notifications must be processed before add/remove requests are to minimize the window for a notification to be queued after the 
-}
-
-//Handle potential add/remove proxy request (addRemoveProxiesSocket)
-if(pollItems[4].revents & ZMQ_POLLIN)
-{//A message has been received, so process it
-SOM_TRY
-processAddRemoveProxyRequest();
-SOM_CATCH("Error processing request\n")
-}
-
-//Handle potential proxy's update to send (proxiesNotificationsListeningSocket)
-if(pollItems[6].revents & ZMQ_POLLIN)
-{//A message has been received, so process it
-SOM_TRY
-//TODO: Handle potential proxy's update to send (proxiesNotificationsListeningSocket)
-SOM_CATCH("Error processing request\n")
-}
-
-
-
-//Check if we've received a reply from the database server
-if(pollItems[2].revents & ZMQ_POLLIN)
-{//A message has been received, so process it
-SOM_TRY
-processTransmitterRegistrationAndStreamingDatabaseReply();
-SOM_CATCH("Error processing request\n")
-}
-
-}
-
-}
-catch(const std::exception &inputException)
-{ //If an exception is thrown, swallow it, send error message and terminate
-fprintf(stderr, "clientRequestHandlingThreadFunction: %s\n", inputException.what());
-return;
-}
-
-}
-
-/**
-This function processes any events that are scheduled to have occurred by now and returns when the next event is scheduled to occur.  Which thread is calling this function is determined by the type of events in the event queue.
-@param inputEventQueue: The event queue to process events from
-@return: The time point associated with the soonest event timeout (negative if there are no outstanding events)
-
-@throws: This function can throw exceptions
-*/
-Poco::Timestamp caster::handleEvents(std::priority_queue<pylongps::event> &inputEventQueue)
-{
-
-while(true)
-{//Process an event if its time is less than the current timestamp
-
-if(inputEventQueue.size() == 0)
-{//No events left, so return negative
-return Poco::Timestamp(-1);
-}
-
-Poco::Timestamp currentTime;
-auto timeValue = currentTime.epochMicroseconds();
-
-if(inputEventQueue.top().time > currentTime )
-{ //Next event isn't happening yet
-return inputEventQueue.top().time;
-}
-
-//There is an event to process
-event eventToProcess = inputEventQueue.top();
-inputEventQueue.pop(); //Remove event from queue
-
-
-//Process events
-if(eventToProcess.HasExtension(possible_base_station_event_timeout::possible_base_station_event_timeout_field))
-{ //possible_base_station_event_timeout
-possible_base_station_event_timeout eventInstance = eventToProcess.GetExtension(possible_base_station_event_timeout::possible_base_station_event_timeout_field);
-
-if((connectionIDToConnectionStatus.at(eventInstance.connection_id()).timeLastMessageWasReceived.epochMicroseconds() + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0) <= eventToProcess.time.epochMicroseconds())
-{//It has been more than SECONDS_BEFORE_CONNECTION_TIMEOUT since a message was received, so drop connection
-if(eventInstance.is_authenticated())
-{
-SOM_TRY //Remove from database
-removeAuthenticatedConnection(eventInstance.connection_id());
-SOM_CATCH("Error, unable to remove authenticated connection\n")
-continue;
-}
-else
-{
-SOM_TRY
-removeUnauthenticatedConnection(eventInstance.connection_id());
-SOM_CATCH("Error, unable to remove unauthenticated connection\n")
-}
-}
-
-}
- 
-if(eventToProcess.HasExtension(blacklist_key_timeout_event::blacklist_key_timeout_event_field))
-{ //Blacklist entry timed out, so simply remove the key from the blacklist
-blacklistedSigningKeys.erase(eventToProcess.GetExtension(blacklist_key_timeout_event::blacklist_key_timeout_event_field).blacklist_key());
-continue;
-}
-
-if(eventToProcess.HasExtension(connection_key_timeout_event::connection_key_timeout_event_field))
-{ //A connection key has timed out, so remove it
-SOM_TRY
-removeConnectionKey(eventToProcess.GetExtension(connection_key_timeout_event::connection_key_timeout_event_field).connection_key());
-SOM_CATCH("Error removing connection key\n")
-continue;
-}
-
-if(eventToProcess.HasExtension(signing_key_timeout_event::signing_key_timeout_event_field))
-{ //A signing key has timed out, so remove it
-SOM_TRY
-removeSigningKey(eventToProcess.GetExtension(signing_key_timeout_event::signing_key_timeout_event_field).key());
-SOM_CATCH("Error removing signing key\n")
-continue;
-}
-
-/*
-if(eventToProcess.HasExtension(update_statistics_event::update_statistics_event_field))
-{ //It is time to update the real update rates in the database
-//Update database lambda
-
-auto updateBasestationEntryLambda = [&] (int64_t inputBasestationID, double inputRealUpdateRate)
-{
-//Send registration request to database
-std::string serializedDatabaseRequest;
-database_request databaseRequest;
-databaseRequest.set_base_station_to_update_id(inputBasestationID);
-databaseRequest.set_real_update_rate(inputRealUpdateRate);
-
-databaseRequest.SerializeToString(&serializedDatabaseRequest);
-
-SOM_TRY
-statisticsDatabaseRequestSocket->send(nullptr, 0, ZMQ_SNDMORE);
-statisticsDatabaseRequestSocket->send(serializedDatabaseRequest.c_str(), serializedDatabaseRequest.size());
-SOM_CATCH("Error sending database request\n")
-};
-
-
-Poco::Timestamp currentTime;
-auto timeValue = currentTime.epochMicroseconds();
-
-if(basestationIDToCreationTime.size() < UPDATE_RATES_TO_UPDATE_PER_SECOND)
-{ //We can just update all of the entries
-for(auto iter = basestationIDToCreationTime.begin(); iter != basestationIDToCreationTime.end(); iter++)
-{
-double updateRate = basestationIDToNumberOfSentMessages.at(iter->first)/((timeValue-iter->second)*1000000.0);
-SOM_TRY
-updateBasestationEntryLambda(iter->first, updateRate);
-SOM_CATCH("Error updating update rate")
-} 
-mapUpdateIndex = 0;
-}
-else
-{ //Update subset
-if(mapUpdateIndex >= basestationIDToCreationTime.size())
-{
-mapUpdateIndex = 0;
-}
-
-auto iter = basestationIDToCreationTime.begin();
-for(int i=0; i<mapUpdateIndex; i++)
-{
-iter++; //Advance until the index is met
-}
-
-int count = 0; //Number of updates performed
-for(; iter != basestationIDToCreationTime.end() && count < UPDATE_RATES_TO_UPDATE_PER_SECOND; count++)
-{
-if(iter == basestationIDToCreationTime.end())
-{ //Modulo increment
-iter = basestationIDToCreationTime.begin();
-}
-
-double updateRate = basestationIDToNumberOfSentMessages.at(iter->first)/((timeValue-iter->second)*1000000.0);
-SOM_TRY
-updateBasestationEntryLambda(iter->first, updateRate);
-SOM_CATCH("Error updating update rate")
-
-iter++;
-mapUpdateIndex++; //Update index
-} 
-
-
-}
-
-//add new update_statistics_event to trigger next update
-update_statistics_event updateEventSubMessage;
-
-event updateEvent(timeValue + 1000000.0); //Active in 1 second
-(*updateEvent.MutableExtension(update_statistics_event::update_statistics_event_field)) = updateEventSubMessage;
-
-inputEventQueue.push(updateEvent);
-}//end update_statistics_event
-*/
-
-
-}//end while
-
-}
 
 /**
 This function processes any events that are scheduled to have occurred by now and returns when the next event is scheduled to occur.
@@ -931,14 +630,14 @@ if((connectionIDToConnectionStatus.at(eventInstance.connection_id()).timeLastMes
 if(eventInstance.is_authenticated())
 {
 SOM_TRY //Remove from database
-removeAuthenticatedConnection(eventInstance.connection_id());
+removeAuthenticatedConnection(eventInstance.connection_id(), inputReactor);
 SOM_CATCH("Error, unable to remove authenticated connection\n")
 continue;
 }
 else
 {
 SOM_TRY
-removeUnauthenticatedConnection(eventInstance.connection_id());
+removeUnauthenticatedConnection(eventInstance.connection_id(), inputReactor);
 SOM_CATCH("Error, unable to remove unauthenticated connection\n")
 }
 }
@@ -954,7 +653,7 @@ continue;
 if(eventToProcess.HasExtension(connection_key_timeout_event::connection_key_timeout_event_field))
 { //A connection key has timed out, so remove it
 SOM_TRY
-removeConnectionKey(eventToProcess.GetExtension(connection_key_timeout_event::connection_key_timeout_event_field).connection_key());
+removeConnectionKey(eventToProcess.GetExtension(connection_key_timeout_event::connection_key_timeout_event_field).connection_key(), inputReactor);
 SOM_CATCH("Error removing connection key\n")
 continue;
 }
@@ -962,7 +661,7 @@ continue;
 if(eventToProcess.HasExtension(signing_key_timeout_event::signing_key_timeout_event_field))
 { //A signing key has timed out, so remove it
 SOM_TRY
-removeSigningKey(eventToProcess.GetExtension(signing_key_timeout_event::signing_key_timeout_event_field).key());
+removeSigningKey(eventToProcess.GetExtension(signing_key_timeout_event::signing_key_timeout_event_field).key(), inputReactor);
 SOM_CATCH("Error removing signing key\n")
 continue;
 }
@@ -975,9 +674,6 @@ zmq::socket_t *statisticsDatabaseRequestSocket = nullptr;
 SOM_TRY
 statisticsDatabaseRequestSocket = inputReactor.getSocket("statisticsDatabaseRequestSocket");
 SOM_CATCH("Error resolving socket")
-{
-throw SOMException("Expected socket not present in reactor\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __FILE__, __LINE__);
-}
 
 auto updateBasestationEntryLambda = [&] (int64_t inputBasestationID, double inputRealUpdateRate)
 {
@@ -1063,16 +759,21 @@ This function adds a authenticated connection by placing it in the associated ma
 @param inputConnectionKey: The ZMQ CURVE key that is being used with this connection (connection key)
 @param inputConnectionStatus: The current status of the connection
 @param inputBaseStationStreamInfo: The connection's details to register with the database
-@param inputEventQueue: The queue to register the timeout associated with this connection (close if idle for X seconds).
+@param inputReactor: The reactor that is calling the function
 
 @throws: This function can throw exceptions
 */
-void caster::addAuthenticatedConnection(const std::string &inputConnectionID,  const std::string &inputConnectionKey, const connectionStatus &inputConnectionStatus, const base_station_stream_information &inputBaseStationStreamInfo, std::priority_queue<event> &inputEventQueue)
+void caster::addAuthenticatedConnection(const std::string &inputConnectionID,  const std::string &inputConnectionKey, const connectionStatus &inputConnectionStatus, const base_station_stream_information &inputBaseStationStreamInfo, reactor<caster> &inputReactor)
 {
 if(connectionKeyToSigningKeys.count(inputConnectionID))
 {
 return; //Connection key entry not found, so the connection cannot be registered
 }
+
+zmq::socket_t *registrationDatabaseRequestSocket;
+SOM_TRY
+registrationDatabaseRequestSocket = inputReactor.getSocket("registrationDatabaseRequestSocket");
+SOM_CATCH("Error getting socket\n")
 
 //Add to maps/sets
 authenticatedConnectionIDToConnectionKey.emplace(inputConnectionID, inputConnectionKey);
@@ -1103,22 +804,28 @@ timeoutEventSubMessage.set_is_authenticated(true);
 event timeoutEvent(timeValue + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0);
 (*timeoutEvent.MutableExtension(possible_base_station_event_timeout::possible_base_station_event_timeout_field)) = timeoutEventSubMessage;
 
-inputEventQueue.push(timeoutEvent);
+inputReactor.eventQueue.push(timeoutEvent);
 }
 
 /**
 This function removes a authenticated connection and updates the associated datastructures.
 @param inputConnectionID: The connection ID of the authenticated connection to remove
+@param inputReactor: The reactor that is calling the function
 
 @throws: This function can throw exceptions
 */
-void caster::removeAuthenticatedConnection(const std::string &inputConnectionID)
+void caster::removeAuthenticatedConnection(const std::string &inputConnectionID, reactor<caster> &inputReactor)
 {
 //Check if it has already been erased
 if(authenticatedConnectionIDToConnectionKey.count(inputConnectionID) == 0)
 {
 return;
 }
+
+zmq::socket_t *registrationDatabaseRequestSocket = nullptr;
+SOM_TRY
+registrationDatabaseRequestSocket = inputReactor.getSocket("registrationDatabaseRequestSocket");
+SOM_CATCH("Error, unable to get socket\n")
 
 //Remove from maps/sets
 std::string connectionKey(authenticatedConnectionIDToConnectionKey.at(inputConnectionID));
@@ -1147,11 +854,11 @@ This function adds a connection signing key, updates the associated maps and sch
 @param inputConnectionKey: The connection key to add
 @param inputExpirationTime: The timestamp of when this key expires (negative if it does not expire on its own)
 @param inputSigningKeys: The keys which have signed this 
-@param inputEventQueue: The event queue to add the timeout event to
+@param inputReactor: The reactor that is calling the function
 
 @return: true if the key had valid signing keys and was added
 */
-bool caster::addConnectionKey(const std::string &inputConnectionKey, int64_t inputExpirationTime, const std::vector<std::string> &inputSigningKeys, std::priority_queue<event> &inputEventQueue)
+bool caster::addConnectionKey(const std::string &inputConnectionKey, int64_t inputExpirationTime, const std::vector<std::string> &inputSigningKeys, reactor<caster> &inputReactor)
 {
 //Check if any of the signing keys are considered valid
 std::set<std::string> listOfOfficialSigningKeys;
@@ -1206,7 +913,7 @@ timeoutEventSubMessage.set_connection_key(inputConnectionKey);
 event timeoutEvent(inputExpirationTime);
 (*timeoutEvent.MutableExtension(connection_key_timeout_event::connection_key_timeout_event_field)) = timeoutEventSubMessage;
 
-inputEventQueue.push(timeoutEvent);
+inputReactor.eventQueue.push(timeoutEvent);
 }
 
 return true;
@@ -1215,10 +922,11 @@ return true;
 /**
 This function removes the given connection key from the maps and removes all associated connections.
 @param inputConnectionKey: The connection key to remove
+@param inputReactor: The reactor that is calling the function
 
 @throws: This function can throw exceptions
 */
-void caster::removeConnectionKey(const std::string &inputConnectionKey)
+void caster::removeConnectionKey(const std::string &inputConnectionKey, reactor<caster> &inputReactor)
 {
 //Remove/delete all affiliated connections
 auto equal_range = connectionKeyToAuthenticatedConnectionIDs.equal_range(inputConnectionKey);
@@ -1226,7 +934,7 @@ for(auto iter = equal_range.first; iter != equal_range.second;)
 {
 auto buffer = iter++; //Iter's entry gets deleted, so we have to increment before that happens
 SOM_TRY
-removeAuthenticatedConnection(iter->second);
+removeAuthenticatedConnection(iter->second, inputReactor);
 SOM_CATCH("Error removing authenticated connection\n")
 iter = buffer; 
 }
@@ -1245,11 +953,11 @@ This function adds a new signing key and schedules its timeout.
 @param inputSigningKey: The signing key to add
 @param inputIsOfficialSigningKey: True if the signing key is an "Official" one and false if it is "Registered Community"
 @param inputExpirationTime: When the signing key becomes invalid
-@param inputEventQueue: The event queue to add the timeout event to
+@param inputReactor: The reactor that is calling the function
 
 @return: true if the key was added successfully or is already present
 */
-bool caster::addSigningKey(const std::string &inputSigningKey, bool inputIsOfficialSigningKey, int64_t inputExpirationTime, std::priority_queue<event> &inputEventQueue)
+bool caster::addSigningKey(const std::string &inputSigningKey, bool inputIsOfficialSigningKey, int64_t inputExpirationTime, reactor<caster> &inputReactor)
 {
 if((officialSigningKeys.count(inputSigningKey) > 0 && inputIsOfficialSigningKey) || (registeredCommunitySigningKeys.count(inputSigningKey) > 0 && !inputIsOfficialSigningKey))
 {
@@ -1280,16 +988,17 @@ timeoutEventSubMessage.set_is_official(inputIsOfficialSigningKey);
 event timeoutEvent(inputExpirationTime);
 (*timeoutEvent.MutableExtension(signing_key_timeout_event::signing_key_timeout_event_field)) = timeoutEventSubMessage;
 
-inputEventQueue.push(timeoutEvent);
+inputReactor.eventQueue.push(timeoutEvent);
 }
 
 /**
 This function removes a signing key.  This can cause a cascade where a connection key which is reliant on it is removed, which can in turn cause many connections to be removed.
 @param inputSigningKey: The signing key to remove
+@param inputReactor: The reactor that is calling the function
 
 @throws: This function can throw exceptions
 */
-void caster::removeSigningKey(const std::string &inputSigningKey)
+void caster::removeSigningKey(const std::string &inputSigningKey, reactor<caster> &inputReactor)
 {
 //Remove any affected connection keys and delete all references to this key
 auto equal_range = signingKeyToConnectionKeys.equal_range(inputSigningKey);
@@ -1299,7 +1008,7 @@ auto buffer = iter++; //Object refered to by iter will be removed
 if(connectionKeyToSigningKeys.count(iter->second) < 2)
 {//If this connection key is only signed by this signing key, remove it
 SOM_TRY
-removeConnectionKey(iter->second);
+removeConnectionKey(iter->second, inputReactor);
 SOM_CATCH("Error removing signing key\n")
 }
 else
@@ -1319,14 +1028,15 @@ registeredCommunitySigningKeys.erase(inputSigningKey);
 Add a key to the blacklist, triggering its removal from "official" and "registered community" and the prevention of it from being reused until the certificate expires.
 @param inputBlacklistKey: The key to place on the blacklist
 @param inputExpirationTime: When the key expires
-@param inputEventQueue: The queue to to ad the expiration event to
+@param inputEventQueue: The queue to to add the expiration event to
+@param inputReactor: The reactor that is calling the function
 
 @throws: this function can throw exceptions
 */
-void caster::addBlacklistKey(const std::string &inputBlacklistKey, int64_t inputExpirationTime, std::priority_queue<event> &inputEventQueue)
+void caster::addBlacklistKey(const std::string &inputBlacklistKey, int64_t inputExpirationTime, reactor<caster> &inputReactor)
 {
 SOM_TRY //Remove the key from list of signing keys
-removeSigningKey(inputBlacklistKey);
+removeSigningKey(inputBlacklistKey, inputReactor);
 SOM_CATCH("Error removing blacklist key\n")
 
 //Add to the list of blacklisted keys
@@ -1339,22 +1049,28 @@ timeoutEventSubMessage.set_blacklist_key(inputBlacklistKey);
 event timeoutEvent(inputExpirationTime);
 (*timeoutEvent.MutableExtension(blacklist_key_timeout_event::blacklist_key_timeout_event_field)) = timeoutEventSubMessage;
 
-inputEventQueue.push(timeoutEvent);
+inputReactor.eventQueue.push(timeoutEvent);
 }
 
 /**
 This function removes a unauthenticated connection and updates the associated datastructures.
 @param inputConnectionID: The connection ID of the authenticated connection to remove
+@param inputReactor: The reactor that is calling the function
 
 @throws: This function can throw exceptions
 */
-void caster::removeUnauthenticatedConnection(const std::string &inputConnectionID)
+void caster::removeUnauthenticatedConnection(const std::string &inputConnectionID, reactor<caster> &inputReactor)
 {
 //Check if it has already been erased
 if(connectionIDToConnectionStatus.count(inputConnectionID) == 0)
 {
 return;
 }
+
+zmq::socket_t *registrationDatabaseRequestSocket = nullptr;
+SOM_TRY
+registrationDatabaseRequestSocket = inputReactor.getSocket("registrationDatabaseRequestSocket");
+SOM_CATCH("Error getting socket\n")
 
 //Remove from maps/sets
 auto basestationID = connectionIDToConnectionStatus.at(inputConnectionID).baseStationID;
@@ -1413,6 +1129,7 @@ This function handles requests to add or remove a caster proxy.  This generally 
 */
 void caster::processAddRemoveProxyRequest()
 {
+/*
 //Receive message
 std::unique_ptr<zmq::message_t> messageBuffer;
 
@@ -1498,14 +1215,18 @@ casterIDToMapForForeignBasestationIDToLocalBasestationID[foreignCasterID] = std:
 
 aRequestPartWasProcessed = true;
 }
-
+*/
 }
 
 /**
 This function checks if the databaseAccessSocket has received a database_request message and (if so) processes the message and sends a database_reply in response.
+@param inputReactor: The reactor that is calling the function
+@param inputSocket: The socket
+@return: true if the polling cycle should restart before processing any more messages
+
 @throws: This function can throw exceptions
 */
-void caster::processDatabaseRequest()
+bool caster::processDatabaseRequest(reactor<caster> &inputReactor, zmq::socket_t &inputSocket)
 {
 //Receive message
 std::unique_ptr<zmq::message_t> messageBuffer;
@@ -1515,9 +1236,9 @@ messageBuffer.reset(new zmq::message_t);
 SOM_CATCH("Error initializing ZMQ message")
 
 SOM_TRY //Receive message
-if(databaseAccessSocket->recv(messageBuffer.get(), ZMQ_DONTWAIT) != true)
+if(inputSocket.recv(messageBuffer.get(), ZMQ_DONTWAIT) != true)
 {
-return; //No message to be had
+return false; //No message to be had
 }
 SOM_CATCH("Error receiving server registration/deregistration message")
 
@@ -1539,7 +1260,7 @@ reply.set_registration_connection_id(inputConnectionString);
 reply.SerializeToString(&serializedReply);
 
 SOM_TRY
-databaseAccessSocket->send(serializedReply.c_str(), serializedReply.size());
+inputSocket.send(serializedReply.c_str(), serializedReply.size());
 SOM_CATCH("Error sending reply message\n")
 };
 
@@ -1552,7 +1273,7 @@ if(!request.IsInitialized())
 //Message header serialization failed, so send back message saying request failed
 SOM_TRY
 sendReplyLambda(true, DATABASE_REQUEST_DESERIALIZATION_FAILED);
-return;
+return false;
 SOM_CATCH("Error sending reply");
 }
 
@@ -1569,7 +1290,7 @@ if(!request.base_station_to_register().has_latitude() || !request.base_station_t
 {//Message did not have required fields, so send back message saying request failed
 SOM_TRY
 sendReplyLambda(true, DATABASE_REQUEST_FORMAT_INVALID, replyConnectionID);
-return;
+return false;
 SOM_CATCH("Error sending reply")
 }
 
@@ -1581,7 +1302,7 @@ SOM_CATCH("Error inserting basestation to database\n")
 SOM_TRY
 sendReplyLambda(false, DATABASE_REQUEST_FORMAT_INVALID, replyConnectionID); //Request succedded
 SOM_CATCH("Error sending reply\n")
-return;
+return false;
 }
 
 if(request.has_delete_base_station_id() )
@@ -1595,7 +1316,7 @@ SOM_CATCH("Error deleting from database\n")
 SOM_TRY
 sendReplyLambda(false); //Request succeeded
 SOM_CATCH("Error sending reply\n")
-return;
+return false;
 }
 
 if(request.has_base_station_to_update_id() && request.has_real_update_rate())
@@ -1607,19 +1328,25 @@ SOM_CATCH("Error updating database\n")
 SOM_TRY
 sendReplyLambda(false); //Request succedded
 SOM_CATCH("Error sending reply\n")
-return;
+return false;
 }
 
 SOM_TRY
 sendReplyLambda(true, DATABASE_REQUEST_FORMAT_INVALID); //Request failed
 SOM_CATCH("Error sending reply\n")
+
+return false;
 }
 
 /**
 This function checks if the clientRequestInterface has received a client_query_request message and (if so) processes the message and sends a client_query_reply in response.
+@param inputReactor: The reactor that is calling the function
+@param inputSocket: The socket
+@return: true if the polling cycle should restart before processing any more messages
+
 @throws: This function can throw exceptions
 */
-void caster::processClientQueryRequest()
+bool caster::processClientQueryRequest(reactor<caster> &inputReactor, zmq::socket_t &inputSocket)
 {
 //Receive message
 std::unique_ptr<zmq::message_t> messageBuffer;
@@ -1629,9 +1356,9 @@ messageBuffer.reset(new zmq::message_t);
 SOM_CATCH("Error initializing ZMQ message")
 
 SOM_TRY //Receive message
-if(clientRequestInterface->recv(messageBuffer.get(), ZMQ_DONTWAIT) != true)
+if(inputSocket.recv(messageBuffer.get(), ZMQ_DONTWAIT) != true)
 {
-return; //No message to be had
+return false; //No message to be had
 }
 SOM_CATCH("Error receiving server registration/deregistration message")
 
@@ -1657,7 +1384,7 @@ auto newObjectPointer = reply.mutable_base_stations()->Add();
 reply.SerializeToString(&serializedReply);
 
 SOM_TRY
-clientRequestInterface->send(serializedReply.c_str(), serializedReply.size());
+inputSocket.send(serializedReply.c_str(), serializedReply.size());
 SOM_CATCH("Error sending reply message\n")
 };
 
@@ -1670,7 +1397,7 @@ if(!request.IsInitialized())
 //Message header serialization failed, so send back message saying request failed
 SOM_TRY
 sendReplyLambda(true, CLIENT_QUERY_REQUEST_DESERIALIZATION_FAILED);
-return;
+return false;
 SOM_CATCH("Error sending reply");
 }
 
@@ -1687,7 +1414,7 @@ if(boundParameterCount > 999)
 { //Too many bound parameters to process
 SOM_TRY
 sendReplyLambda(true, CLIENT_QUERY_REQUEST_TOO_COMPLEX);
-return;
+return false;
 SOM_CATCH("Error sending reply");
 }
 
@@ -1763,16 +1490,27 @@ results[i].set_uptime(timeValue-results[i].start_time());
 SOM_TRY //Send back query results
 sendReplyLambda(false, CLIENT_QUERY_REQUEST_DESERIALIZATION_FAILED, casterID, results);
 SOM_CATCH("Error sending reply\n")
+
+return false;
 }
 
 /**
 This function processes messages from the transmitterRegistrationAndStreamingInterface.  A connection is expected to start with a transmitter_registration_request, to which this object replies with a transmitter_registration_reply.  Thereafter, the messages received are forwarded to the associated publisher interfaces until the publisher stops sending for an unacceptably long period (SECONDS_BEFORE_CONNECTION_TIMEOUT), at which point the object erases the associated the associated metadata and publishes that the base station disconnected.  In the authenticated case, the preapended signature is removed and checked.  If authentication fails, packet is dropped (eventually timing out).
-@param inputEventQueue: The event queue to register events to
+@param inputReactor: The reactor that is calling the function
+@param inputSocket: The socket
+@return: true if the polling cycle should restart before processing any more messages
 
 @throws: This function can throw exceptions
 */
-void caster::processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(std::priority_queue<event> &inputEventQueue)
+bool caster::processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(reactor<caster> &inputReactor, zmq::socket_t &inputSocket)
 {
+zmq::socket_t *registrationDatabaseRequestSocket = nullptr;
+
+SOM_TRY
+registrationDatabaseRequestSocket = inputReactor.getSocket("registrationDatabaseRequestSocket");
+SOM_CATCH("Error getting required socket\n")
+
+
 //Send reply
 auto sendReplyLambda = [&] (const std::string &inputAddress, bool inputRequestSucceeded, request_failure_reason inputFailureReason = MESSAGE_FORMAT_INVALID)
 {
@@ -1789,11 +1527,11 @@ reply.set_failure_reason(inputFailureReason);
 reply.SerializeToString(&serializedReply);
 
 SOM_TRY
-transmitterRegistrationAndStreamingInterface->send(inputAddress.c_str(), inputAddress.size(), ZMQ_SNDMORE);
+inputSocket.send(inputAddress.c_str(), inputAddress.size(), ZMQ_SNDMORE);
 SOM_CATCH("Error sending reply messages\n")
 
 SOM_TRY
-transmitterRegistrationAndStreamingInterface->send(serializedReply.c_str(), serializedReply.size());
+inputSocket.send(serializedReply.c_str(), serializedReply.size());
 SOM_CATCH("Error sending reply messages\n")
 };
 
@@ -1802,12 +1540,12 @@ SOM_CATCH("Error sending reply messages\n")
 std::vector<std::string> receivedContent;
 bool messageRetrievalSuccessful = false;
 SOM_TRY
-messageRetrievalSuccessful = retrieveRouterMessage(*transmitterRegistrationAndStreamingInterface, receivedContent);
+messageRetrievalSuccessful = retrieveRouterMessage(inputSocket, receivedContent);
 SOM_CATCH("Error retrieving router message\n")
 
 if(!messageRetrievalSuccessful)
 { //Invalid message, so ignore
-return;
+return false;
 }
 
 
@@ -1832,7 +1570,7 @@ if(!request.IsInitialized())
 {//Message header serialization failed, so send back message saying request failed
 SOM_TRY
 sendReplyLambda(connectionID, false, MESSAGE_FORMAT_INVALID);
-return;
+return false;
 SOM_CATCH("Error sending reply");
 }
 
@@ -1850,7 +1588,7 @@ if(!streamInfo->has_message_format())
 {//Missing a required field
 SOM_TRY
 sendReplyLambda(connectionID, false, MISSING_REQUIRED_FIELD);
-return;
+return false;
 SOM_CATCH("Error sending reply")
 }
 
@@ -1868,7 +1606,7 @@ if(!credentialsMessageIsValid)
 { //Either authorized_permissions could not be deserialized or one of the signatures didn't match or the key didn't match
 SOM_TRY
 sendReplyLambda(connectionID, false, CREDENTIALS_DESERIALIZATION_FAILED);
-return;
+return false;
 SOM_CATCH("Error sending reply");
 }
 
@@ -1879,7 +1617,7 @@ if(timeValue > permissionsBuffer.valid_until())
 { //Permissions recognized but expired
 SOM_TRY
 sendReplyLambda(connectionID, false, CREDENTIALS_DESERIALIZATION_FAILED);
-return;
+return false;
 SOM_CATCH("Error sending reply");
 }
 }
@@ -1887,7 +1625,7 @@ else
 {
 SOM_TRY
 sendReplyLambda(connectionID, false, CREDENTIALS_DESERIALIZATION_FAILED);
-return;
+return false;
 SOM_CATCH("Error sending reply");
 }
 
@@ -1896,7 +1634,7 @@ if(permissionsBuffer.public_key().size() != crypto_sign_PUBLICKEYBYTES)
 { //The public key is not a valid size
 SOM_TRY
 sendReplyLambda(connectionID, false, CREDENTIALS_DESERIALIZATION_FAILED);
-return;
+return false;
 SOM_CATCH("Error sending reply");
 }
 
@@ -1910,11 +1648,11 @@ signingKeys.push_back(credentialsPointer->signatures(i).public_key());
 
 
 //Add connection key
-if(addConnectionKey(permissionsBuffer.public_key(), permissionsBuffer.valid_until(), signingKeys, inputEventQueue) != true)
+if(addConnectionKey(permissionsBuffer.public_key(), permissionsBuffer.valid_until(), signingKeys, inputReactor) != true)
 {
 SOM_TRY
 sendReplyLambda(connectionID, false, INSUFFICIENT_PERMISSIONS);
-return;
+return false;
 SOM_CATCH("Error sending reply");
 }
 }
@@ -1938,7 +1676,7 @@ else
 {
 SOM_TRY
 sendReplyLambda(connectionID, false, INSUFFICIENT_PERMISSIONS);
-return;
+return false;
 SOM_CATCH("Error sending reply");
 }
 }
@@ -1985,7 +1723,7 @@ associatedConnectionStatus.timeLastMessageWasReceived = timeValue;
 if(connectionIsAuthenticated)
 {
 SOM_TRY
-addAuthenticatedConnection(connectionID, permissionsBuffer.public_key(), associatedConnectionStatus, *streamInfo, inputEventQueue);
+addAuthenticatedConnection(connectionID, permissionsBuffer.public_key(), associatedConnectionStatus, *streamInfo, inputReactor);
 SOM_CATCH("Error adding authenticated connection\n")
 }
 else
@@ -2004,7 +1742,7 @@ timeoutEventSubMessage.set_is_authenticated(connectionIsAuthenticated);
 event timeoutEvent(timeValue + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0);
 (*timeoutEvent.MutableExtension(possible_base_station_event_timeout::possible_base_station_event_timeout_field)) = timeoutEventSubMessage;
 
-inputEventQueue.push(timeoutEvent);
+inputReactor.eventQueue.push(timeoutEvent);
 }
 
 
@@ -2031,7 +1769,7 @@ SOM_TRY
 streamStatusNotificationInterface->send(notificiationMessage.c_str(), notificiationMessage.size());
 SOM_CATCH("Error publishing new station registration\n")
 
-return;//Registration finished
+return false;//Registration finished
 }//End station registration
 
 
@@ -2042,7 +1780,7 @@ connectionIsAuthenticated = authenticatedConnectionIDToConnectionKey.count(conne
 
 if(connectionIsAuthenticated && receivedContent[1].size() < crypto_sign_BYTES)
 { //Authenticated message isn't long enough to have a signature, so ignore it
-return; 
+return false; 
 }
 
 if(connectionIsAuthenticated)
@@ -2051,7 +1789,7 @@ std::string messageSignature = receivedContent[1].substr(0,crypto_sign_BYTES);
 
 if(crypto_sign_verify_detached((const unsigned char *) messageSignature.c_str(), (const unsigned char *) receivedContent[1].c_str() + crypto_sign_BYTES, receivedContent[1].size() - crypto_sign_BYTES, (const unsigned char *) authenticatedConnectionIDToConnectionKey.at(connectionID).c_str()) != 0) 
 { //Signature did not match, so ignore invalid message
-return;
+return false;
 }
 }
 
@@ -2109,16 +1847,20 @@ timeoutEventSubMessage.set_is_authenticated(connectionIsAuthenticated);
 event timeoutEvent(timeValue + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0);
 (*timeoutEvent.MutableExtension(possible_base_station_event_timeout::possible_base_station_event_timeout_field)) = timeoutEventSubMessage;
 
-inputEventQueue.push(timeoutEvent);
+inputReactor.eventQueue.push(timeoutEvent);
+return false;
 }
 
 
 /**
 This function processes reply messages sent to registrationDatabaseRequestSocket.  It expects database operations to succeed, so it throws an exception upon receiving a failure message.
+@param inputReactor: The reactor that is calling the function
+@param inputSocket: The socket
+@return: true if the polling cycle should restart before processing any more messages
 
 @throws: This function can throw exceptions
 */
-void caster::processTransmitterRegistrationAndStreamingDatabaseReply()
+bool caster::processTransmitterRegistrationAndStreamingDatabaseReply(reactor<caster> &inputReactor, zmq::socket_t &inputSocket)
 {
 std::unique_ptr<zmq::message_t> messageBuffer;
 
@@ -2128,12 +1870,12 @@ SOM_CATCH("Error initializing ZMQ message")
 
 bool messageReceived = false;
 SOM_TRY //Receive first message part (should be empty)
-messageReceived = registrationDatabaseRequestSocket->recv(messageBuffer.get(), ZMQ_DONTWAIT);
+messageReceived = inputSocket.recv(messageBuffer.get(), ZMQ_DONTWAIT);
 SOM_CATCH("Error receiving database reply message")
 
 if(!messageReceived || messageBuffer->size() != 0 || !messageBuffer->more())
 {
-return;
+return false;
 }
 
 SOM_TRY //Receive message
@@ -2142,7 +1884,7 @@ SOM_CATCH("Error initializing ZMQ message")
 
 messageReceived = false;
 SOM_TRY //Receive message
-messageReceived = registrationDatabaseRequestSocket->recv(messageBuffer.get(), ZMQ_DONTWAIT);
+messageReceived = inputSocket.recv(messageBuffer.get(), ZMQ_DONTWAIT);
 SOM_CATCH("Error receiving server registration message")
 
 database_reply reply;
@@ -2153,15 +1895,18 @@ if(reply.has_reason())
 throw SOMException("Database request failed (" +std::to_string((int) reply.reason())+ "\n", SQLITE3_ERROR, __FILE__, __LINE__);
 }
 
+return false;
 }
 
 /**
 This function processes key_management_request messages and accordingly modifies the list of accepted signing keys.  If a connection is reliant on a dropped signing key (has no other valid signing keys), then it will be dropped when the signing key is taken out of circulation.
-@param inputEventQueue: The event queue to register events to
+@param inputReactor: The reactor that is calling the function
+@param inputSocket: The socket
+@return: true if the polling cycle should restart before processing any more messages
 
 @throws: This function can throw exceptions
 */
-void caster::processKeyManagementRequest(std::priority_queue<event> &inputEventQueue)
+bool caster::processKeyManagementRequest(reactor<caster> &inputReactor, zmq::socket_t &inputSocket)
 {
 //Create lambda to make it easy to send request failed replies
 auto sendReplyLambda = [&] (bool inputRequestFailed, enum key_management_request_failure_reason inputReason = KEY_MESSAGE_FORMAT_INVALID)
@@ -2180,7 +1925,7 @@ reply.set_failure_reason(inputReason);
 reply.SerializeToString(&serializedReply);
 
 SOM_TRY
-keyRegistrationAndRemovalInterface->send(serializedReply.c_str(), serializedReply.size());
+inputSocket.send(serializedReply.c_str(), serializedReply.size());
 SOM_CATCH("Error sending reply message\n")
 };
 
@@ -2192,12 +1937,12 @@ SOM_CATCH("Error initializing ZMQ message")
 
 bool messageReceived = false;
 SOM_TRY //Receive first message part (should be empty)
-messageReceived = keyRegistrationAndRemovalInterface->recv(messageBuffer.get(), ZMQ_DONTWAIT);
+messageReceived = inputSocket.recv(messageBuffer.get(), ZMQ_DONTWAIT);
 SOM_CATCH("Error receiving key registration message")
 
 if(!messageReceived)
 {
-return;
+return false;
 }
 
 key_management_request request;
@@ -2263,22 +2008,24 @@ SOM_CATCH("Error, unable to send reply")
 for(int i=0; i<changes.keys_to_add_to_blacklist_size(); i++)
 { 
 //add key to blacklist and terminate any connections who were solely reliant on associated keys
-addBlacklistKey(changes.keys_to_add_to_blacklist(i), changes.keys_to_add_to_blacklist_valid_until(i), inputEventQueue);
+addBlacklistKey(changes.keys_to_add_to_blacklist(i), changes.keys_to_add_to_blacklist_valid_until(i), inputReactor);
 }
 
 for(int i=0; i<changes.official_signing_keys_to_add_size(); i++)
 {
-addSigningKey(changes.official_signing_keys_to_add(i), true, changes.official_signing_keys_to_add_valid_until(i), inputEventQueue);
+addSigningKey(changes.official_signing_keys_to_add(i), true, changes.official_signing_keys_to_add_valid_until(i), inputReactor);
 }
 
 for(int i=0; i<changes.registered_community_signing_keys_to_add_size(); i++)
 {
-addSigningKey(changes.registered_community_signing_keys_to_add(i), false,  changes.registered_community_signing_keys_to_add_valid_until(i), inputEventQueue);
+addSigningKey(changes.registered_community_signing_keys_to_add(i), false,  changes.registered_community_signing_keys_to_add_valid_until(i), inputReactor);
 }
 
 SOM_TRY
 sendReplyLambda(false); //Operation succeeded
 SOM_CATCH("Error, unable to send reply")
+
+return false;
 }
 
 /**
@@ -2830,21 +2577,22 @@ return std::tuple<bool, bool, bool>(true, isSignedByOfficialEntityKey, isSignedB
 /**
 This function removes a basestation connection from both the maps and the database.
 @param inputConnectionID: The connection to remove
+@param inputReactor: The reactor that is calling the function
 
 @throws: This function can throw exceptions
 */
-void caster::removeConnection(const std::string &inputConnectionID)
+void caster::removeConnection(const std::string &inputConnectionID, reactor<caster> &inputReactor)
 {
 
 if(authenticatedConnectionIDToConnectionKey.count(inputConnectionID) > 0)
 { //Handle if authenticated
 SOM_TRY
-removeAuthenticatedConnection(inputConnectionID);
+removeAuthenticatedConnection(inputConnectionID, inputReactor);
 SOM_CATCH("Error, unable to remove authenticated connection\n")
 }
 else
 {
-removeUnauthenticatedConnection(inputConnectionID);
+removeUnauthenticatedConnection(inputConnectionID, inputReactor);
 }
 }
 

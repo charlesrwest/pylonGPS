@@ -154,10 +154,6 @@ This function is called in the streamRegistrationAndPublishingThread to handle s
 */
 void streamRegistrationAndPublishingThreadFunction();
 
-/**
-This function monitors published updates, collects the associated statistics and periodically reports them to the database.
-*/
-void statisticsGatheringThreadFunction();
 
 /**
 This function processes any events that are scheduled to have occurred by now and returns when the next event is scheduled to occur.  Which thread is calling this function is determined by the type of events in the event queue.
@@ -180,29 +176,18 @@ Poco::Timestamp handleReactorEvents(reactor<caster> &inputReactor);
 //Threads/shutdown socket for operations
 std::unique_ptr<zmq::socket_t> shutdownPublishingSocket; //This inproc PUB socket publishes an empty message when it is time for threads to shut down.
 //Set of sockets use to listen for the signal from shutdownPublishingSocket
-std::unique_ptr<zmq::socket_t> clientRequestHandlingThreadShutdownListeningSocket;
 std::unique_ptr<zmq::socket_t> streamRegistrationAndPublishingThreadShutdownListeningSocket;
 
-std::unique_ptr<zmq::socket_t> databaseAccessSocket; //A inproc REP socket that handles requests to make changes to the database.  Used by clientRequestHandlingThread.
-std::unique_ptr<zmq::socket_t> registrationDatabaseRequestSocket; //A inproc dealer socket used in the streamRegistrationAndPublishingThread to send database requests/get replies
 
 
-std::unique_ptr<zmq::socket_t> addRemoveProxiesSocket; //A inproc REP socket which accepts add_remove_proxy_requests and responds with a add_remove_proxy_reply.  Used in the streamRegistrationAndPublishingThread.
-std::unique_ptr<zmq::socket_t> proxiesUpdatesListeningSocket; //A TCP SUB socket which subscribes to other casters so that it can republish the updates it received.  Used in the streamRegistrationAndPublishingThread.
-std::unique_ptr<zmq::socket_t> proxiesNotificationsListeningSocket; //A TCP SUB socket which subscribes to other casters so that it can know when they add/remove a basestation. Used in the streamRegistrationAndPublishingThread.
-
-
-std::unique_ptr<std::thread> clientRequestHandlingThread; //Handles client requests and requests by the stream registration and statistics threads to make changes to the database
-std::unique_ptr<std::thread> streamRegistrationAndPublishingThread;
+std::unique_ptr<reactor<caster> > clientRequestHandlingReactor; //Handles client requests and requests by the stream registration and statistics threads to make changes to the database
+std::unique_ptr<reactor<caster> > streamRegistrationAndPublishingReactor;
 std::unique_ptr<reactor<caster> > statisticsGatheringReactor; //This reactor analyzes the statistics of the stream messages that are published and periodically updates the associated entries in the database.
 
 std::unique_ptr<sqlite3, decltype(&sqlite3_close_v2)> databaseConnection; //Pointer to created database connection
 std::unique_ptr<protobufSQLConverter<base_station_stream_information> > basestationToSQLInterface; //Allows storage/retrieval of base_station_stream_information objects in the database
 
 //Interfaces
-std::unique_ptr<zmq::socket_t> transmitterRegistrationAndStreamingInterface; ///A ZMQ ROUTER socket which expects a transmitter_registration_request to which it responses with a transmitter_registration_reply. If accepted, the request is followed by the data to broadcast.  If the data is athenticated, the data message has a preappended sodium signature of length crypto_sign_BYTES.  Used by streamRegistrationAndPublishingThread.
-std::unique_ptr<zmq::socket_t> keyRegistrationAndRemovalInterface; ///A ZMQ REP socket which expects a key_management_request message and sends back a key_management_reply message.  Used by streamRegistrationAndPublishingThread.
-std::unique_ptr<zmq::socket_t> clientRequestInterface;  ///A ZMQ REP socket which expects a client_query_request and responds with a client_query_reply.  Used by clientRequestHandlingThread.
 std::unique_ptr<zmq::socket_t> clientStreamPublishingInterface; ///A ZMQ PUB socket which publishes all data associated with all streams with the caster ID and stream ID preappended for clients to subscribe.  Used by streamRegistrationAndPublishingThread.
 std::unique_ptr<zmq::socket_t> proxyStreamPublishingInterface; ///A ZMQ PUB socket which publishes all data associated with all streams with the caster ID and stream ID preappended for clients to subscribe.  Used by streamRegistrationAndPublishingThread.
 std::unique_ptr<zmq::socket_t> streamStatusNotificationInterface; ///A ZMQ PUB socket which publishes stream_status_update messages.  Used by streamRegistrationAndPublishingThread.
@@ -214,83 +199,89 @@ This function adds a authenticated connection by placing it in the associated ma
 @param inputConnectionKey: The ZMQ CURVE key that is being used with this connection (connection key)
 @param inputConnectionStatus: The current status of the connection
 @param inputBaseStationStreamInfo: The connection's details to register with the database
-@param inputEventQueue: The queue to register the timeout associated with this connection (close if idle for X seconds).
+@param inputReactor: The reactor that is calling the function
 
 @throws: This function can throw exceptions
 */
-void addAuthenticatedConnection(const std::string &inputConnectionID,  const std::string &inputConnectionKey, const connectionStatus &inputConnectionStatus, const base_station_stream_information &inputBaseStationStreamInfo, std::priority_queue<event> &inputEventQueue);
+void addAuthenticatedConnection(const std::string &inputConnectionID,  const std::string &inputConnectionKey, const connectionStatus &inputConnectionStatus, const base_station_stream_information &inputBaseStationStreamInfo, reactor<caster> &inputReactor);
 
 /**
 This function removes a authenticated connection and updates the associated datastructures.
 @param inputConnectionID: The connection ID of the authenticated connection to remove
+@param inputReactor: The reactor that is calling the function
 
 @throws: This function can throw exceptions
 */
-void removeAuthenticatedConnection(const std::string &inputConnectionID);
+void removeAuthenticatedConnection(const std::string &inputConnectionID, reactor<caster> &inputReactor);
 
 /**
 This function adds a connection signing key, updates the associated maps and schedules it to timeout if it has a timeout time.  Only signing keys which are already present will be acknowledged.
 @param inputConnectionKey: The connection key to add
 @param inputExpirationTime: The timestamp of when this key expires (negative if it does not expire on its own)
 @param inputSigningKeys: The keys which have signed this 
-@param inputEventQueue: The event queue to add the timeout event to
+@param inputReactor: The reactor that is calling the function
 
 @return: true if the key had valid signing keys and was added
 */
-bool addConnectionKey(const std::string &inputConnectionKey, int64_t inputExpirationTime, const std::vector<std::string> &inputSigningKeys, std::priority_queue<event> &inputEventQueue);
+bool addConnectionKey(const std::string &inputConnectionKey, int64_t inputExpirationTime, const std::vector<std::string> &inputSigningKeys, reactor<caster> &inputReactor);
 
 /**
 This function removes the given connection key from the maps and removes all associated connections.
 @param inputConnectionKey: The connection key to remove
+@param inputReactor: The reactor that is calling the function
 
 @throws: This function can throw exceptions
 */
-void removeConnectionKey(const std::string &inputConnectionKey);
+void removeConnectionKey(const std::string &inputConnectionKey, reactor<caster> &inputReactor);
 
 /**
 This function adds a new signing key and schedules its timeout.
 @param inputSigningKey: The signing key to add
 @param inputIsOfficialSigningKey: True if the signing key is an "Official" one and false if it is "Registered Community"
 @param inputExpirationTime: When the signing key becomes invalid
-@param inputEventQueue: The event queue to add the timeout event to
+@param inputReactor: The reactor that is calling the function
 
 @return: true if the key was added successfully or is already present
 */
-bool addSigningKey(const std::string &inputSigningKey, bool inputIsOfficialSigningKey, int64_t inputExpirationTime, std::priority_queue<event> &inputEventQueue);
+bool addSigningKey(const std::string &inputSigningKey, bool inputIsOfficialSigningKey, int64_t inputExpirationTime, reactor<caster> &inputReactor);
 
 /**
 This function removes a signing key.  This can cause a cascade where a connection key which is reliant on it is removed, which can in turn cause many connections to be removed.
 @param inputSigningKey: The signing key to remove
+@param inputReactor: The reactor that is calling the function
 
 @throws: This function can throw exceptions
 */
-void removeSigningKey(const std::string &inputSigningKey);
+void removeSigningKey(const std::string &inputSigningKey, reactor<caster> &inputReactor);
 
 /**
 Add a key to the blacklist, triggering its removal from "official" and "registered community" and the prevention of it from being reused until the certificate expires.
 @param inputBlacklistKey: The key to place on the blacklist
 @param inputExpirationTime: When the key expires
-@param inputEventQueue: The queue to to ad the expiration event to
+@param inputEventQueue: The queue to to add the expiration event to
+@param inputReactor: The reactor that is calling the function
 
 @throws: this function can throw exceptions
 */
-void addBlacklistKey(const std::string &inputBlacklistKey, int64_t inputExpirationTime, std::priority_queue<event> &inputEventQueue);
+void addBlacklistKey(const std::string &inputBlacklistKey, int64_t inputExpirationTime, reactor<caster> &inputReactor);
 
 /**
 This function removes a unauthenticated connection and updates the associated datastructures.
 @param inputConnectionID: The connection ID of the authenticated connection to remove
+@param inputReactor: The reactor that is calling the function
 
 @throws: This function can throw exceptions
 */
-void removeUnauthenticatedConnection(const std::string &inputConnectionID);
+void removeUnauthenticatedConnection(const std::string &inputConnectionID, reactor<caster> &inputReactor);
 
 /**
 This function removes a basestation connection from both the maps and the database.
 @param inputConnectionID: The connection to remove
+@param inputReactor: The reactor that is calling the function
 
 @throws: This function can throw exceptions
 */
-void removeConnection(const std::string &inputConnectionID);
+void removeConnection(const std::string &inputConnectionID, reactor<caster> &inputReactor);
 
 /**
 This function sets up the basestationToSQLInterface and generates the associated tables so that basestations can be stored and returned.  databaseConnection must be setup before this function is called.
@@ -308,41 +299,54 @@ void processAddRemoveProxyRequest();
 
 /**
 This function checks if the databaseAccessSocket has received a database_request message and (if so) processes the message and sends a database_reply in response.
+@param inputReactor: The reactor that is calling the function
+@param inputSocket: The socket
+@return: true if the polling cycle should restart before processing any more messages
 
 @throws: This function can throw exceptions
 */
-void processDatabaseRequest();
+bool processDatabaseRequest(reactor<caster> &inputReactor, zmq::socket_t &inputSocket);
 
 /**
 This function checks if the clientRequestInterface has received a client_query_request message and (if so) processes the message and sends a client_query_reply in response.
+@param inputReactor: The reactor that is calling the function
+@param inputSocket: The socket
+@return: true if the polling cycle should restart before processing any more messages
 
 @throws: This function can throw exceptions
 */
-void processClientQueryRequest();
+bool processClientQueryRequest(reactor<caster> &inputReactor, zmq::socket_t &inputSocket);
 
 
 /**
 This function processes messages from the transmitterRegistrationAndStreamingInterface.  A connection is expected to start with a transmitter_registration_request, to which this object replies with a transmitter_registration_reply.  Thereafter, the messages received are forwarded to the associated publisher interfaces until the publisher stops sending for an unacceptably long period (SECONDS_BEFORE_CONNECTION_TIMEOUT), at which point the object erases the associated the associated metadata and publishes that the base station disconnected.  In the authenticated case, the preapended signature is removed and checked.  If authentication fails, packet is dropped (eventually timing out).
-@param inputEventQueue: The event queue to register events to
+@param inputReactor: The reactor that is calling the function
+@param inputSocket: The socket
+@return: true if the polling cycle should restart before processing any more messages
 
 @throws: This function can throw exceptions
 */
-void processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(std::priority_queue<event> &inputEventQueue);
+bool processAuthenticatedOrUnauthenticatedTransmitterRegistrationAndStreamingMessage(reactor<caster> &inputReactor, zmq::socket_t &inputSocket);
 
 /**
 This function processes reply messages sent to registrationDatabaseRequestSocket.  It expects database operations to succeed, so it throws an exception upon receiving a failure message.
+@param inputReactor: The reactor that is calling the function
+@param inputSocket: The socket
+@return: true if the polling cycle should restart before processing any more messages
 
 @throws: This function can throw exceptions
 */
-void processTransmitterRegistrationAndStreamingDatabaseReply();
+bool processTransmitterRegistrationAndStreamingDatabaseReply(reactor<caster> &inputReactor, zmq::socket_t &inputSocket);
 
 /**
 This function processes key_management_request messages and accordingly modifies the list of accepted signing keys.  If a connection is reliant on a dropped signing key (has no other valid signing keys), then it will be dropped when the signing key is taken out of circulation.
-@param inputEventQueue: The event queue to register events to
+@param inputReactor: The reactor that is calling the function
+@param inputSocket: The socket
+@return: true if the polling cycle should restart before processing any more messages
 
 @throws: This function can throw exceptions
 */
-void processKeyManagementRequest(std::priority_queue<event> &inputEventQueue);
+bool processKeyManagementRequest(reactor<caster> &inputReactor, zmq::socket_t &inputSocket);
 
 /**
 This function processes stream status notification messages from the streamStatusNotificationListener socket in the statistics gathering thread.
