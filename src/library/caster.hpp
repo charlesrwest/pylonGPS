@@ -101,6 +101,14 @@ This thread safe function adds a new caster to proxy.  The function may have som
 int64_t addProxy(const std::string &inputClientRequestConnectionString, const std::string &inputBasestationPublishingConnectionString, const std::string &inputConnectDisconnectNotificationConnectionString);
 
 /**
+This function removes a caster that this caster was proxying.
+@param inputCasterID: The caster ID of the caster to stop proxying
+
+@throws: This function can throw exceptions
+*/
+void removeProxy(int64_t inputCasterID);
+
+/**
 This function signals for the threads to shut down and then waits for them to do so.
 */
 ~caster();
@@ -143,17 +151,8 @@ std::map<int64_t, int64_t> basestationIDToCreationTime; //Resolves when basestat
 std::map<int64_t, int64_t> basestationIDToNumberOfSentMessages; //Keeps track of how many messages each basestation has sent
 
 std::map<int64_t, std::map<int64_t, int64_t> > casterIDToMapForForeignBasestationIDToLocalBasestationID;
-
-/**
-This function is called in the clientRequestHandlingThread to handle client requests and manage access to the SQLite database.
-*/
-void clientRequestHandlingThreadFunction();
-
-/**
-This function is called in the streamRegistrationAndPublishingThread to handle stream registration and publishing updates.
-*/
-void streamRegistrationAndPublishingThreadFunction();
-
+std::map<zmq::socket_t *, std::tuple<std::string, std::string, std::string> > ephemeralQuerySocketToCasterConnectionStrings; //Connection string order: client_request, connect_disconnect_notification, base_station_publishing
+std::map<int64_t, std::tuple<std::string, std::string, std::string> > casterIDToCasterConnectionStrings; //Ownership of connection strings is transferred from the ephemeral socket map to this one once the query successfully completes
 
 /**
 This function processes any events that are scheduled to have occurred by now and returns when the next event is scheduled to occur.  Which thread is calling this function is determined by the type of events in the event queue.
@@ -291,11 +290,24 @@ This function sets up the basestationToSQLInterface and generates the associated
 void setupBaseStationToSQLInterface();
 
 /**
-This function handles requests to add or remove a caster proxy.  This generally consists of two part requests to add a proxy or single part requests to remove one.
+This function handles requests to add or remove a caster proxy.  The socket it handles is typically called "addRemoveProxiesSocket".
+@param inputReactor: The reactor that is calling the function
+@param inputSocket: The socket
+@return: true if the polling cycle should restart before processing any more messages
 
 @throws: This function can throw exceptions
 */
-void processAddRemoveProxyRequest();
+bool processAddRemoveProxyRequest(reactor<caster> &inputReactor, zmq::socket_t &inputSocket);
+
+/**
+This function handles processes the reply to ephemeral sockets which are used to query a new proxy source to get the metadata for the caster's basestations.  This function removes the given socket from the reactor once it is completed
+@param inputReactor: The reactor that is calling the function
+@param inputSocket: The socket
+@return: true if the polling cycle should restart before processing any more messages
+
+@throws: This function can throw exceptions
+*/
+bool processCasterProxyQueryReply(reactor<caster> &inputReactor, zmq::socket_t &inputSocket);
 
 /**
 This function checks if the databaseAccessSocket has received a database_request message and (if so) processes the message and sends a database_reply in response.

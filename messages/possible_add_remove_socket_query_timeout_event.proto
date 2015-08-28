@@ -1,0 +1,15 @@
+package pylongps;
+
+import "event_message.proto"; 
+
+//This message is used to inform the caster that one of its proxy requests may have timed out.  If the socket this message refers to is still around, it is deleted and the source of the add proxy request is informed of the failure.  If it is not, then nothing happens.
+message possible_add_remove_socket_query_timeout_event
+{
+required bytes ephemeral_socket_pointer = 1; //The binary value (local machine format) of the address for the query socket
+
+//Add to message container to allow simulated polymorphism
+extend event_message
+{
+optional possible_add_remove_socket_query_timeout_event possible_add_remove_socket_query_timeout_event_field = 70;
+}
+} 

@@ -164,7 +164,7 @@ This function sends the given protobuf object as a request using the given socke
 
 @throws: This function can throw exceptions
 */
-std::tuple<bool, bool> pylongps::request(zmq::socket_t &inputSocketToSendAndReceiveFrom, const google::protobuf::Message &inputRequestMessage, google::protobuf::Message &inputMessageReplyBuffer)
+std::tuple<bool, bool> pylongps::remoteProcedureCall(zmq::socket_t &inputSocketToSendAndReceiveFrom, const google::protobuf::Message &inputRequestMessage, google::protobuf::Message &inputMessageReplyBuffer)
 {
 SOM_TRY
 sendProtobufMessage(inputSocketToSendAndReceiveFrom, inputRequestMessage);

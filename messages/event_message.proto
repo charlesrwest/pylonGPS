@@ -5,6 +5,7 @@ package pylongps; //Put in pylongps namespace
 //30: signing_key_timeout_event_field
 //50: connection_key_timeout_event
 //60: update_statistics_event
+//70: possible_add_remove_socket_query_timeout_event
 
 //This message contains no fields but has a large extension option range so that any new "event" messages can add its definition to it as an optional or repeated message member.  It is meant to be used with a std::tuple<std::chrono::timepoint, event_message> to allow easy construction of an event queue.  Which messages the event_message has embedded can be checked with the has_ member functions.
 message event_message

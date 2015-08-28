@@ -3,10 +3,10 @@ package pylongps; //Put in pylongps namespace
 enum proxy_request_failure_reason
 {
 PROXY_REQUEST_DESERIALIZATION_FAILED = 10;
-PROXY_REQUEST_FORMAT_INVALID = 30; //Missing "optional" fields required for a valid transaction
+PROXY_REQUEST_FORMAT_INVALID = 20; //Missing "optional" fields required for a valid transaction
 }
 
-//This message is sent in response to a add/remove proxy request and indicates the success or failure of the request.
+//This message is sent in response to a add/remove proxy request and indicates the success or failure of the request.  If there is no caster ID or there is a failure reason, the request was unsuccessful
 message add_remove_proxy_reply
 {
 optional int64 caster_id = 10; //If successful, the caster id of the proxied caster will be returned
