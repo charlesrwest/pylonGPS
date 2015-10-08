@@ -140,23 +140,6 @@ SOM_TRY //Bind to an dynamically generated address
 std::tie(shutdownPublishingConnectionString,extensionStringNumber) = bindZMQSocketWithAutomaticAddressGeneration(*shutdownPublishingSocket, "shutdownPublishingSocketAddress");
 SOM_CATCH("Error binding shutdownPublishingSocket\n")
 
-//Initialize, connect and subscribe sockets which listen for shutdown signal
-std::vector<std::unique_ptr<zmq::socket_t> *> signalListeningSockets = {&streamRegistrationAndPublishingThreadShutdownListeningSocket};
-
-for(int i=0; i<signalListeningSockets.size(); i++)
-{
-SOM_TRY //Make socket
-(*signalListeningSockets[i]).reset(new zmq::socket_t(*(context), ZMQ_SUB));
-SOM_CATCH("Error creating socket to listen for shutdown signal\n")
-
-SOM_TRY //Connect to hear signal
-(*signalListeningSockets[i])->connect(shutdownPublishingConnectionString.c_str());
-SOM_CATCH("Error connecting socket to listen for shutdown signal\n")
-
-SOM_TRY //Set filter to allow any published messages to be received
-(*signalListeningSockets[i])->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
-SOM_CATCH("Error setting subscription for socket listening for shutdown signal\n")
-}
 
 //Initialize and bind database access socket
  //A inproc REP socket that handles requests to make changes to the database.  Used by clientRequestHandlingReactor.
@@ -227,6 +210,8 @@ SOM_TRY //Set filter to allow any published messages to be received
 proxiesNotificationsListeningSocket->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
 SOM_CATCH("Error setting subscription for proxiesNotificationsListeningSocket\n")
 
+
+
 //A inproc REP socket which accepts add_remove_proxy_requests and responds with a add_remove_proxy_reply.  Used in the streamRegistrationAndPublishingThread.
 std::unique_ptr<zmq::socket_t> addRemoveProxiesSocket; 
 SOM_TRY
@@ -292,6 +277,21 @@ SOM_TRY
 std::string bindingAddress = "tcp://*:" + std::to_string(streamStatusNotificationPortNumber);
 streamStatusNotificationInterface->bind(bindingAddress.c_str());
 SOM_CATCH("Error binding streamStatusNotificationInterface\n")
+
+//Initialize and bind internalNotificationPublisher socket
+SOM_TRY
+internalNotificationPublisher.reset(new zmq::socket_t(*(context), ZMQ_PUB));
+SOM_CATCH("Error intializing internalNotificationPublisher\n")
+
+extensionStringNumber = 0;
+SOM_TRY //Bind to an dynamically generated address
+std::tie(internalNotificationPublisherConnectionString,extensionStringNumber) = bindZMQSocketWithAutomaticAddressGeneration(*internalNotificationPublisher, "internalNotificationPublisher");
+SOM_CATCH("Error binding internalNotificationPublisher\n")
+
+//Connect to internal notifications socket to hear internally generated notifications about casters this one is proxying
+SOM_TRY
+proxiesNotificationsListeningSocket->connect(internalNotificationPublisherConnectionString.c_str());
+SOM_CATCH("Error connecting to internal notification publisher\n")
 
 //Initialize and connect the statistic reactor's streamStatusNotificationListener
 //A TCP SUB socket used in the statisticsGatheringThread to listen to the streamStatusNotificationInterface
@@ -393,9 +393,9 @@ SOM_TRY
 streamRegistrationAndPublishingReactor->addInterface(keyRegistrationAndRemovalInterface, &caster::processKeyManagementRequest, "keyRegistrationAndRemovalInterface"); //Reactor takes ownership
 SOM_CATCH("Error adding interface to reactor\n")
 
-/*
+
 SOM_TRY
-streamRegistrationAndPublishingReactor->addInterface(addRemoveProxiesSocket, &caster::addRemoveProxies, "addRemoveProxiesSocket"); //Reactor takes ownership
+streamRegistrationAndPublishingReactor->addInterface(addRemoveProxiesSocket, &caster::processAddRemoveProxyRequest, "addRemoveProxiesSocket"); //Reactor takes ownership
 SOM_CATCH("Error adding interface to reactor\n")
 
 SOM_TRY
@@ -405,7 +405,7 @@ SOM_CATCH("Error adding interface to reactor\n")
 SOM_TRY
 streamRegistrationAndPublishingReactor->addInterface(proxiesNotificationsListeningSocket, &caster::listenForProxyNotifications, "proxiesNotificationsListeningSocket"); //Reactor takes ownership
 SOM_CATCH("Error adding interface to reactor\n")
-*/
+
 
 SOM_TRY
 streamRegistrationAndPublishingReactor->start();
@@ -417,17 +417,20 @@ This thread safe function adds a new caster to proxy.  The function may have som
 @param inputClientRequestConnectionString: The ZMQ connection string to use to connect to the client query answering port of the caster to proxy
 @param inputBasestationPublishingConnectionString: The ZMQ connection string to use to connect to the interface that publishes the basestation updates
 @param inputConnectionDisconnectionNotificationConnectionString: The ZMQ connection string to use to connect to the basestation connect/disconnect notification port on the caster to proxy
-@return: The ID of the proxied caster
 
 @throws: This function can throw exceptions
 */
-int64_t caster::addProxy(const std::string &inputClientRequestConnectionString, const std::string &inputBasestationPublishingConnectionString, const std::string &inputConnectDisconnectNotificationConnectionString)
+void caster::addProxy(const std::string &inputClientRequestConnectionString, const std::string &inputBasestationPublishingConnectionString, const std::string &inputConnectDisconnectNotificationConnectionString)
 {
 //Create request socket to send request to caster threads
 std::unique_ptr<zmq::socket_t> addProxyRequestSocket;
 SOM_TRY
 addProxyRequestSocket.reset(new zmq::socket_t(*(context), ZMQ_REQ));
 SOM_CATCH("Error intializing addProxyRequestSocket\n")
+
+SOM_TRY
+addProxyRequestSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &PROXY_CLIENT_REQUEST_MAX_WAIT_TIME, sizeof(PROXY_CLIENT_REQUEST_MAX_WAIT_TIME));
+SOM_CATCH("Error setting timeout time\n")
 
 SOM_TRY
 addProxyRequestSocket->connect(addRemoveProxyConnectionString.c_str());
@@ -439,7 +442,7 @@ request.set_client_request_connection_string(inputClientRequestConnectionString)
 request.set_connect_disconnect_notification_connection_string(inputConnectDisconnectNotificationConnectionString);
 request.set_base_station_publishing_connection_string(inputBasestationPublishingConnectionString);
 
-//Get send request/get reply
+//Get send request/get reply, causing the caster to start listening to the other caster's notifications and updates
 add_remove_proxy_reply reply;
 bool replyReceived = false;
 bool replyDeserializedCorrectly = false;
@@ -448,28 +451,96 @@ SOM_TRY
 std::tie(replyReceived, replyDeserializedCorrectly) = remoteProcedureCall(*addProxyRequestSocket, request, reply);
 SOM_CATCH("Error with RPC\n")
 
+if(!replyReceived)
+{
+throw SOMException("Local caster timed out\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __FILE__, __LINE__);
+}
+
+if(!replyDeserializedCorrectly)
+{
+throw SOMException("Invalid response from caster\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __FILE__, __LINE__);
+}
+
+if(reply.has_reason())
+{ //Request failed
+throw SOMException("Invalid response from caster\n", SERVER_REQUEST_FAILED, __FILE__, __LINE__);
+}
+
+//Wait for a millisecond or two to allow the subscriptions to take effect
+std::this_thread::sleep_for(std::chrono::milliseconds(2));
+
+//The caster is listening, so it will start registering/forwarding basestations that have registered at the other caster after it started listening.  Removals will be ignored and entries that are removed before the whole set of basestations are registered will have to be removed by timeout
+
+//Send query to get all of the metadata for the basestations in the other caster
+//Create/connect ephemeral socket to send query to source caster
+std::unique_ptr<zmq::socket_t> ephemeralQuerySocket;
+SOM_TRY
+ephemeralQuerySocket.reset(new zmq::socket_t(*(context), ZMQ_REQ));
+SOM_CATCH("Error intializing ephemeralQuerySocket\n")
+
+SOM_TRY
+ephemeralQuerySocket->setsockopt(ZMQ_RCVTIMEO, (void *) &PROXY_CLIENT_REQUEST_MAX_WAIT_TIME, sizeof(PROXY_CLIENT_REQUEST_MAX_WAIT_TIME));
+SOM_CATCH("Error setting timeout time\n")
+
+SOM_TRY
+ephemeralQuerySocket->connect(request.client_request_connection_string().c_str());
+SOM_CATCH("Error connecting ephemeralQuerySocket\n")
+
+client_query_request queryRequest;
+client_query_reply queryReply;
+
+SOM_TRY
+std::tie(replyReceived, replyDeserializedCorrectly) = remoteProcedureCall(*ephemeralQuerySocket, queryRequest, queryReply);
+SOM_CATCH("Error with RPC\n")
+
 if(!replyReceived || !replyDeserializedCorrectly)
 {
 throw SOMException("Invalid response from caster\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __FILE__, __LINE__);
 }
 
-if(!reply.has_caster_id() || reply.has_reason())
-{ //Request failed
-throw SOMException("Invalid response from caster\n", SERVER_REQUEST_FAILED, __FILE__, __LINE__);
+if(queryReply.has_failure_reason() || !queryReply.has_caster_id())
+{
+throw SOMException("Query to caster to proxy failed\n", SERVER_REQUEST_FAILED, __FILE__, __LINE__);
 }
 
-return reply.caster_id(); //Request succeeded
+//Publish all basestations on the internal proxy notification socket
+int64_t foreignCasterID = queryReply.caster_id();
+Poco::Int64 header[2] = {0, 0};
+header[0] = Poco::ByteOrder::toNetwork(Poco::Int64(foreignCasterID));
+for(int i=0; i < queryReply.base_stations_size(); i++)
+{
+//Make status update message
+base_station_stream_information *basestation = queryReply.mutable_base_stations(i);
+
+if(!basestation->has_base_station_id())
+{
+throw SOMException("Caster returned base station without id\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __FILE__, __LINE__);
+}
+
+int64_t baseStationID = basestation->base_station_id();
+header[1] = Poco::ByteOrder::toNetwork(Poco::Int64(baseStationID));
+
+stream_status_update updateMessage;
+*updateMessage.mutable_new_base_station_info() = *basestation;
+
+//Send notification with caster ID and stream ID preappended
+SOM_TRY
+sendProtobufMessage(*internalNotificationPublisher, updateMessage, std::string((const char *) header, sizeof(Poco::Int64)*2));
+SOM_CATCH("Error sending notification\n")
+}
+
+//The caster has been subscribed to an all basestation metadata retrieved, so the proxy is established
 }
 
 /**
-This function removes a caster that this caster was proxying.
-@param inputCasterID: The caster ID of the caster to stop proxying
+This thread safe function removes a foreign caster from monitoring by this caster.
+@param inputClientRequestConnectionString: The ZMQ connection string used to send a query to the foreign caster
 
 @throws: This function can throw exceptions
 */
-void caster::removeProxy(int64_t inputCasterID)
+void caster::removeProxy(const std::string &inputClientRequestConnectionString)
 {
-//Create request socket to send request to caster threads
+//Create request socket to send request to caster
 std::unique_ptr<zmq::socket_t> addProxyRequestSocket;
 SOM_TRY
 addProxyRequestSocket.reset(new zmq::socket_t(*(context), ZMQ_REQ));
@@ -481,9 +552,9 @@ SOM_CATCH("Error connecting addProxyRequestSocket")
 
 //Make request
 add_remove_proxy_request request;
-request.set_caster_id_to_remove(inputCasterID);
+request.set_client_request_connection_string_for_caster_to_remove(inputClientRequestConnectionString);
 
-//Get send request/get reply
+//Get send request/get reply, causing the caster to stop listening to the other caster's notifications and updates
 add_remove_proxy_reply reply;
 bool replyReceived = false;
 bool replyDeserializedCorrectly = false;
@@ -497,11 +568,12 @@ if(!replyReceived || !replyDeserializedCorrectly)
 throw SOMException("Invalid response from caster\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __FILE__, __LINE__);
 }
 
-if(!reply.has_caster_id() || reply.has_reason())
+if(reply.has_reason())
 { //Request failed
 throw SOMException("Invalid response from caster\n", SERVER_REQUEST_FAILED, __FILE__, __LINE__);
 }
-//Request succeeded
+
+//All of the basestations from the foreign caster will timeout shortly because it will no longer receive updates for them
 }
 
 /**
@@ -509,6 +581,7 @@ This function signals for the threads to shut down and then waits for them to do
 */
 caster::~caster()
 {
+
 //Publish shutdown signal and wait for threads
 try
 { //Send empty message to signal shutdown
@@ -681,7 +754,44 @@ event updateEvent(timeValue + 1000000.0); //Active in 1 second
 (*updateEvent.MutableExtension(update_statistics_event::update_statistics_event_field)) = updateEventSubMessage;
 
 inputReactor.eventQueue.push(updateEvent);
-}//end update_statistics_event
+}
+
+if(eventToProcess.HasExtension(possible_proxy_stream_timeout_event::possible_proxy_stream_timeout_event_field))
+{ //Check if a proxy stream has timed out and delete it if so
+int64_t foreignCasterID = eventToProcess.GetExtension(possible_proxy_stream_timeout_event::possible_proxy_stream_timeout_event_field).caster_id();
+int64_t foreignStreamID = eventToProcess.GetExtension(possible_proxy_stream_timeout_event::possible_proxy_stream_timeout_event_field).stream_id();
+int64_t localStreamID = 0;
+
+//Ignore timeout if the foreign stream isn't in the map
+if(casterIDToMapFromOriginalBasestationIDToLocalBasestationID.count(foreignCasterID) != 0)
+{
+if(casterIDToMapFromOriginalBasestationIDToLocalBasestationID.at(foreignCasterID).count(foreignStreamID) == 0)
+{
+continue;
+}
+}
+else
+{
+continue;
+}
+
+localStreamID = casterIDToMapFromOriginalBasestationIDToLocalBasestationID.at(foreignCasterID).at(foreignStreamID);
+
+if(localBasestationIDToLastMessageTimestamp.count(localStreamID) == 0)
+{
+continue;
+}
+
+Poco::Timestamp currentTime;
+
+if((currentTime - eventToProcess.time) > SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0)
+{ //Delete basestation
+SOM_TRY
+deleteProxyStream(inputReactor, foreignCasterID, foreignStreamID, BASE_STATION_TIMED_OUT);
+SOM_CATCH("Error removing proxy basestation\n")
+}  
+
+}//end possible_proxy_stream_timeout_event
 
 }//end while
 
@@ -774,7 +884,7 @@ connectionIDToConnectionStatus.erase(inputConnectionID);
 //Remove from database
 std::string serializedDatabaseRequest;
 database_request databaseRequest;
-databaseRequest.set_delete_base_station_id(basestationID);
+databaseRequest.add_delete_base_station_ids(basestationID);
 
 databaseRequest.SerializeToString(&serializedDatabaseRequest);
 
@@ -1014,7 +1124,7 @@ connectionIDToConnectionStatus.erase(inputConnectionID);
 //Remove from database
 std::string serializedDatabaseRequest;
 database_request databaseRequest;
-databaseRequest.set_delete_base_station_id(basestationID);
+databaseRequest.add_delete_base_station_ids(basestationID);
 
 databaseRequest.SerializeToString(&serializedDatabaseRequest);
 
@@ -1070,17 +1180,13 @@ bool caster::processAddRemoveProxyRequest(reactor<caster> &inputReactor, zmq::so
 
 
 //Create lambda to make it easy to send request failed replies
-auto sendReplyLambda = [&] (bool inputRequestFailed, enum proxy_request_failure_reason inputReason = PROXY_REQUEST_DESERIALIZATION_FAILED, int64_t inputCasterID = 0)
+auto sendReplyLambda = [&] (bool inputRequestFailed, enum proxy_request_failure_reason inputReason = PROXY_REQUEST_DESERIALIZATION_FAILED)
 {
 add_remove_proxy_reply reply;
 
 if(inputRequestFailed)
 { //Only set the reason if the request failed
 reply.set_reason(inputReason);
-}
-else
-{
-reply.set_caster_id(inputCasterID);
 }
 
 SOM_TRY
@@ -1111,70 +1217,247 @@ SOM_CATCH("Error sending reply\n")
 
 bool isAddRequest = request.has_client_request_connection_string() && request.has_connect_disconnect_notification_connection_string() && request.has_base_station_publishing_connection_string();
 
-if(!(isAddRequest) && !(request.has_caster_id_to_remove()) )
+if(!(isAddRequest) && !(request.has_client_request_connection_string_for_caster_to_remove()) )
 {
 SOM_TRY //Isn't proper add request or proper remove request
 sendReplyLambda(true, PROXY_REQUEST_FORMAT_INVALID);
 SOM_CATCH("Error sending reply\n")
 }
 
-if(request.has_caster_id_to_remove() && !isAddRequest)
-{
-//TODO: Handle removal
-
-return false;
-}
-
-//Handle add request
-//TODOTODO
+//Get sockets
 zmq::socket_t *proxiesNotificationsListeningSocket = nullptr;
 SOM_TRY
 proxiesNotificationsListeningSocket = inputReactor.getSocket("proxiesNotificationsListeningSocket");
 SOM_CATCH("Error getting socket\n")
 
-//Connect to the notification socket so that add/removals that happen during the query are processed 
+if(request.has_client_request_connection_string_for_caster_to_remove() && !isAddRequest)
+{
+if(clientRequestConnectionStringToCasterConnectionStrings.count(request.client_request_connection_string_for_caster_to_remove()) == 0)
+{ //We don't have that caster, so removal succeeded
+SOM_TRY
+sendReplyLambda(false, PROXY_REQUEST_FORMAT_INVALID);
+SOM_CATCH("Error sending reply\n")
+return false; 
+}
+
+auto casterConnectionStrings = clientRequestConnectionStringToCasterConnectionStrings.at(request.client_request_connection_string_for_caster_to_remove());
+
+zmq::socket_t *proxiesUpdatesListeningSocket = nullptr;
+SOM_TRY
+proxiesUpdatesListeningSocket = inputReactor.getSocket("proxiesUpdatesListeningSocket");
+SOM_CATCH("Error getting socket\n")
+
+SOM_TRY //Disconnect from caster
+proxiesUpdatesListeningSocket->disconnect(std::get<2>(casterConnectionStrings).c_str());
+SOM_CATCH("Error disconnecting socket\n")
+
+SOM_TRY //Disconnect from caster
+proxiesNotificationsListeningSocket->disconnect(std::get<1>(casterConnectionStrings).c_str());
+SOM_CATCH("Error disconnecting socket\n")
+
+//Removal of basestations will be handled by timeout mechanism
+
+SOM_TRY //Operation succeeded, so inform requester
+sendReplyLambda(false, PROXY_REQUEST_FORMAT_INVALID);
+SOM_CATCH("Error sending reply\n")
+return false; 
+}
+
+//Handle add request
+
+//Connect to the notification socket and update socket so that updates from new foreign basestations  can be handled 
+
 SOM_TRY
 proxiesNotificationsListeningSocket->connect(request.connect_disconnect_notification_connection_string().c_str());
 SOM_CATCH("Error connecting proxiesNotificationsListeningSocket\n")
 
-//Create/connect ephemeral socket to send query to source caster
-std::unique_ptr<zmq::socket_t> ephemeralQuerySocket;
+zmq::socket_t *proxiesUpdatesListeningSocket = nullptr;
 SOM_TRY
-ephemeralQuerySocket.reset(new zmq::socket_t(*(context), ZMQ_REQ));
-SOM_CATCH("Error intializing ephemeralQuerySocket\n")
+proxiesUpdatesListeningSocket = inputReactor.getSocket("proxiesUpdatesListeningSocket");
+SOM_CATCH("Error getting socket\n")
+
+SOM_TRY //Disconnect from caster
+proxiesUpdatesListeningSocket->connect(request.base_station_publishing_connection_string().c_str());
+SOM_CATCH("Error connecting update listening socket\n")
+
+//Update map
+clientRequestConnectionStringToCasterConnectionStrings.emplace(request.client_request_connection_string(), std::tuple<std::string, std::string, std::string>(request.client_request_connection_string(), request.connect_disconnect_notification_connection_string(), request.base_station_publishing_connection_string()));
 
 SOM_TRY
-ephemeralQuerySocket->connect(request.client_request_connection_string().c_str());
-SOM_CATCH("Error connecting ephemeralQuerySocket\n")
-
-//Update map(s)
-ephemeralQuerySocketToCasterConnectionStrings.emplace(ephemeralQuerySocket.get(), std::tuple<std::string, std::string, std::string>(request.client_request_connection_string(), request.connect_disconnect_notification_connection_string(), request.base_station_publishing_connection_string())); 
-
-//Send query and then register the ephemeral query socket with this reactor
-client_query_request queryRequest;
-SOM_TRY
-sendProtobufMessage(*ephemeralQuerySocket, queryRequest);
-SOM_CATCH("Error sending query request\n")
-
-//TODOTODO
-SOM_TRY
-inputReactor.addInterface(ephemeralQuerySocket, &caster::processCasterProxyQueryReply); //Reactor takes ownership of socket
-SOM_CATCH("Error, unable to add interface\n")
-
-return true;
+sendReplyLambda(false, PROXY_REQUEST_FORMAT_INVALID);
+SOM_CATCH("Error sending reply\n")
+return false; //Proxy addition succeded
 }
 
+
 /**
-This function handles processes the reply to ephemeral sockets which are used to query a new proxy source to get the metadata for the caster's basestations.  This function removes the given socket from the reactor once it is completed
+This function handles notifications of new or removed sockets from casters that this caster is proxying.  It expects to receive stream_status_update messages with caster ID and stream ID preappended.
 @param inputReactor: The reactor that is calling the function
 @param inputSocket: The socket
 @return: true if the polling cycle should restart before processing any more messages
 
 @throws: This function can throw exceptions
 */
-bool caster::processCasterProxyQueryReply(reactor<caster> &inputReactor, zmq::socket_t &inputSocket)
+bool caster::listenForProxyNotifications(reactor<caster> &inputReactor, zmq::socket_t &inputSocket)
 {
-//TODO: Finish this function
+//Receive request
+bool messageReceived = false;
+bool messageDeserializedCorrectly = false;
+stream_status_update notification;
+
+Poco::Int64 header[2] = {0,0};
+
+SOM_TRY
+std::tie(messageReceived, messageDeserializedCorrectly) = receiveProtobufMessage(inputSocket, notification, ZMQ_DONTWAIT, (char *) header, sizeof(Poco::Int64)*2);
+SOM_CATCH("Error receiving request\n")
+
+if(!messageReceived || !messageDeserializedCorrectly)
+{ //False alarm, no valid message to process
+return false;
+}
+
+//Get database socket
+zmq::socket_t *registrationDatabaseRequestSocket = nullptr;
+SOM_TRY
+registrationDatabaseRequestSocket = inputReactor.getSocket("registrationDatabaseRequestSocket");
+SOM_CATCH("Error getting required socket\n")
+
+int64_t foreignCasterID = Poco::ByteOrder::fromNetwork(Poco::Int64(header[0]));
+int64_t foreignStreamID = Poco::ByteOrder::fromNetwork(Poco::Int64(header[1]));
+int64_t localStreamID = 0;
+
+if(notification.has_base_station_removed())
+{//This is an update about a removed basestation, so remove the associated entries
+
+SOM_TRY
+deleteProxyStream(inputReactor, foreignCasterID, foreignStreamID, notification.removal_reason());
+SOM_CATCH("Error removing foreign basestation\n")
+
+return false;
+}
+
+if(notification.has_new_base_station_info())
+{ //This is an update about a new basestation that was added
+localStreamID = getNewStreamID();
+
+//Update maps
+Poco::Timestamp currentTime;
+int64_t timeValue = currentTime.epochMicroseconds();
+localBasestationIDToLastMessageTimestamp[localStreamID] = timeValue; //Count notification as message
+
+if(casterIDToMapFromOriginalBasestationIDToLocalBasestationID.count(foreignCasterID) == 0)
+{ //Add map if there isn't one
+casterIDToMapFromOriginalBasestationIDToLocalBasestationID[foreignCasterID] = std::map<int64_t, int64_t>();
+}
+
+casterIDToMapFromOriginalBasestationIDToLocalBasestationID.at(foreignCasterID).emplace(foreignStreamID, localStreamID);
+
+//Send notification regarding new local stream
+stream_status_update localCasterNotification;
+*localCasterNotification.mutable_new_base_station_info() = *notification.mutable_new_base_station_info();
+localCasterNotification.mutable_new_base_station_info()->set_base_station_id(localStreamID);
+
+SOM_TRY
+sendProtobufMessage(*streamStatusNotificationInterface, localCasterNotification);
+SOM_CATCH("Error sending notification out about proxy stream addition\n")
+
+//Update database
+database_request databaseRequest;
+*databaseRequest.mutable_base_station_to_register() = *localCasterNotification.mutable_new_base_station_info();
+
+SOM_TRY
+registrationDatabaseRequestSocket->send(nullptr, 0, ZMQ_SNDMORE);
+sendProtobufMessage(*registrationDatabaseRequestSocket, databaseRequest);
+SOM_CATCH("Error sending database request\n")
+
+//Add timeout event so it will be removed if it doesn't update within the allowed period
+possible_proxy_stream_timeout_event timeoutEventSubMessage;
+timeoutEventSubMessage.set_caster_id(foreignCasterID);
+timeoutEventSubMessage.set_caster_id(foreignStreamID);
+
+event timeoutEvent(timeValue + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0);
+(*timeoutEvent.MutableExtension(possible_proxy_stream_timeout_event::possible_proxy_stream_timeout_event_field)) = timeoutEventSubMessage;
+
+inputReactor.eventQueue.push(timeoutEvent);
+
+return false;
+}
+
+
+return false;
+}
+
+/**
+This function handles updates from the foreign casters this caster has started proxying.  It expects binary blobs with casterID, streamID preappended.  It also schedules timeout events for each stream and updates their last message received times.
+@param inputReactor: The reactor that is calling the function
+@param inputSocket: The socket
+@return: true if the polling cycle should restart before processing any more messages
+
+@throws: This function can throw exceptions
+*/
+bool caster::listenForProxyUpdates(reactor<caster> &inputReactor, zmq::socket_t &inputSocket)
+{
+//Receive request
+bool messageReceived = false;
+zmq::message_t messageBuffer;
+
+SOM_TRY
+messageReceived = inputSocket.recv(&messageBuffer, ZMQ_DONTWAIT);
+SOM_CATCH("Error, unable to receive message\n")
+
+if(!messageReceived || messageBuffer.size() < sizeof(Poco::Int64)*2)
+{
+return false; //No message to get or too small
+}
+
+//Get time of reception
+Poco::Timestamp currentTime;
+
+int64_t foreignCasterID = Poco::ByteOrder::fromNetwork(((Poco::Int64 *) messageBuffer.data())[0]);
+int64_t foreignStreamID = Poco::ByteOrder::fromNetwork(((Poco::Int64 *) messageBuffer.data())[1]);
+
+//See if we have metadata for that entry
+if(casterIDToMapFromOriginalBasestationIDToLocalBasestationID.count(foreignCasterID) != 0)
+{
+if(casterIDToMapFromOriginalBasestationIDToLocalBasestationID.at(foreignCasterID).count(foreignStreamID) == 0)
+{
+return false; //Don't have it, so ignore message
+}
+}
+else
+{
+return false; //Don't have it, so ignore message
+}
+
+int64_t localID = casterIDToMapFromOriginalBasestationIDToLocalBasestationID.at(foreignCasterID).at(foreignStreamID);
+
+//Replace header with local casterID/stream ID
+((Poco::Int64 *) messageBuffer.data())[0] = Poco::ByteOrder::toNetwork(casterID);
+((Poco::Int64 *) messageBuffer.data())[1] = Poco::ByteOrder::toNetwork(localID);
+
+//Forward message
+SOM_TRY
+clientStreamPublishingInterface->send(messageBuffer.data(), messageBuffer.size());
+SOM_CATCH("Error sending message\n")
+
+SOM_TRY
+proxyStreamPublishingInterface->send(messageBuffer.data(), messageBuffer.size());
+SOM_CATCH("Error sending message\n")
+
+//Update last message received time
+localBasestationIDToLastMessageTimestamp[localID] = currentTime;
+
+//Schedule timeout associated with the current update
+possible_proxy_stream_timeout_event timeoutEventSubMessage;
+timeoutEventSubMessage.set_caster_id(foreignCasterID);
+timeoutEventSubMessage.set_caster_id(foreignStreamID);
+
+event timeoutEvent(currentTime + SECONDS_BEFORE_CONNECTION_TIMEOUT*1000000.0);
+(*timeoutEvent.MutableExtension(possible_proxy_stream_timeout_event::possible_proxy_stream_timeout_event_field)) = timeoutEventSubMessage;
+
+inputReactor.eventQueue.push(timeoutEvent);
+
+return false;
 }
 
 /**
@@ -1264,11 +1547,15 @@ SOM_CATCH("Error sending reply\n")
 return false;
 }
 
-if(request.has_delete_base_station_id() )
+if(request.delete_base_station_ids_size() > 0)
 {//Perform delete operation
 SOM_TRY
 std::vector<::google::protobuf::int64> keysToDelete;
-keysToDelete.push_back(request.delete_base_station_id());
+for(int i=0; i<request.delete_base_station_ids_size(); i++)
+{
+keysToDelete.push_back(request.delete_base_station_ids(i));
+}
+
 basestationToSQLInterface->deleteObjects(keysToDelete);
 SOM_CATCH("Error deleting from database\n")
 
@@ -2091,7 +2378,9 @@ return false;
 
 /**
 This function processes database_reply messages from the statisticsDatabaseRequestSocket socket in the statistics gathering thread.
-@param inputEventQueue: The event queue to register events to
+@param inputReactor: The reactor this function is processing messages for
+@param inputSocket: The socket which probably has a message waiting
+@return: true if the function would like the reactor message processing loop to start at the beginning before processing any more messages
 
 @throws: This function can throw exceptions
 */
@@ -2131,6 +2420,73 @@ throw SOMException("Database request failed (" +std::to_string((int) reply.reaso
 }
 
 return false;
+}
+
+
+/**
+This function is used inside the streamRegistrationAndPublishingReactor to remove a foreign stream from consideration and publish the associated notification.
+@param inputReactor: The reactor to communicate with
+@param inputCasterID: The ID of the foreign caster
+@param inputStreamID: The ID of the foreign stream
+@param inputReason: The reason the stream was removed
+
+@throw: This function can throw exceptions
+*/
+void caster::deleteProxyStream(reactor<caster> &inputReactor, int64_t inputCasterID, int64_t inputStreamID, base_station_removal_reason inputReason)
+{
+
+if(casterIDToMapFromOriginalBasestationIDToLocalBasestationID.count(inputCasterID) == 0)
+{
+return; //Can't remove what isn't there
+}
+else
+{
+if(casterIDToMapFromOriginalBasestationIDToLocalBasestationID.at(inputCasterID).count(inputStreamID) == 0)
+{
+return; //Can't remove what isn't there
+}
+}
+
+int64_t localStreamID = casterIDToMapFromOriginalBasestationIDToLocalBasestationID.at(inputCasterID).at(inputStreamID);
+
+//Remove from database
+zmq::socket_t *registrationDatabaseRequestSocket = nullptr;
+
+SOM_TRY
+registrationDatabaseRequestSocket = inputReactor.getSocket("registrationDatabaseRequestSocket");
+SOM_CATCH("Error getting required socket\n")
+
+database_request databaseRequest;
+databaseRequest.add_delete_base_station_ids(localStreamID);
+
+SOM_TRY
+registrationDatabaseRequestSocket->send(nullptr, 0, ZMQ_SNDMORE);
+sendProtobufMessage(*registrationDatabaseRequestSocket, databaseRequest);
+SOM_CATCH("Error sending database request\n")
+
+//Send notification regarding local stream removal
+stream_status_update localCasterNotification;
+localCasterNotification.set_base_station_removed(localStreamID);
+localCasterNotification.set_removal_reason(inputReason);
+
+//Add preappended casterID, streamID
+Poco::Int64 header[2] = {0, 0};
+header[0] = Poco::ByteOrder::toNetwork(Poco::Int64(casterID));
+header[1] = Poco::ByteOrder::toNetwork(Poco::Int64(localStreamID));
+
+zmq::socket_t *streamStatusNotificationInterface = nullptr;
+
+SOM_TRY
+streamStatusNotificationInterface = inputReactor.getSocket("streamStatusNotificationInterface");
+SOM_CATCH("Error getting required socket\n")
+
+SOM_TRY
+sendProtobufMessage(*streamStatusNotificationInterface, localCasterNotification, std::string((char *) header, sizeof(Poco::Int64)*2));
+SOM_CATCH("Error sending notification out proxy stream removal\n")
+
+//update maps
+localBasestationIDToLastMessageTimestamp.erase(localStreamID);
+casterIDToMapFromOriginalBasestationIDToLocalBasestationID.at(inputCasterID).erase(localStreamID);
 }
 
 

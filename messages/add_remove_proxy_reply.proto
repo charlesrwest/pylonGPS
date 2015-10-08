@@ -4,11 +4,11 @@ enum proxy_request_failure_reason
 {
 PROXY_REQUEST_DESERIALIZATION_FAILED = 10;
 PROXY_REQUEST_FORMAT_INVALID = 20; //Missing "optional" fields required for a valid transaction
+CASTER_QUERY_REQUEST_FAILED = 30; //Unable to retrieve basestation information from the caster
 }
 
-//This message is sent in response to a add/remove proxy request and indicates the success or failure of the request.  If there is no caster ID or there is a failure reason, the request was unsuccessful
+//This message is sent in response to a add/remove proxy request and indicates the success or failure of the request.  If there is a failure reason, the request was unsuccessful
 message add_remove_proxy_reply
 {
-optional int64 caster_id = 10; //If successful, the caster id of the proxied caster will be returned
-optional proxy_request_failure_reason reason = 20; //Why the request failed (success if not there and caster id is)
+optional proxy_request_failure_reason reason = 10; //Why the request failed (success if not there)
 } 

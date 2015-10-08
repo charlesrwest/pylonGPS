@@ -1,7 +1,5 @@
 package pylongps; //Put in pylongps namespace
 
-import "client_query_reply.proto";
-
 //This message is used to request an that the caster add a new proxy or remove an old one.  If a new caster is to be added, the three connection strings must be given
 //This message can be used to remove a caster from proxying by specifying the caster to remove.  In this case, the caster_id_to_remove field is expected.
 message add_remove_proxy_request
@@ -10,5 +8,5 @@ optional bytes client_request_connection_string = 10; //The ZMQ connection strin
 optional bytes connect_disconnect_notification_connection_string = 20; //The ZMQ connection string to connect to the caster's connect/disconnect notification interface
 optional bytes base_station_publishing_connection_string = 30; //The ZMQ connection string to connect to the base station's correction publishing interface
 
-optional int64 caster_id_to_remove = 40; //The ID of a caster to stop proxying
+optional bytes client_request_connection_string_for_caster_to_remove = 40; //The same connection string used to add the caster to the proxy list
 } 

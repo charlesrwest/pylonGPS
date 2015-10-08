@@ -1,0 +1,16 @@
+package pylongps;
+
+import "event_message.proto"; 
+
+//This message represents the timepoint at which a proxy stream may have expired (the check occurs)
+message possible_proxy_stream_timeout_event
+{
+required int64 caster_id = 10; //The foreign caster ID
+required int64 stream_id = 20; //The foreign stream ID
+
+//Add to message container to allow simulated polymorphism
+extend event_message
+{
+optional possible_proxy_stream_timeout_event possible_proxy_stream_timeout_event_field = 80;
+}
+}  

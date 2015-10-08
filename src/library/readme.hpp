@@ -1,10 +1,4 @@
 /**
-\defgroup Server
-\defgroup Serialization 
-\defgroup Events
-*/
-
-/**
 \mainpage
 Introduction
 ---------------------

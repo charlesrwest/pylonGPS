@@ -32,7 +32,7 @@ printf("Testing type deduction\n");
 }
 }
 
-TEST_CASE("Test ZMQ/Protobuf convenence functions", "[send/receive protobuf]")
+TEST_CASE("Test ZMQ/Protobuf convenience functions", "[send/receive protobuf]")
 {
 SECTION("Test send/receive and RPC", "[send/receive protobuf]")
 {
@@ -79,7 +79,7 @@ SECTION("Test send/receive", "[send/receive protobuf]")
 {
 database_request testDatabaseRequest;
 testDatabaseRequest.set_registration_connection_id("Hello!");
-testDatabaseRequest.set_delete_base_station_id(-10);
+testDatabaseRequest.add_delete_base_station_ids(-10);
 testDatabaseRequest.set_base_station_to_update_id(20);
 testDatabaseRequest.set_real_update_rate(31.1);
 
@@ -99,11 +99,11 @@ SOM_CATCH("Error receiving message object\n") //TODO
 REQUIRE(messageReceived == true);
 REQUIRE(messageDeserialized == true);
 REQUIRE(receivedMessage.has_registration_connection_id() == true);
-REQUIRE(receivedMessage.has_delete_base_station_id() == true);
+REQUIRE(receivedMessage.delete_base_station_ids_size() == 1);
 REQUIRE(receivedMessage.has_base_station_to_update_id() == true);
 REQUIRE(receivedMessage.has_real_update_rate() == true);
 REQUIRE(receivedMessage.registration_connection_id() == "Hello!");
-REQUIRE(receivedMessage.delete_base_station_id() == -10);
+REQUIRE(receivedMessage.delete_base_station_ids(0) == -10);
 REQUIRE(receivedMessage.base_station_to_update_id() == 20);
 REQUIRE(receivedMessage.real_update_rate() == Approx(31.1));
 }
@@ -1099,3 +1099,355 @@ REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation");
 
 } //Construct caster to test
 }
+
+
+
+TEST_CASE( "Test simple proxying", "[test]")
+{
+
+SECTION( "Build two casters")
+{
+//Make ZMQ context
+std::unique_ptr<zmq::context_t> context;
+
+SOM_TRY
+context.reset(new zmq::context_t);
+SOM_CATCH("Error initializing ZMQ context\n")
+
+//Generate keys to use
+char firstZ85CasterPublicKey[41];
+char firstZ85CasterSecretKey[41];
+
+REQUIRE(zmq_curve_keypair(firstZ85CasterPublicKey, firstZ85CasterSecretKey) == 0);
+
+//Convert to binary format
+char firstBuffer[32];
+std::string firstDecodedCasterPublicKey;
+std::string firstDecodedCasterSecretKey;
+
+zmq_z85_decode((uint8_t *) firstBuffer, firstZ85CasterPublicKey);
+firstDecodedCasterPublicKey = std::string(firstBuffer, 32);
+
+zmq_z85_decode((uint8_t *) firstBuffer, firstZ85CasterSecretKey);
+firstDecodedCasterSecretKey = std::string(firstBuffer, 32);
+
+//Generate key manager signing key
+unsigned char firstKeyManagerPublicKeyArray[crypto_sign_PUBLICKEYBYTES];
+unsigned char firstKeyManagerSecretKeyArray[crypto_sign_SECRETKEYBYTES];
+crypto_sign_keypair(firstKeyManagerPublicKeyArray, firstKeyManagerSecretKeyArray);
+
+std::string firstKeyManagerPublicKey((const char *) firstKeyManagerPublicKeyArray, crypto_sign_PUBLICKEYBYTES);
+std::string firstKeyManagerSecretKey((const char *) firstKeyManagerSecretKeyArray, crypto_sign_SECRETKEYBYTES);
+
+Poco::Int64 firstCasterID = 989;
+int firstRegistrationPort = 9010;
+int firstClientRequestPort = 9013;
+int firstClientPublishingPort = 9014;
+int firstProxyPublishingPort = 9015;
+int firstStreamStatusNotificationPort = 9016;
+int firstKeyManagementPort = 9017;
+
+
+caster firstCaster(context.get(), firstCasterID, firstRegistrationPort, firstClientRequestPort, firstClientPublishingPort, firstProxyPublishingPort, firstStreamStatusNotificationPort, firstKeyManagementPort, firstDecodedCasterPublicKey, firstDecodedCasterSecretKey, firstKeyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
+
+//Generate keys to use
+char secondZ85CasterPublicKey[41];
+char secondZ85CasterSecretKey[41];
+
+REQUIRE(zmq_curve_keypair(secondZ85CasterPublicKey, secondZ85CasterSecretKey) == 0);
+
+//Convert to binary format
+char secondBuffer[32];
+std::string secondDecodedCasterPublicKey;
+std::string secondDecodedCasterSecretKey;
+
+zmq_z85_decode((uint8_t *) secondBuffer, secondZ85CasterPublicKey);
+secondDecodedCasterPublicKey = std::string(secondBuffer, 32);
+
+zmq_z85_decode((uint8_t *) secondBuffer, secondZ85CasterSecretKey);
+secondDecodedCasterSecretKey = std::string(secondBuffer, 32);
+
+//Generate key manager signing key
+unsigned char secondKeyManagerPublicKeyArray[crypto_sign_PUBLICKEYBYTES];
+unsigned char secondKeyManagerSecretKeyArray[crypto_sign_SECRETKEYBYTES];
+crypto_sign_keypair(secondKeyManagerPublicKeyArray, secondKeyManagerSecretKeyArray);
+
+std::string secondKeyManagerPublicKey((const char *) secondKeyManagerPublicKeyArray, crypto_sign_PUBLICKEYBYTES);
+std::string secondKeyManagerSecretKey((const char *) secondKeyManagerSecretKeyArray, crypto_sign_SECRETKEYBYTES);
+
+Poco::Int64 secondCasterID = 989+100;
+int secondRegistrationPort = 9010+100;
+int secondClientRequestPort = 9013+100;
+int secondClientPublishingPort = 9014+100;
+int secondProxyPublishingPort = 9015+100;
+int secondStreamStatusNotificationPort = 9016+100;
+int secondKeyManagementPort = 9017+100;
+
+
+caster secondCaster(context.get(), secondCasterID, secondRegistrationPort, secondClientRequestPort, secondClientPublishingPort, secondProxyPublishingPort, secondStreamStatusNotificationPort, secondKeyManagementPort, secondDecodedCasterPublicKey, secondDecodedCasterSecretKey, secondKeyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
+
+SECTION( "Add stream to first caster, proxy second to first, and add second stream to first caster, then send/receive messages")
+{
+//Add first unauthenticated stream
+//Create a basestation and register it
+
+//Create socket to talk with caster
+std::unique_ptr<zmq::socket_t> firstRegistrationSocket;
+
+SOM_TRY //Init socket
+firstRegistrationSocket.reset(new zmq::socket_t(*context, ZMQ_DEALER));
+SOM_CATCH("Error making socket\n")
+
+SOM_TRY
+int timeoutWaitTime = 5000; //Max 5 seconds
+firstRegistrationSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
+SOM_CATCH("Error setting socket timeout\n")
+
+SOM_TRY //Connect to caster
+std::string connectionString = "tcp://127.0.0.1:" +std::to_string(firstRegistrationPort);
+firstRegistrationSocket->connect(connectionString.c_str());
+SOM_CATCH("Error connecting socket for registration with caster\n")
+
+transmitter_registration_request firstRegistrationRequest;
+auto basestationInfo = firstRegistrationRequest.mutable_stream_info();
+basestationInfo->set_latitude(1.0);
+basestationInfo->set_longitude(2.0);
+basestationInfo->set_expected_update_rate(3.0);
+basestationInfo->set_message_format(RTCM_V3_1);
+basestationInfo->set_informal_name("testBasestation");
+
+transmitter_registration_reply firstRegistrationReply;
+
+bool messageReceived = false;
+bool messageDeserializedCorrectly = false;
+SOM_TRY
+std::tie(messageReceived, messageDeserializedCorrectly) = remoteProcedureCall(*firstRegistrationSocket, firstRegistrationRequest, firstRegistrationReply);
+SOM_CATCH("Error, stream registration failed\n")
+
+REQUIRE(firstRegistrationReply.request_succeeded() == true);
+
+//Registration of first stream completed, so make second caster proxy of first caster
+std::string addProxyClientRequestConnectionString = "tcp://127.0.0.1:" + std::to_string(firstClientRequestPort);
+std::string addProxyBasestationPublishingConnectionString = "tcp://127.0.0.1:" + std::to_string(firstProxyPublishingPort);
+std::string addProxyConnectDisconnectNotificationConnectionString = "tcp://127.0.0.1:" + std::to_string(firstStreamStatusNotificationPort);
+
+SOM_TRY
+secondCaster.addProxy(addProxyClientRequestConnectionString, addProxyBasestationPublishingConnectionString, addProxyConnectDisconnectNotificationConnectionString);
+SOM_CATCH("Error, unable to add proxy\n")
+
+//Create socket so that the state of the second caster can be determined
+std::unique_ptr<zmq::socket_t> clientSocket;
+
+SOM_TRY //Init socket
+clientSocket.reset(new zmq::socket_t(*context, ZMQ_REQ));
+SOM_CATCH("Error making socket\n")
+
+SOM_TRY
+int timeoutWaitTime = 5000; //Max 5 seconds
+clientSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
+SOM_CATCH("Error setting socket timeout\n")
+
+SOM_TRY //Connect to caster
+std::string connectionString = "tcp://127.0.0.1:" +std::to_string(secondClientRequestPort);
+clientSocket->connect(connectionString.c_str());
+SOM_CATCH("Error connecting socket for registration with caster\n")
+
+int64_t firstBaseStationID = 0;
+
+//Send a query and verify the added basestation shows up in the second caster
+client_query_request queryRequest; //Empty request should return all
+client_query_reply queryReply;
+
+SOM_TRY
+std::tie(messageReceived, messageDeserializedCorrectly) = remoteProcedureCall(*clientSocket, queryRequest, queryReply);
+SOM_CATCH("Error, stream registration failed\n")
+
+
+REQUIRE(messageReceived == true);
+REQUIRE(messageDeserializedCorrectly == true);
+REQUIRE(queryReply.has_caster_id() == true);
+REQUIRE(queryReply.caster_id() == secondCaster.casterID);
+REQUIRE(queryReply.has_failure_reason() == false);
+REQUIRE(queryReply.base_stations_size() == 1);
+
+auto replyBaseStationInfo = queryReply.base_stations(0);
+REQUIRE(replyBaseStationInfo.has_latitude());
+REQUIRE(replyBaseStationInfo.latitude() == Approx(1.0));
+REQUIRE(replyBaseStationInfo.has_longitude());
+REQUIRE(replyBaseStationInfo.longitude() == Approx(2.0));
+REQUIRE(replyBaseStationInfo.has_expected_update_rate());
+REQUIRE(replyBaseStationInfo.expected_update_rate() == Approx(3.0));
+REQUIRE(replyBaseStationInfo.has_message_format());
+REQUIRE(replyBaseStationInfo.message_format() == RTCM_V3_1);
+REQUIRE(replyBaseStationInfo.has_informal_name());
+REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation");
+REQUIRE(replyBaseStationInfo.has_base_station_id());
+
+//Store station ID so it can be used for later checks
+firstBaseStationID = replyBaseStationInfo.base_station_id();
+
+//Add a second basestation to the first caster
+//Create socket to talk with caster
+std::unique_ptr<zmq::socket_t> secondRegistrationSocket;
+
+SOM_TRY //Init socket
+secondRegistrationSocket.reset(new zmq::socket_t(*context, ZMQ_DEALER));
+SOM_CATCH("Error making socket\n")
+
+SOM_TRY
+int timeoutWaitTime = 5000; //Max 5 seconds
+secondRegistrationSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
+SOM_CATCH("Error setting socket timeout\n")
+
+SOM_TRY //Connect to caster
+std::string connectionString = "tcp://127.0.0.1:" +std::to_string(firstRegistrationPort);
+secondRegistrationSocket->connect(connectionString.c_str());
+SOM_CATCH("Error connecting socket for registration with caster\n")
+
+transmitter_registration_request secondRegistrationRequest;
+auto basestationInfo0 = secondRegistrationRequest.mutable_stream_info();
+basestationInfo0->set_latitude(4.0);
+basestationInfo0->set_longitude(5.0);
+basestationInfo0->set_expected_update_rate(6.0);
+basestationInfo0->set_message_format(RINEX);
+basestationInfo0->set_informal_name("testBasestation2");
+
+transmitter_registration_reply secondRegistrationReply;
+
+messageReceived = false;
+messageDeserializedCorrectly = false;
+SOM_TRY
+std::tie(messageReceived, messageDeserializedCorrectly) = remoteProcedureCall(*secondRegistrationSocket, secondRegistrationRequest, secondRegistrationReply);
+SOM_CATCH("Error, stream registration failed\n")
+
+REQUIRE(messageReceived == true);
+REQUIRE(messageDeserializedCorrectly == true);
+REQUIRE(secondRegistrationReply.request_succeeded() == true);
+
+//Send a query and verify that both of the basestations show up in the second caster
+client_query_request queryRequest2; //Empty request should return all
+client_query_reply queryReply2;
+
+//Give a little time for updates to propagate
+std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+SOM_TRY
+std::tie(messageReceived, messageDeserializedCorrectly) = remoteProcedureCall(*clientSocket, queryRequest2, queryReply2);
+SOM_CATCH("Error, stream registration failed\n")
+
+
+REQUIRE(messageReceived == true);
+REQUIRE(messageDeserializedCorrectly == true);
+REQUIRE(queryReply2.has_caster_id() == true);
+REQUIRE(queryReply2.caster_id() == secondCaster.casterID);
+REQUIRE(queryReply2.has_failure_reason() == false);
+REQUIRE(queryReply2.base_stations_size() == 2);
+
+int64_t secondBaseStationID = 0;
+
+for(int i=0; i<2; i++)
+{
+auto replyBaseStationInfo = queryReply2.base_stations(i);
+REQUIRE(replyBaseStationInfo.has_base_station_id());
+
+if(replyBaseStationInfo.base_station_id() == firstBaseStationID)
+{ //Check the first basestation details
+REQUIRE(replyBaseStationInfo.has_latitude());
+REQUIRE(replyBaseStationInfo.latitude() == Approx(1.0));
+REQUIRE(replyBaseStationInfo.has_longitude());
+REQUIRE(replyBaseStationInfo.longitude() == Approx(2.0));
+REQUIRE(replyBaseStationInfo.has_expected_update_rate());
+REQUIRE(replyBaseStationInfo.expected_update_rate() == Approx(3.0));
+REQUIRE(replyBaseStationInfo.has_message_format());
+REQUIRE(replyBaseStationInfo.message_format() == RTCM_V3_1);
+REQUIRE(replyBaseStationInfo.has_informal_name());
+REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation");
+}
+else
+{ //Check second basestation details
+REQUIRE(replyBaseStationInfo.has_latitude());
+REQUIRE(replyBaseStationInfo.latitude() == Approx(4.0));
+REQUIRE(replyBaseStationInfo.has_longitude());
+REQUIRE(replyBaseStationInfo.longitude() == Approx(5.0));
+REQUIRE(replyBaseStationInfo.has_expected_update_rate());
+REQUIRE(replyBaseStationInfo.expected_update_rate() == Approx(6.0));
+REQUIRE(replyBaseStationInfo.has_message_format());
+REQUIRE(replyBaseStationInfo.message_format() == RINEX);
+REQUIRE(replyBaseStationInfo.has_informal_name());
+REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation2");
+secondBaseStationID = replyBaseStationInfo.base_station_id();
+}
+} //End for
+
+//Send updates and see if they show up at the proxy
+//Create socket to subscribe to the second caster
+std::unique_ptr<zmq::socket_t> subscriberSocket;
+
+SOM_TRY //Init socket
+subscriberSocket.reset(new zmq::socket_t(*context, ZMQ_SUB));
+SOM_CATCH("Error making socket\n")
+
+SOM_TRY
+int timeoutWaitTime = 5000; //Max 5 seconds
+subscriberSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
+SOM_CATCH("Error setting socket timeout\n")
+
+SOM_TRY //Connect to caster
+std::string connectionString = "tcp://127.0.0.1:" +std::to_string(secondClientPublishingPort);
+subscriberSocket->connect(connectionString.c_str());
+SOM_CATCH("Error connecting socket for registration with caster\n")
+
+SOM_TRY //Set filter to allow any published messages to be received
+subscriberSocket->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
+SOM_CATCH("Error setting subscription for socket\n")
+
+//Sleep for a few milliseconds to allow connection to stabilize so no messages are missed
+std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+//Send a message via each of the basestations
+std::string firstSocketUpdateString = "Hello world\n";
+std::string secondSocketUpdateString = "Sharing is caring\n";
+
+SOM_TRY
+firstRegistrationSocket->send(firstSocketUpdateString.c_str(), firstSocketUpdateString.size());
+SOM_CATCH("Error sending update\n")
+
+SOM_TRY
+secondRegistrationSocket->send(secondSocketUpdateString.c_str(), secondSocketUpdateString.size());
+SOM_CATCH("Error sending update\n")
+
+for(int i=0; i<2; i++)
+{
+zmq::message_t updateMessageBuffer;
+
+SOM_TRY
+REQUIRE(subscriberSocket->recv(&updateMessageBuffer) == true);
+SOM_CATCH("Error receiving updates from proxy\n")
+
+REQUIRE(updateMessageBuffer.size() > sizeof(Poco::Int64)*2);
+
+int64_t casterID = Poco::ByteOrder::fromNetwork(((Poco::Int64*) updateMessageBuffer.data())[0]);
+
+int64_t streamID = Poco::ByteOrder::fromNetwork(((Poco::Int64*) updateMessageBuffer.data())[1]);
+
+REQUIRE(casterID == secondCaster.casterID);
+
+std::string receivedUpdateContent = std::string( ((const char *) updateMessageBuffer.data())+sizeof(Poco::Int64)*2, updateMessageBuffer.size() - sizeof(Poco::Int64)*2);
+
+if(streamID == firstBaseStationID)
+{
+REQUIRE(receivedUpdateContent == firstSocketUpdateString);
+}
+else if(streamID == secondBaseStationID)
+{
+REQUIRE(receivedUpdateContent == secondSocketUpdateString);
+}
+
+
+}
+
+
+} //Add and proxy
+} //Construct casters
+}
+

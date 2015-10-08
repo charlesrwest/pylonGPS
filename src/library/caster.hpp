@@ -1,5 +1,4 @@
-#ifndef  CASTERHPP
-#define CASTERHPP
+#pragma once
 
 #include "zmq.hpp"
 #include <cstdint>
@@ -44,6 +43,7 @@
 #include "update_statistics_event.pb.h"
 #include "add_remove_proxy_request.pb.h"
 #include "add_remove_proxy_reply.pb.h"
+#include "possible_proxy_stream_timeout_event.pb.h"
 
 namespace pylongps
 {
@@ -54,8 +54,8 @@ const double SECONDS_BEFORE_CONNECTION_TIMEOUT = 5.0;
 //How many basestation updates rates to update in the database per second
 const int UPDATE_RATES_TO_UPDATE_PER_SECOND = 100;
 
-//How long to wait for add proxy related requests
-const int ADD_PROXY_MAX_WAIT_TIME = 5000; //5000 milliseconds
+//How long to wait for the caster to add to return its basestations' metadata or the local caster to subscribe to the foreign caster
+const int PROXY_CLIENT_REQUEST_MAX_WAIT_TIME = 5000; //5000 milliseconds
 
 /**
 This class represents a pylonGPS 2.0 caster.  It opens several ZMQ ports to provide caster services, an in-memory SQLITE database and creates 2 threads to manage its duties.
@@ -94,19 +94,18 @@ This thread safe function adds a new caster to proxy.  The function may have som
 @param inputClientRequestConnectionString: The ZMQ connection string to use to connect to the client query answering port of the caster to proxy
 @param inputBasestationPublishingConnectionString: The ZMQ connection string to use to connect to the interface that publishes the basestation updates
 @param inputConnectionDisconnectionNotificationConnectionString: The ZMQ connection string to use to connect to the basestation connect/disconnect notification port on the caster to proxy
-@return: The ID of the proxied caster
 
 @throws: This function can throw exceptions
 */
-int64_t addProxy(const std::string &inputClientRequestConnectionString, const std::string &inputBasestationPublishingConnectionString, const std::string &inputConnectDisconnectNotificationConnectionString);
+void addProxy(const std::string &inputClientRequestConnectionString, const std::string &inputBasestationPublishingConnectionString, const std::string &inputConnectDisconnectNotificationConnectionString);
 
 /**
-This function removes a caster that this caster was proxying.
-@param inputCasterID: The caster ID of the caster to stop proxying
+This thread safe function removes a foreign caster from monitoring by this caster.
+@param inputClientRequestConnectionString: The ZMQ connection string used to send a query to the foreign caster
 
 @throws: This function can throw exceptions
 */
-void removeProxy(int64_t inputCasterID);
+void removeProxy(const std::string &inputClientRequestConnectionString);
 
 /**
 This function signals for the threads to shut down and then waits for them to do so.
@@ -150,9 +149,16 @@ int mapUpdateIndex = 0; //The appropriate position to start in the map with the 
 std::map<int64_t, int64_t> basestationIDToCreationTime; //Resolves when basestation was made (Poco timestamp timevalue)
 std::map<int64_t, int64_t> basestationIDToNumberOfSentMessages; //Keeps track of how many messages each basestation has sent
 
-std::map<int64_t, std::map<int64_t, int64_t> > casterIDToMapForForeignBasestationIDToLocalBasestationID;
-std::map<zmq::socket_t *, std::tuple<std::string, std::string, std::string> > ephemeralQuerySocketToCasterConnectionStrings; //Connection string order: client_request, connect_disconnect_notification, base_station_publishing
-std::map<int64_t, std::tuple<std::string, std::string, std::string> > casterIDToCasterConnectionStrings; //Ownership of connection strings is transferred from the ephemeral socket map to this one once the query successfully completes
+
+//This map translates from the caster to proxies labeling system to that of this caster casterID -> (streamID -> localStreamID)
+std::map<int64_t, std::map<int64_t, int64_t> > casterIDToMapFromOriginalBasestationIDToLocalBasestationID;
+
+//This map stores the connect strings for each of the current casters to proxy client_request_connection_string -> <client_request_connection_string, connect_disconnect_notification_connection_string, base_station_publishing_connection_string>
+std::map<std::string, std::tuple<std::string, std::string, std::string> > clientRequestConnectionStringToCasterConnectionStrings; 
+
+//Used to determine if a proxied basestation has timed out localID -> poco timestamp
+std::map<int64_t, Poco::Timestamp> localBasestationIDToLastMessageTimestamp;
+
 
 /**
 This function processes any events that are scheduled to have occurred by now and returns when the next event is scheduled to occur.  Which thread is calling this function is determined by the type of events in the event queue.
@@ -174,14 +180,6 @@ Poco::Timestamp handleReactorEvents(reactor<caster> &inputReactor);
 
 //Threads/shutdown socket for operations
 std::unique_ptr<zmq::socket_t> shutdownPublishingSocket; //This inproc PUB socket publishes an empty message when it is time for threads to shut down.
-//Set of sockets use to listen for the signal from shutdownPublishingSocket
-std::unique_ptr<zmq::socket_t> streamRegistrationAndPublishingThreadShutdownListeningSocket;
-
-
-
-std::unique_ptr<reactor<caster> > clientRequestHandlingReactor; //Handles client requests and requests by the stream registration and statistics threads to make changes to the database
-std::unique_ptr<reactor<caster> > streamRegistrationAndPublishingReactor;
-std::unique_ptr<reactor<caster> > statisticsGatheringReactor; //This reactor analyzes the statistics of the stream messages that are published and periodically updates the associated entries in the database.
 
 std::unique_ptr<sqlite3, decltype(&sqlite3_close_v2)> databaseConnection; //Pointer to created database connection
 std::unique_ptr<protobufSQLConverter<base_station_stream_information> > basestationToSQLInterface; //Allows storage/retrieval of base_station_stream_information objects in the database
@@ -192,6 +190,15 @@ std::unique_ptr<zmq::socket_t> proxyStreamPublishingInterface; ///A ZMQ PUB sock
 std::unique_ptr<zmq::socket_t> streamStatusNotificationInterface; ///A ZMQ PUB socket which publishes stream_status_update messages.  Used by streamRegistrationAndPublishingThread.
 
 //Functions and objects used internally
+std::string internalNotificationPublisherConnectionString; //The connection string to use to connect to the publish
+std::unique_ptr<zmq::socket_t> internalNotificationPublisher; //A ZMQ PUB socket which is used to publish stream_status_update about the basestations that the caster is currently proxying (but might not have the metadata for)
+
+//Ensure reactors are destroyed before publishing sockets
+std::unique_ptr<reactor<caster> > clientRequestHandlingReactor; //Handles client requests and requests by the stream registration and statistics threads to make changes to the database
+std::unique_ptr<reactor<caster> > streamRegistrationAndPublishingReactor;
+std::unique_ptr<reactor<caster> > statisticsGatheringReactor; //This reactor analyzes the statistics of the stream messages that are published and periodically updates the associated entries in the database.
+
+
 /**
 This function adds a authenticated connection by placing it in the associated maps/sets and the database.  The call is ignored if the connection key is not found in connectionKeyToSigningKeys, so addConnectionKey should have been called first for the connection key.
 @param inputConnectionID: The ZMQ connection ID string of the connection to add
@@ -310,6 +317,26 @@ This function handles processes the reply to ephemeral sockets which are used to
 bool processCasterProxyQueryReply(reactor<caster> &inputReactor, zmq::socket_t &inputSocket);
 
 /**
+This function handles notifications of new or removed sockets from casters that this caster is proxying.  It expects to receive stream_status_update messages with caster ID and stream ID preappended.
+@param inputReactor: The reactor that is calling the function
+@param inputSocket: The socket
+@return: true if the polling cycle should restart before processing any more messages
+
+@throws: This function can throw exceptions
+*/
+bool listenForProxyNotifications(reactor<caster> &inputReactor, zmq::socket_t &inputSocket);
+
+/**
+This function handles updates from the foreign casters this caster has started proxying.  It expects binary blobs with casterID, streamID preappended.  It also schedules timeout events for each stream and updates their last message received times.
+@param inputReactor: The reactor that is calling the function
+@param inputSocket: The socket
+@return: true if the polling cycle should restart before processing any more messages
+
+@throws: This function can throw exceptions
+*/
+bool listenForProxyUpdates(reactor<caster> &inputReactor, zmq::socket_t &inputSocket);
+
+/**
 This function checks if the databaseAccessSocket has received a database_request message and (if so) processes the message and sends a database_reply in response.
 @param inputReactor: The reactor that is calling the function
 @param inputSocket: The socket
@@ -382,11 +409,24 @@ bool statisticsProcessStreamMessage(reactor<caster> &inputReactor, zmq::socket_t
 
 /**
 This function processes database_reply messages from the statisticsDatabaseRequestSocket socket in the statistics gathering thread.
-@param inputEventQueue: The event queue to register events to
+@param inputReactor: The reactor this function is processing messages for
+@param inputSocket: The socket which probably has a message waiting
+@return: true if the function would like the reactor message processing loop to start at the beginning before processing any more messages
 
 @throws: This function can throw exceptions
 */
 bool statisticsProcessDatabaseReply(reactor<caster> &inputReactor, zmq::socket_t &inputSocket);
+
+/**
+This function is used inside the streamRegistrationAndPublishingReactor to remove a foreign stream from consideration and publish the associated notification.
+@param inputReactor: The reactor to communicate with
+@param inputCasterID: The ID of the foreign caster
+@param inputStreamID: The ID of the foreign stream
+@param inputReason: The reason the stream was removed
+
+@throw: This function can throw exceptions
+*/
+void deleteProxyStream(reactor<caster> &inputReactor, int64_t inputCasterID, int64_t inputStreamID, base_station_removal_reason inputReason);
 
 /**
 This function generates the complete query string required to get all of the ids of the stations that meet the query's requirements.
@@ -519,4 +559,4 @@ This function calculates the signature for the given string/private signing key 
 std::string calculateAndPreappendSignature(const std::string &inputMessage, const std::string &inputSigningSecretKey);
 
 }
-#endif
+
