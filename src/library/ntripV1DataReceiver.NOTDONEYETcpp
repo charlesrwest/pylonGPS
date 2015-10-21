@@ -1,0 +1,238 @@
+#include "ntripV1DataReceiver.hpp"
+
+using namespace pylongps;
+
+/**
+This function initializes the ntripV1DataReceiver to retrieve data from the given TCP address/port.
+@param inputIPAddressAndPort: A string with the IP address/port in format "IPAddress:portNumber"
+@param inputContext: A reference to the ZMQ context to use
+@param inputMountPoint: The mount point to get data from
+@param inputUser: A (optional) user to use with basic authentication 
+@param inputPassword: The (optional) password required required to access the server (in plain text, not encoded)
+
+@throws: This function can throw exceptions
+*/
+ntripV1DataReceiver::ntripV1DataReceiver(const std::string &inputIPAddressAndPort, zmq::context_t &inputContext, const std::string &inputMountPoint, const std::string &inputUser, const std::string &inputPassword) : context(inputContext)
+{
+subConstructor(inputIPAddressAndPort, inputContext, inputMountPoint, inputUser, inputPassword);
+}
+
+/**
+This function initializes the ntripV1DataReceiver to retrieve data from the given TCP address/port.
+@param inputIPAddressAndPort: A string with the IP address/port in format "IPAddress:portNumber"
+@param inputContext: A reference to the ZMQ context to use
+@param inputMountPoint: The mount point to get data from
+@param inputLatitude: The approximate latitude of the data requester
+@param inputLongitude: The approximate longitude of the data requester
+@param inputUser: A (optional) user to use with basic authentication 
+@param inputPassword: The (optional) password required required to access the server (in plain text, not encoded)
+
+@throws: This function can throw exceptions
+*/
+ntripV1DataReceiver::ntripV1DataReceiver(const std::string &inputIPAddressAndPort, zmq::context_t &inputContext, const std::string &inputMountPoint, double inputLatitude, double inputLongitude, const std::string &inputUser, const std::string &inputPassword) : context(inputContext)
+{
+usingNMEAExtension = true;
+latitude = inputLatitude;
+longitude = inputLongitude;
+
+printf("Yellow\n");
+
+SOM_TRY
+subConstructor(inputIPAddressAndPort, inputContext, inputMountPoint, inputUser, inputPassword);
+SOM_CATCH("Error using delegating constructor\n")
+}
+
+
+/**
+This function returns a string containing the ZMQ connection string required to connect this object's publisher (which forwards data from the associated file).
+@return: The connection string to use to connect to this data source
+*/
+std::string ntripV1DataReceiver::address()
+{
+return publisherConnectionString;
+}
+
+
+/**
+This function initializes the ntripV1DataReceiver to retrieve data from the given TCP address/port.  Used instead of subconstructor so the default values don't override those set by the higher level constructor. 
+@param inputIPAddressAndPort: A string with the IP address/port in format "IPAddress:portNumber"
+@param inputContext: A reference to the ZMQ context to use
+@param inputMountPoint: The mount point to get data from
+@param inputUser: A (optional) user to use with basic authentication 
+@param inputPassword: The (optional) password required required to access the server (in plain text, not encoded)
+
+@throws: This function can throw exceptions
+*/
+void ntripV1DataReceiver::subConstructor(const std::string &inputIPAddressAndPort, zmq::context_t &inputContext, const std::string &inputMountPoint, const std::string &inputUser, const std::string &inputPassword)
+{
+//Copy strings
+mountPoint = inputMountPoint;
+user = inputUser;
+password = inputPassword;
+
+//Construct reactor
+SOM_TRY
+receiverReactor.reset(new reactor<ntripV1DataReceiver>(&context, this));
+SOM_CATCH("Error initializing reactor\n")
+
+//Create socket to read from the TCP port
+std::unique_ptr<zmq::socket_t> TCPSocket;
+
+SOM_TRY
+TCPSocket.reset(new zmq::socket_t(context, ZMQ_STREAM));
+SOM_CATCH("Error making socket\n")
+
+//Connect to the tcp server to get data from
+SOM_TRY
+std::string connectionString = "tcp://" + inputIPAddressAndPort;
+TCPSocket->connect(connectionString.c_str());
+SOM_CATCH("Error connecting to TCP server\n")
+
+//Create socket for publishing
+SOM_TRY
+publishingSocket.reset(new zmq::socket_t(context, ZMQ_PUB));
+SOM_CATCH("Error making socket\n")
+
+//Bind socket for publishing and store address
+int extensionStringNumber = 0;
+SOM_TRY //Bind to an dynamically generated address
+std::tie(publisherConnectionString, extensionStringNumber) = bindZMQSocketWithAutomaticAddressGeneration(*publishingSocket, "ntripV1DataReceiverSocketAddress");
+SOM_CATCH("Error binding publishingSocket\n")
+
+//Give ownership of the file to the reactor
+SOM_TRY
+receiverReactor->addInterface(TCPSocket, &ntripV1DataReceiver::readAndPublishData, publisherConnectionString);
+SOM_CATCH("Error, unable to add interface\n")
+
+//Generate NTRIP connection request header
+Poco::Net::HTTPRequest ntripClientRequest("GET", mountPoint, "1.0");
+
+if(user != "")
+{
+ntripClientRequest.add("User-Agent", "NTRIP " + user);
+}
+else
+{
+ntripClientRequest.add("User-Agent", "NTRIP ");
+}
+
+if(password != "")
+{
+std::stringstream stream;
+Poco::Base64Encoder encoder(stream);
+encoder << password;
+
+ntripClientRequest.setCredentials("Basic", stream.str());
+}
+
+//Set string with it
+std::stringstream serializedHeader;
+ntripClientRequest.write(serializedHeader);
+
+ntripRequestString = serializedHeader.str();
+
+if(usingNMEAExtension)
+{
+printf("Using nmea\n");
+NMEAGGASentence sentence;
+sentence.latitude = latitude;
+sentence.longitude = longitude;
+
+ntripRequestString += sentence.serialize();
+ntripRequestString += "\r\n";
+}
+
+printf("Header:\n%s", ntripRequestString.c_str());
+
+//Start the reactor thread
+SOM_TRY
+receiverReactor->start();
+SOM_CATCH("Error, unable to add interface\n")
+}
+
+
+
+
+
+
+/**
+This function talks with the NTRIP TCP port and forwards the received data to the publisher socket.
+@param inputReactor: The reactor which called the function
+@param inputFileDescriptor: The file descriptor to read from
+@return: false if the reactor doesn't need to restart its poll cycle
+
+@throw: This function can throw exceptions
+*/
+bool ntripV1DataReceiver::readAndPublishData(reactor<ntripV1DataReceiver> &inputReactor, zmq::socket_t &inputSocket)
+{
+zmq::message_t messageBuffer;
+
+SOM_TRY
+inputSocket.recv(&messageBuffer);
+SOM_CATCH("Error, unable to receive message\n")
+
+if(messageBuffer.more())
+{ //Store current connection ID, should only have one at a time
+currentConnectionID = std::string((char *) messageBuffer.data(), messageBuffer.size());
+return false; //Run poll cycle again to reset buffer (could be made more efficient)
+}
+
+if(messageBuffer.size() == 0)
+{//Connection either just started or just died
+if(!TCPConnectionActive)
+{
+//New connection, so send ntrip request
+SOM_TRY //Send message to indicate which TCP connection to use
+inputSocket.send(currentConnectionID.c_str(), currentConnectionID.size(), ZMQ_SNDMORE);
+SOM_CATCH("Error sending message\n")
+
+SOM_TRY //Send NTRIP request
+inputSocket.send(ntripRequestString.c_str(), ntripRequestString.size());
+SOM_CATCH("Error sending message\n")
+waitingForRequestResponseFromServer = true;
+requestResponseFromServerBuffer = "";
+}
+
+TCPConnectionActive = !TCPConnectionActive;
+return false;
+}
+
+//Non-zero length message
+if(waitingForRequestResponseFromServer)
+{//Waiting to see if request succeeded
+std::string receivedData((char *) messageBuffer.data(), messageBuffer.size());
+
+requestResponseFromServerBuffer += receivedData;
+if(requestResponseFromServerBuffer.find("\r\n\r\n") != std::string::npos)
+{//Received response, so check if it succeeded and forward any data past the response if so
+int headerEnd = requestResponseFromServerBuffer.find("\r\n\r\n");
+
+if(requestResponseFromServerBuffer.find("ICY 200 OK") == std::string::npos)
+{
+throw SOMException("NTRIP request failed\n", SERVER_REQUEST_FAILED, __FILE__, __LINE__);
+} 
+
+//Request succeeded
+waitingForRequestResponseFromServer = false;
+int headerSize = (headerEnd+4);//Size of "\r\n\r\n"
+
+//Forward any data past the response
+if(requestResponseFromServerBuffer.size() > headerSize) 
+{
+SOM_TRY
+publishingSocket->send(((char *) messageBuffer.data()) + headerSize, messageBuffer.size()-headerSize);
+SOM_CATCH("Error publishing data\n")
+}
+
+}
+
+return false;
+}
+
+SOM_TRY
+publishingSocket->send(messageBuffer.data(), messageBuffer.size());
+SOM_CATCH("Error publishing data\n")
+
+
+return false;
+}

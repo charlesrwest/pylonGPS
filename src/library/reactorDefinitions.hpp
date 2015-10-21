@@ -4,20 +4,30 @@
 This function initializes the reactor with the function that should be called to handle events.
 @param inputContext: The ZMQ context that this object should use
 @param inputClassInstance: The instance of the class that the given functions should operate on
-@param inputEventHandler: The function to call to handle events in the queue (should return negative if there are no outstanding events)
+@param inputEventHandler: The function to call to handle events in the queue (should return negative if there are no outstanding events).  Can be set to nullptr to disable event handling.
 
 @throws: This function can throw exceptions
 */
 template <class classType> reactor<classType>::reactor(zmq::context_t *inputContext, classType *inputClassInstance, std::function<Poco::Timestamp (classType*, reactor<classType> &)> inputEventHandler)
 {
-if(inputContext == nullptr || inputEventHandler == nullptr || inputClassInstance == nullptr)
+if(inputContext == nullptr || inputClassInstance == nullptr)
 {
 throw SOMException("Null pointer given for required field\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
 }
 
 context = inputContext;
-eventHandlerFunction = inputEventHandler;
+
+
 classInstance = inputClassInstance;
+
+if(inputEventHandler != nullptr)
+{
+eventHandlerFunction = inputEventHandler;
+}
+else
+{
+eventHandlerFunction = [](classType* inputClassPointer, reactor<classType> &inputReactor) {return false;};
+}
 
 //Create and bind/connect shutdown sockets
 SOM_TRY
@@ -74,41 +84,40 @@ SOM_CATCH("Error, unable to regenerate poll items\n")
 
 }
 
-
 /**
-This (not thread safe) function adds a new socket for the reactor to take ownership of and the member function to call/pass the socket reference to when a message is waiting on that interface.
-@param inputSocket: The socket to take ownership of
-@param inputMessageHandler: The function to call to handle messages waiting on the interface (returns true if the poll loop should restart rather than continuing and expects a pointer to this object)
+This (not thread safe) function adds a file descriptor for the reactor to take ownership of and the member function to call/pass the file descriptor to when data is waiting on that interface.
+@param inputFileDescriptor: The file descriptor to take ownership of
+@param inputStreamHandler: The function to call to handle data waiting on the interface (returns true if the poll loop should restart rather than continuing and expects a pointer to this object)
 @param inputInterfaceName: The (required unique) name to associated with the interface
 
 @throws: This function can throw exceptions
 */
-/*
-template <class classType> void reactor<classType>::addInterface(zmq::socket_t *inputSocket, std::function<bool (classType*, reactor<classType> &, zmq::socket_t &)> inputMessageHandler, const std::string &inputInterfaceName)
+template <class classType> void reactor<classType>::addInterface(FILE *inputFileDescriptor, std::function<bool (classType*, reactor<classType> &, FILE *)> inputStreamHandler, const std::string &inputInterfaceName)
 {
-if(inputSocket == nullptr || inputMessageHandler == nullptr)
+if(inputFileDescriptor == nullptr || inputStreamHandler == nullptr)
 {
 throw SOMException("Null pointer given for required field\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
 }
 
-if(nameToSocket.count(inputInterfaceName) > 0)
+if(nameToFileDescriptor.count(inputInterfaceName) > 0)
 {
 throw SOMException("Already used name\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
 }
 
 //Add to maps
-interfaces.emplace(inputSocket, std::unique_ptr<zmq::socket_t>(inputSocket));
-socketToHandlerFunction.emplace(inputSocket, inputMessageHandler);
+fileInterfaces.emplace(fileno(inputFileDescriptor), inputFileDescriptor);
+fileNumberToHandlerFunction.emplace(fileno(inputFileDescriptor), inputStreamHandler);
 if(inputInterfaceName != "")
 {
-nameToSocket[inputInterfaceName] = inputSocket;
+nameToFileDescriptor[inputInterfaceName] = inputFileDescriptor;
 }
 
 SOM_TRY //Regenerate poll items so that this interface is included
 regenerateZMQPollArray();
 SOM_CATCH("Error, unable to regenerate poll items\n")
+
 }
-*/
+
 
 /**
 This (not threadsafe) function removes an interface from the reactor.
@@ -129,6 +138,34 @@ nameToSocket.erase(iter);
 break;
 }
 }
+
+
+SOM_TRY //Regenerate poll items so that this interface is no longer included
+regenerateZMQPollArray();
+SOM_CATCH("Error, unable to regenerate poll items\n")
+}
+
+/**
+This (not threadsafe) function removes an interface from the reactor.
+@param inputFileDescriptor: The file interface to remove
+
+@throws: This function can throw exceptions
+*/
+template <class classType> void reactor<classType>::removeInterface(FILE *inputFileDescriptor)
+{
+//Remove from maps
+fileInterfaces.erase(fileno(inputFileDescriptor));
+fileNumberToHandlerFunction.erase(fileno(inputFileDescriptor));
+for(auto iter = nameToFileDescriptor.begin(); iter != nameToFileDescriptor.end(); iter++)
+{ //Search to find given socket
+if(iter->second == inputFileDescriptor)
+{
+nameToFileDescriptor.erase(iter);
+break;
+}
+}
+
+fclose(inputFileDescriptor);
 
 
 SOM_TRY //Regenerate poll items so that this interface is no longer included
@@ -174,6 +211,22 @@ return nameToSocket.at(inputInterfaceName);
 }
 
 /**
+This function returns a pointer to the file descriptor for the interface associated with the given name.  If the name is not found, an exception is thrown.
+@param inputInterfaceName: The name of the interface with the file descriptor
+
+@throws: This function can throw exceptions
+*/
+template <class classType>  FILE * reactor<classType>::getFileDescriptor(const std::string &inputInterfaceName)
+{
+if(nameToFileDescriptor.count(inputInterfaceName) == 0)
+{
+throw SOMException("Expected file descriptor not present in reactor\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __FILE__, __LINE__);
+}
+
+return nameToFileDescriptor.at(inputInterfaceName);
+}
+
+/**
 This function sends the termination signal to the reactor's thread and waits for it to shut down. 
 */
 template <class classType> reactor<classType>::~reactor()
@@ -192,6 +245,11 @@ fprintf(stderr, "%s", inputException.what());
 
 //Wait for threads to finish
 reactorThread->join();
+
+for(auto iter = fileInterfaces.begin(); iter != fileInterfaces.end(); iter++)
+{
+fclose(iter->second); //TODO: replace with custom delete unique pointers
+}
 }
 
 
@@ -233,7 +291,8 @@ if(pollItems[0].revents & ZMQ_POLLIN)
 return; //Shutdown message received, so return
 }
 
-//Handle all of the messages
+//Handle all of the messages from sockets
+{
 auto iter = interfaces.begin();
 for(int i=1; i<numberOfPollItems && iter != interfaces.end(); i++)
 {
@@ -247,8 +306,26 @@ break; //Function has requested that the polling loop be restarted, so skip the 
 SOM_CATCH("Error with message processing function\n")
 }
 
+iter++;
+}
+}
+
+{
+auto iter = fileInterfaces.begin();
+for(int i=interfaces.size()+1; i<numberOfPollItems && iter != fileInterfaces.end(); i++)
+{
+if(pollItems[i].revents & ZMQ_POLLIN)
+{ //Call associated message handling function
+SOM_TRY
+if((fileNumberToHandlerFunction.at(iter->first))(classInstance, *this, iter->second) == true)
+{
+break; //Function has requested that the polling loop be restarted, so skip the rest of the entries
+}
+SOM_CATCH("Error with message processing function\n")
+}
 
 iter++;
+}
 }
 
 
@@ -269,7 +346,7 @@ This function regenerates the pollItems array given the current set of sockets.
 */
 template <class classType> void reactor<classType>::regenerateZMQPollArray()
 {
-numberOfPollItems = interfaces.size()+1;
+numberOfPollItems = interfaces.size()+fileInterfaces.size()+1;
 SOM_TRY
 pollItems.reset(new zmq::pollitem_t[numberOfPollItems]);
 SOM_CATCH("Error creating poll items\n")
@@ -277,12 +354,24 @@ SOM_CATCH("Error creating poll items\n")
 //First poll item is always the shutdown socket
 pollItems[0] = {(void *) (*(shutdownReceivingSocket)), 0, ZMQ_POLLIN, 0};
 
+{
 auto iter = interfaces.begin();
 for(int i=1; i<numberOfPollItems && iter != interfaces.end(); i++)
 {
 pollItems[i] = {(void *) (*(iter->second)), 0, ZMQ_POLLIN, 0};
 iter++;
 }
+}
+
+{
+auto iter = fileInterfaces.begin();
+for(int i=interfaces.size()+1; i<numberOfPollItems && iter != fileInterfaces.end(); i++)
+{
+pollItems[i] = {nullptr, iter->first, ZMQ_POLLIN, 0};
+iter++;
+}
+}
+
 }
 
 

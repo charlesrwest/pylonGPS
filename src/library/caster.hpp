@@ -549,14 +549,7 @@ This function removes all entries of the map with the specific key/value.
 */
 void removeKeyValuePairFromStringMultimap(std::multimap<std::string, std::string> &inputMultimap, const std::string &inputKey, const std::string &inputValue);
 
-/**
-This function calculates the signature for the given string/private signing key and preappends it to the message.
-@param inputMessage: The message to sign
-@param inputSigningSecretKey: The secret key to sign with (must be crypto_sign_SECRETKEYBYTES bytes)
 
-@throws: This function can throw exceptions
-*/
-std::string calculateAndPreappendSignature(const std::string &inputMessage, const std::string &inputSigningSecretKey);
 
 }
 

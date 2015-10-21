@@ -1,0 +1,7 @@
+package pylongps; //Put in pylongps namespace
+
+//This message is used to notify listeners to a data receiver if something has happened (such as an unrecoverable error).
+message data_receiver_status_notification
+{
+optional bool unrecoverable_error_has_occurred = 10; //The receiver has gone offline
+} 

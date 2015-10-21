@@ -174,3 +174,25 @@ SOM_TRY
 return receiveProtobufMessage(inputSocketToSendAndReceiveFrom, inputMessageReplyBuffer);
 SOM_CATCH("Error, unable to get reply message\n")
 }
+
+/**
+This function calculates the signature for the given string/private signing key and preappends it to the message.
+@param inputMessage: The message to sign
+@param inputSigningSecretKey: The secret key to sign with (must be crypto_sign_SECRETKEYBYTES bytes)
+
+@throws: This function can throw exceptions
+*/
+std::string pylongps::calculateAndPreappendSignature(const std::string &inputMessage, const std::string &inputSigningSecretKey)
+{
+if(inputSigningSecretKey.size() != crypto_sign_SECRETKEYBYTES)
+{
+throw SOMException("Invalid signing secret key\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
+}
+
+//Generate signature
+unsigned char cryptoSignature[crypto_sign_BYTES];
+
+crypto_sign_detached(cryptoSignature, nullptr, (const unsigned char *) inputMessage.c_str(), inputMessage.size(), (const unsigned char *) inputSigningSecretKey.c_str());
+
+return std::string((const char *) cryptoSignature, crypto_sign_BYTES) + inputMessage;
+}

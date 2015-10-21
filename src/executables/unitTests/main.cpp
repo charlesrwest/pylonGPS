@@ -12,10 +12,125 @@
 #include "protobuf_sql_converter_test_message.pb.h"
 #include "utilityFunctions.hpp"
 #include "reactor.hpp"
-
+#include<unistd.h>
+#include "fileDataReceiver.hpp"
+#include<Poco/Net/StreamSocket.h>
+#include "tcpDataReceiver.hpp"
+#include "transceiver.hpp"
+//#include "ntripV1DataReceiver.hpp"
 
 using namespace pylongps; //Use pylongps classes without alteration for now
 using namespace pylongps_protobuf_sql_converter; //Use protobuf/sql converter test message
+
+/*
+TEST_CASE("ZMQ stream socket", "[talker]")
+{
+SECTION("ZMQ stream socket", "[talker]")
+{
+std::unique_ptr<zmq::context_t> context;
+
+SOM_TRY
+context.reset(new zmq::context_t());
+SOM_CATCH("Error initializing context\n")
+
+
+
+//Create socket to talk to TCP socket
+std::unique_ptr<zmq::socket_t> testSocket;
+
+SOM_TRY //Init socket
+testSocket.reset(new zmq::socket_t(*context, ZMQ_STREAM));
+SOM_CATCH("Error making socket\n")
+
+SOM_TRY
+int timeoutWaitTime = 5000; //Max 5 seconds
+testSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
+SOM_CATCH("Error setting socket timeout\n")
+
+SOM_TRY //Connect to caster
+testSocket->connect("tcp://127.0.0.1:9001");
+SOM_CATCH("Error connecting socket for registration with caster\n")
+
+char connectionIdentityBuffer[256];
+size_t connectionIdentitySize = 256;
+
+SOM_TRY
+testSocket->getsockopt(ZMQ_IDENTITY, connectionIdentityBuffer, &connectionIdentitySize);
+SOM_CATCH("Error setting socket option\n")
+
+std::string connectionIdentity(connectionIdentityBuffer, connectionIdentitySize);
+
+printf("Socket ID size: %ld\n", connectionIdentity.size());
+
+std::string testString = "this is a test string\n";
+while(true)
+{
+SOM_TRY
+testSocket->send(connectionIdentity.c_str(), connectionIdentity.size(), ZMQ_SNDMORE);
+testSocket->send(testString.c_str(), testString.size());
+SOM_CATCH("Error, unable to send message\n");
+std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+}
+
+}
+}
+*/
+
+/*
+TEST_CASE("File reading", "[Echo]")
+{
+SECTION("Echo section", "[echo]")
+{
+std::unique_ptr<zmq::context_t> context;
+
+SOM_TRY
+context.reset(new zmq::context_t());
+SOM_CATCH("Error initializing context\n")
+
+ntripV1DataReceiver receiver("207.4.96.200:2101", *context, "VRS_RTCM3",35.7928540, -78.6738100, );
+
+fflush(stdout);
+
+//Create socket to subscribe to caster
+std::unique_ptr<zmq::socket_t> subscriberSocket;
+
+
+SOM_TRY //Init socket
+subscriberSocket.reset(new zmq::socket_t(*context, ZMQ_SUB));
+SOM_CATCH("Error making socket\n")
+
+SOM_TRY
+int timeoutWaitTime = 5000; //Max 5 seconds
+subscriberSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
+SOM_CATCH("Error setting socket timeout\n")
+
+SOM_TRY //Connect to caster
+subscriberSocket->connect(receiver.address().c_str());
+SOM_CATCH("Error connecting socket for registration with caster\n")
+
+SOM_TRY //Set filter to allow any published messages to be received
+subscriberSocket->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
+SOM_CATCH("Error setting subscription for socket\n")
+
+
+//Sleep for a few milliseconds to allow connection to stabilize so no messages are missed
+std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+while(true)
+{
+zmq::message_t messageBuffer;
+
+SOM_TRY
+subscriberSocket->recv(&messageBuffer);
+SOM_CATCH("Error, unable to receive message\n")
+
+fwrite(messageBuffer.data(), sizeof(char), messageBuffer.size(), stdout);
+}
+
+}
+}
+
+*/
 
 TEST_CASE("Test template deduction", "[template deduction]")
 {
@@ -29,6 +144,18 @@ printf("Testing type deduction\n");
 //print(testDouble);
 //print(testString);
 
+std::unique_ptr<zmq::context_t> context;
+
+SOM_TRY
+context.reset(new zmq::context_t);
+SOM_CATCH("Error initializing ZMQ context\n")
+
+printf("Genesis of Bob\n");
+transceiver bob(*context);
+
+printf("Start\n");
+bob.createPylonGPSV2DataReceiver("127.0.0.1:9001", 0, 0);
+printf("Going out of scope\n");
 }
 }
 
@@ -407,7 +534,7 @@ REQUIRE(retrievedValues.size() == 0);
 }
 }
 
-TEST_CASE( "Test unauthenticated stream registration", "[test]")
+TEST_CASE( "Test unauthenticated stream registration and caster transceiver", "[test]")
 {
 
 SECTION( "Build a caster")
@@ -509,61 +636,14 @@ REQUIRE(registrationReply.IsInitialized() == true);
 
 REQUIRE(registrationReply.request_succeeded() == true);
 
-SECTION( "Send/receive update")
-{
-//Base station registered, so subscribe and see if we get the next message send
-//Create socket to subscribe to caster
-std::unique_ptr<zmq::socket_t> subscriberSocket;
-
-SOM_TRY //Init socket
-subscriberSocket.reset(new zmq::socket_t(*context, ZMQ_SUB));
-SOM_CATCH("Error making socket\n")
-
-SOM_TRY
-int timeoutWaitTime = 5000; //Max 5 seconds
-subscriberSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
-SOM_CATCH("Error setting socket timeout\n")
-
-SOM_TRY //Connect to caster
-std::string connectionString = "tcp://127.0.0.1:" +std::to_string(clientPublishingPort);
-subscriberSocket->connect(connectionString.c_str());
-SOM_CATCH("Error connecting socket for registration with caster\n")
-
-SOM_TRY //Set filter to allow any published messages to be received
-subscriberSocket->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
-SOM_CATCH("Error setting subscription for socket\n")
-
-//Sleep for a few milliseconds to allow connection to stabilize so no messages are missed
-std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-//Send message to caster and see if we get it back with the subscriber
-std::string testString = "This is a test string\n";
-SOM_TRY
-registrationSocket->send(testString.c_str(), testString.size());
-SOM_CATCH("Error sending message to caster\n")
-
-SOM_TRY
-messageBuffer.reset(new zmq::message_t);
-SOM_CATCH("Error initializing ZMQ message")
-
-REQUIRE(subscriberSocket->recv(messageBuffer.get()) == true);
-
-//Check message format
-REQUIRE(messageBuffer->size() == (testString.size() + sizeof(Poco::Int64)*2));
-
-REQUIRE(Poco::ByteOrder::fromNetwork(*((Poco::Int64 *) messageBuffer->data())) == casterID);
-
-REQUIRE(std::string((((const char *) messageBuffer->data()) + sizeof(Poco::Int64)*2), testString.size()) == testString);
-
-} //Send/receive update
-
-SECTION( "Send a query")
+SECTION( "Send a query, Send/receive update")
 {
 //Send a query and see if we get a valid response
-std::string serializedClientRequest;
 client_query_request clientRequest; //Empty request should return all
+client_query_reply clientReply;
 
-clientRequest.SerializeToString(&serializedClientRequest);
+transceiver::queryPylonGPSV2Caster()
+
 
 std::unique_ptr<zmq::socket_t> clientSocket;
 
@@ -716,6 +796,70 @@ REQUIRE(replyBaseStationInfo.has_message_format());
 REQUIRE(replyBaseStationInfo.message_format() == RTCM_V3_1);
 REQUIRE(replyBaseStationInfo.has_informal_name());
 REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation");
+
+//Base station registered, so subscribe and see if we get the next message send
+
+std::unique_ptr<tranceiver> com;
+
+SOM_TRY
+com.reset(new tranceiver(*context));
+SOM_CATCH("Error initializing transceiver\n")
+
+//Make transciever subscribe to our basestation in the caster and forward the data to a ZMQ PUB socket
+std::string receiverConnectionString;
+
+SOM_TRY
+receiverConnectionString = com->createPylonGPSV2DataReceiver("127.0.0.1:"+std::to_string(clientPublishingPort), casterID, baseStationID) 
+SOM_CATCH("Error, unable to make receiver\n")
+
+//Create socket to subscribe to caster
+std::unique_ptr<zmq::socket_t> subscriberSocket;
+
+SOM_TRY //Init socket
+subscriberSocket.reset(new zmq::socket_t(*context, ZMQ_SUB));
+SOM_CATCH("Error making socket\n")
+
+SOM_TRY
+int timeoutWaitTime = 5000; //Max 5 seconds
+subscriberSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
+SOM_CATCH("Error setting socket timeout\n")
+
+SOM_TRY //Connect to caster
+std::string connectionString = "tcp://127.0.0.1:" +std::to_string(clientPublishingPort);
+subscriberSocket->connect(connectionString.c_str());
+SOM_CATCH("Error connecting socket for registration with caster\n")
+
+SOM_TRY //Set filter to allow any published messages to be received
+subscriberSocket->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
+SOM_CATCH("Error setting subscription for socket\n")
+
+//Sleep for a few milliseconds to allow connection to stabilize so no messages are missed
+std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+//Send message to caster and see if we get it back with the subscriber
+std::string testString = "This is a test string\n";
+SOM_TRY
+registrationSocket->send(testString.c_str(), testString.size());
+SOM_CATCH("Error sending message to caster\n")
+
+SOM_TRY
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error initializing ZMQ message")
+
+REQUIRE(subscriberSocket->recv(messageBuffer.get()) == true);
+
+//Check message format
+REQUIRE(messageBuffer->size() == (testString.size() + sizeof(Poco::Int64)*2));
+
+REQUIRE(Poco::ByteOrder::fromNetwork(*((Poco::Int64 *) messageBuffer->data())) == casterID);
+
+REQUIRE(std::string((((const char *) messageBuffer->data()) + sizeof(Poco::Int64)*2), testString.size()) == testString);
+
+} //Send/receive update
+
+SECTION( "Send a query")
+{
+
 } //Send queries
 } //Register unauthenticated stream
 
@@ -935,6 +1079,7 @@ REQUIRE(std::string((((const char *) messageBuffer->data()) + sizeof(Poco::Int64
 
 SECTION( "Send a query")
 {
+std::this_thread::sleep_for(std::chrono::milliseconds(10));
 //Send a query and see if we get a valid response
 std::string serializedClientRequest;
 client_query_request clientRequest; //Empty request should return all
@@ -1253,6 +1398,9 @@ clientSocket->connect(connectionString.c_str());
 SOM_CATCH("Error connecting socket for registration with caster\n")
 
 int64_t firstBaseStationID = 0;
+
+//Give a little time for the updates to propogate
+std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 //Send a query and verify the added basestation shows up in the second caster
 client_query_request queryRequest; //Empty request should return all

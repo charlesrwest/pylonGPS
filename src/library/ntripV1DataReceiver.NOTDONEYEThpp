@@ -1,0 +1,131 @@
+#pragma once
+
+#include<cstdint>
+#include<memory>
+#include<thread>
+#include<string>
+#include<cstdio>
+#include<unistd.h>
+#include<Poco/Net/HTTPRequest.h>
+#include<Poco/Base64Encoder.h>
+#include<sstream>
+
+#include "dataReceiver.hpp"
+#include "SOMException.hpp"
+#include "SOMScopeGuard.hpp"
+#include "zmq.hpp"
+#include "reactor.hpp"
+#include "utilityFunctions.hpp"
+#include "NMEAGGASentence.hpp"
+
+
+
+namespace pylongps
+{
+
+/**
+This class reads data from a NTRIP 1.0 caster and publishes it at the associated inproc ZMQ publisher address.  It will automatically attempt to reconnect if the connection is closed.
+*/
+class ntripV1DataReceiver : public dataReceiver
+{
+public:
+/**
+This function initializes the ntripV1DataReceiver to retrieve data from the given TCP address/port.
+@param inputIPAddressAndPort: A string with the IP address/port in format "IPAddress:portNumber"
+@param inputContext: A reference to the ZMQ context to use
+@param inputMountPoint: The mount point to get data from
+@param inputUser: A (optional) user to use with basic authentication 
+@param inputPassword: The (optional) password required required to access the server (in plain text, not encoded)
+
+@throws: This function can throw exceptions
+*/
+ntripV1DataReceiver(const std::string &inputIPAddressAndPort, zmq::context_t &inputContext, const std::string &inputMountPoint, const std::string &inputUser = "", const std::string &inputPassword = "");
+
+/**
+This function initializes the ntripV1DataReceiver to retrieve data from the given TCP address/port.
+@param inputIPAddressAndPort: A string with the IP address/port in format "IPAddress:portNumber"
+@param inputContext: A reference to the ZMQ context to use
+@param inputMountPoint: The mount point to get data from
+@param inputLatitude: The approximate latitude of the data requester
+@param inputLongitude: The approximate longitude of the data requester
+@param inputUser: A (optional) user to use with basic authentication 
+@param inputPassword: The (optional) password required required to access the server (in plain text, not encoded)
+
+@throws: This function can throw exceptions
+*/
+ntripV1DataReceiver(const std::string &inputIPAddressAndPort, zmq::context_t &inputContext, const std::string &inputMountPoint, double inputLatitude, double inputLongitude, const std::string &inputUser = "", const std::string &inputPassword = "");
+
+/**
+This function returns a string containing the ZMQ connection string required to connect this object's publisher (which forwards data from the associated file).
+@return: The connection string to use to connect to this data source
+*/
+virtual std::string address();
+
+zmq::context_t &context;
+std::unique_ptr<zmq::socket_t> publishingSocket;
+std::string publisherConnectionString; //String used to connect to this object's publisher
+std::unique_ptr<reactor<ntripV1DataReceiver> > receiverReactor;
+
+std::string mountPoint;
+std::string user;
+std::string password;
+
+
+protected:
+std::string ntripRequestString; //The request to use to initiate/reconnect the ntrip connection
+bool TCPConnectionActive = false;
+bool waitingForRequestResponseFromServer = false;
+
+std::string currentConnectionID; //The current ZMQ connection ID for the TCP connection
+std::string requestResponseFromServerBuffer; //The buffer used to store partial segments until a "\r\n" is received
+
+bool usingNMEAExtension = false;
+double latitude;
+double longitude;
+
+/**
+This function initializes the ntripV1DataReceiver to retrieve data from the given TCP address/port.  Used instead of subconstructor so the default values don't override those set by the higher level constructor. 
+@param inputIPAddressAndPort: A string with the IP address/port in format "IPAddress:portNumber"
+@param inputContext: A reference to the ZMQ context to use
+@param inputMountPoint: The mount point to get data from
+@param inputUser: A (optional) user to use with basic authentication 
+@param inputPassword: The (optional) password required required to access the server (in plain text, not encoded)
+
+@throws: This function can throw exceptions
+*/
+void subConstructor(const std::string &inputIPAddressAndPort, zmq::context_t &inputContext, const std::string &inputMountPoint, const std::string &inputUser = "", const std::string &inputPassword = "");
+
+/**
+This function talks with the NTRIP TCP port and forwards the received data to the publisher socket.
+@param inputReactor: The reactor which called the function
+@param inputFileDescriptor: The file descriptor to read from
+@return: false if the reactor doesn't need to restart its poll cycle
+
+@throw: This function can throw exceptions
+*/
+bool readAndPublishData(reactor<ntripV1DataReceiver> &inputReactor, zmq::socket_t &inputSocket);
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+}

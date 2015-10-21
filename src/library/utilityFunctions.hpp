@@ -6,7 +6,7 @@
 #include <tuple>
 #include<memory>
 #include<google/protobuf/message.h>
-
+#include <sodium.h>
 #include<iostream>
 
 namespace pylongps
@@ -65,6 +65,15 @@ This function sends the given protobuf object as a request using the given socke
 @throws: This function can throw exceptions
 */
 std::tuple<bool, bool> remoteProcedureCall(zmq::socket_t &inputSocketToSendAndReceiveFrom, const google::protobuf::Message &inputRequestMessage, google::protobuf::Message &inputMessageReplyBuffer);
+
+/**
+This function calculates the signature for the given string/private signing key and preappends it to the message.
+@param inputMessage: The message to sign
+@param inputSigningSecretKey: The secret key to sign with (must be crypto_sign_SECRETKEYBYTES bytes)
+
+@throws: This function can throw exceptions
+*/
+std::string calculateAndPreappendSignature(const std::string &inputMessage, const std::string &inputSigningSecretKey);
 
 }
 

@@ -13,18 +13,22 @@ namespace pylongps
 
 
 /**
-This class is an abstract base class that defines the interfaces for a "dataTransmitter" class which forwards data from a local source over a zmq inproc publisher socket.
+This class is an abstract base class that defines the interfaces for a "dataTransmitter" class which forwards data from a local source over a zmq inproc publisher socket.  If an error occurs, it is published to a ZMQ PUB socket claiming the notificationAddress.
 */
-class dataTransmitter
+class dataSender
 {
 public:
-/**
-This function has the data subscriber remove any previous connections it held and subscribe to the address given here.
-@param inputConnectionString: The ZMQ connection string to use
 
-@throw: This function can throw exceptions
+/**
+This function is required to return a ZMQ inproc address which can be used with the context given to the data receiver to access status notifications regarding the object.
+@return: The connection string required to connect to the given object's notification stream
 */
-virtual void connect(const std::string &inputConnectionString);
+virtual std::string notificationAddress();
+
+/**
+This specifies the destructor as virtual so that the derived classes will have their destructors called if a base class pointer to them is deleted.
+*/
+virtual ~dataSender(){}
 };
 
 
