@@ -27,7 +27,7 @@ This function initializes the fileDataSender to send data to the given file.  Th
 */
 fileDataSender::fileDataSender(const std::string &inputZMQConnectionString, zmq::context_t &inputContext, const std::string &inputFilePath) : filePointer(nullptr, &fclose), context(inputContext)
 {
-FILE *file = fopen(inputFilePath.c_str(), "rb");
+FILE *file = fopen(inputFilePath.c_str(), "wb");
 if(file == nullptr)
 {
 throw SOMException("Unable to open file path\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
@@ -69,7 +69,6 @@ if(fwrite(messageBuffer.data(), messageBuffer.size(), 1, filePointer.get()) != 1
 throw SOMException("File write error\n", SERVER_REQUEST_FAILED, __FILE__, __LINE__);
 }
 fflush(filePointer.get());
-
 }
 catch(const std::exception &inputException)
 {

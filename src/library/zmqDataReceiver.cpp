@@ -132,7 +132,10 @@ try
 zmq::message_t messageBuffer;
 
 SOM_TRY
-inputSocket.recv(&messageBuffer);
+if(!inputSocket.recv(&messageBuffer))
+{
+return false; //False alarm 
+}
 SOM_CATCH("Error, unable to receive message\n")
 
 if(!stripHeader)

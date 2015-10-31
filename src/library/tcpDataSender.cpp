@@ -36,6 +36,7 @@ SOM_TRY //Bind
 tcpSocket->bind(connectionString.c_str());
 SOM_CATCH("Error connecting socket\n")
 
+
 //Create socket for subscribing
 SOM_TRY
 subscriberSocket.reset(new zmq::socket_t(context, ZMQ_SUB));
@@ -105,7 +106,10 @@ try
 zmq::message_t messageBuffer;
 
 SOM_TRY
-inputSocket.recv(&messageBuffer);
+if(!inputSocket.recv(&messageBuffer))
+{
+return false; //False alarm
+}
 SOM_CATCH("Error, unable to receive message\n")
 
 for(auto iter = connectionIDs.begin(); iter != connectionIDs.end(); iter++)
@@ -150,7 +154,10 @@ try
 zmq::message_t messageBuffer[2];
 
 SOM_TRY
-inputSocket.recv(&(messageBuffer[0]));
+if(!inputSocket.recv(&(messageBuffer[0])) )
+{
+return false; //False alarm
+}
 SOM_CATCH("Error, unable to receive message\n")
 
 do

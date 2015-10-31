@@ -124,6 +124,45 @@ return address;
 
 
 /**
+This function initializes a tcpDataSender to send data to anyone who connects to the given port using TCP.
+@param inputSourceConnectionString: The connection string to use to subscribe to the ZMQ PUB socket that is providing the data
+@param inputPortNumberToPublishOn: The port number to publish on
+@return: The data sender ID to use for operations on the data sender
+
+@throws: This function can throw exceptions
+*/
+std::string transceiver::createTCPDataSender(const std::string &inputSourceConnectionString, int inputPortNumberToPublishOn)
+{
+std::unique_ptr<dataSender> sender;
+
+SOM_TRY
+sender.reset((dataSender *) new tcpDataSender(inputSourceConnectionString, context, inputPortNumberToPublishOn));
+SOM_CATCH("Error, unable to initialize tcpDataSender\n")
+
+return addDataSender(inputSourceConnectionString, sender);
+}
+
+/**
+This function initializes a zmqDataSender to send data to anyone who connects to the given port using a ZMQ SUB socket.
+@param inputSourceConnectionString: The connection string to use to subscribe to the ZMQ PUB socket that is providing the data
+@param inputPortNumberToPublishOn: The port number to publish on
+@return: The data sender ID to use for operations on the data sender
+
+@throws: This function can throw exceptions
+*/
+std::string transceiver::createZMQDataSender(const std::string &inputSourceConnectionString, int inputPortNumberToPublishOn)
+{
+std::unique_ptr<dataSender> sender;
+
+SOM_TRY
+sender.reset((dataSender *) new zmqDataSender(inputSourceConnectionString, context, inputPortNumberToPublishOn));
+SOM_CATCH("Error, unable to initialize tcpDataSender\n")
+
+return addDataSender(inputSourceConnectionString, sender);
+}
+
+
+/**
 This function initializes a casterDataSender to establish a connection and register an unauthenticated basestation with it.
 @param inputSourceConnectionString: The connection string to use to subscribe to the ZMQ PUB socket that is providing the data
 @param inputCasterRegistrationIPAddressAndPort: The IP address/port to use for registration with the caster in the form "IPAddress:Port"
@@ -138,30 +177,13 @@ This function initializes a casterDataSender to establish a connection and regis
 */
 std::string transceiver::createPylonGPSV2DataSender(const std::string &inputSourceConnectionString, const std::string &inputCasterRegistrationIPAddressAndPort, double inputLatitude, double inputLongitude, corrections_message_format inputMessageFormat, const std::string &inputInformalName, double inputExpectedUpdateRate)
 {
-if(dataReceiverConnectionStringToDataReceiver.count(inputSourceConnectionString) == 0)
-{
-throw SOMException("dataReceiver connection string is invalid\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
-}
-
 std::unique_ptr<dataSender> sender;
 
 SOM_TRY
 sender.reset((dataSender *) new casterDataSender(inputSourceConnectionString, context, inputCasterRegistrationIPAddressAndPort, inputLatitude, inputLongitude, inputMessageFormat, inputInformalName, inputExpectedUpdateRate));
 SOM_CATCH("Error, unable to initialize casterDataSender\n")
 
-std::string URI = std::to_string(URINumberGenerator);
-URINumberGenerator++;
-
-dataSenderIDToDataSender.emplace(URI, std::move(sender));
-
-if(dataReceiverConnectionStringToListeningDataSenderIDs.count(inputSourceConnectionString))
-{
-dataReceiverConnectionStringToListeningDataSenderIDs.emplace(inputSourceConnectionString, std::set<std::string>());
-}
-
-dataReceiverConnectionStringToListeningDataSenderIDs.at(inputSourceConnectionString).insert(URI);
-
-return URI;
+return addDataSender(inputSourceConnectionString, sender);
 }
 
 /**
@@ -181,30 +203,13 @@ This function initializes a casterDataSender to establish a connection and regis
 */
 std::string transceiver::createPylonGPSV2DataSender(const std::string &inputSourceConnectionString, const std::string &inputSecretSigningKey, const credentials &inputCredentials, const std::string &inputCasterRegistrationIPAddressAndPort, double inputLatitude, double inputLongitude, corrections_message_format inputMessageFormat, const std::string &inputInformalName, double inputExpectedUpdateRate)
 {
-if(dataReceiverConnectionStringToDataReceiver.count(inputSourceConnectionString) == 0)
-{
-throw SOMException("dataReceiver connection string is invalid\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
-}
-
 std::unique_ptr<dataSender> sender;
 
 SOM_TRY
 sender.reset((dataSender *) new casterDataSender(inputSourceConnectionString, context, inputSecretSigningKey, inputCredentials, inputCasterRegistrationIPAddressAndPort, inputLatitude, inputLongitude, inputMessageFormat, inputInformalName, inputExpectedUpdateRate));
 SOM_CATCH("Error, unable to initialize casterDataSender\n")
 
-std::string URI = std::to_string(URINumberGenerator);
-URINumberGenerator++;
-
-dataSenderIDToDataSender.emplace(URI, std::move(sender));
-
-if(dataReceiverConnectionStringToListeningDataSenderIDs.count(inputSourceConnectionString))
-{
-dataReceiverConnectionStringToListeningDataSenderIDs.emplace(inputSourceConnectionString, std::set<std::string>());
-}
-
-dataReceiverConnectionStringToListeningDataSenderIDs.at(inputSourceConnectionString).insert(URI);
-
-return URI;
+return addDataSender(inputSourceConnectionString, sender);
 }
 
 /**
@@ -217,29 +222,13 @@ This function initializes a fileDataSender to send data to the given file.  The 
 */
 std::string transceiver::createFileDataSender(const std::string &inputSourceConnectionString, FILE *inputFilePointer)
 {
-if(dataReceiverConnectionStringToDataReceiver.count(inputSourceConnectionString) == 0)
-{
-throw SOMException("dataReceiver connection string is invalid\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
-}
-
 std::unique_ptr<dataSender> sender;
 
 SOM_TRY
 sender.reset((dataSender *) new fileDataSender(inputSourceConnectionString, context, inputFilePointer));
 SOM_CATCH("Error, unable to initialize fileDataSender\n")
 
-std::string URI = std::to_string(URINumberGenerator);
-URINumberGenerator++;
-
-dataSenderIDToDataSender.emplace(URI, std::move(sender));
-
-if(dataReceiverConnectionStringToListeningDataSenderIDs.count(inputSourceConnectionString))
-{
-dataReceiverConnectionStringToListeningDataSenderIDs.emplace(inputSourceConnectionString, std::set<std::string>());
-}
-
-dataReceiverConnectionStringToListeningDataSenderIDs.at(inputSourceConnectionString).insert(URI);
-return URI;
+return addDataSender(inputSourceConnectionString, sender);
 }
 
 /**
@@ -252,29 +241,13 @@ This function initializes a fileDataSender to send data to the given file.
 */
 std::string transceiver::createFileDataSender(const std::string &inputSourceConnectionString, const std::string &inputFilePath)
 {
-if(dataReceiverConnectionStringToDataReceiver.count(inputSourceConnectionString) == 0)
-{
-throw SOMException("dataReceiver connection string is invalid\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
-}
-
 std::unique_ptr<dataSender> sender;
 
 SOM_TRY
 sender.reset((dataSender *) new fileDataSender(inputSourceConnectionString, context, inputFilePath));
 SOM_CATCH("Error, unable to initialize fileDataSender\n")
 
-std::string URI = std::to_string(URINumberGenerator);
-URINumberGenerator++;
-
-dataSenderIDToDataSender.emplace(URI, std::move(sender));
-if(dataReceiverConnectionStringToListeningDataSenderIDs.count(inputSourceConnectionString))
-{
-dataReceiverConnectionStringToListeningDataSenderIDs.emplace(inputSourceConnectionString, std::set<std::string>());
-}
-
-dataReceiverConnectionStringToListeningDataSenderIDs.at(inputSourceConnectionString).insert(URI);
-
-return URI;
+return addDataSender(inputSourceConnectionString, sender);
 }
 
 
@@ -313,7 +286,7 @@ bool messageDeserialized = false;
 client_query_reply reply;
 
 SOM_TRY
-receiveProtobufMessage(*clientSocket, reply);
+std::tie(messageReceived, messageDeserialized) = receiveProtobufMessage(*clientSocket, reply);
 SOM_CATCH("Error getting reply\n")
 
 if(messageReceived == false || messageDeserialized == false)
@@ -322,4 +295,27 @@ throw SOMException("Invalid response from caster\n", INCORRECT_SERVER_RESPONSE, 
 }
 
 return reply;
+}
+
+/**
+This function adds the given data sender reference to the transceiver's maps and generates/returns the associated URI.
+@param inputSourceConnectionString: The connection string that the sender is connected to
+@param inputDataSender: A reference to the unique_ptr which currently owns the data sender (ownership is transferred to the dataReceiverConnectionStringToDataReceiver map)
+
+@return: The URI that has been assigned to this sender
+*/
+std::string transceiver::addDataSender(const std::string &inputSourceConnectionString, std::unique_ptr<dataSender> &inputDataSender)
+{
+std::string URI = std::to_string(URINumberGenerator);
+URINumberGenerator++;
+
+dataSenderIDToDataSender.emplace(URI, std::move(inputDataSender));
+if(dataReceiverConnectionStringToListeningDataSenderIDs.count(inputSourceConnectionString) == 0)
+{
+dataReceiverConnectionStringToListeningDataSenderIDs.emplace(inputSourceConnectionString, std::set<std::string>());
+}
+
+dataReceiverConnectionStringToListeningDataSenderIDs.at(inputSourceConnectionString).insert(URI);
+
+return URI;
 }

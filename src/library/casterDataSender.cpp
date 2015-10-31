@@ -161,11 +161,12 @@ try
 {
 zmq::message_t messageBuffer;
 
+
 SOM_TRY
 inputSocket.recv(&messageBuffer);
 SOM_CATCH("Error, unable to receive message\n")
 
-if(secretKey.size())
+if(secretKey.size() == 0)
 { //Unauthenticated connection
 SOM_TRY
 sendingSocket->send(messageBuffer.data(), messageBuffer.size());

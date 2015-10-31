@@ -79,6 +79,25 @@ This function creates a tcpDataReceiver to retrieve data from the given raw TCP 
 */
 std::string createTCPDataReceiver(const std::string &inputIPAddressAndPort);
 
+/**
+This function initializes a tcpDataSender to send data to anyone who connects to the given port using TCP.
+@param inputSourceConnectionString: The connection string to use to subscribe to the ZMQ PUB socket that is providing the data
+@param inputPortNumberToPublishOn: The port number to publish on
+@return: The data sender ID to use for operations on the data sender
+
+@throws: This function can throw exceptions
+*/
+std::string createTCPDataSender(const std::string &inputSourceConnectionString, int inputPortNumberToPublishOn);
+
+/**
+This function initializes a zmqDataSender to send data to anyone who connects to the given port using a ZMQ SUB socket.
+@param inputSourceConnectionString: The connection string to use to subscribe to the ZMQ PUB socket that is providing the data
+@param inputPortNumberToPublishOn: The port number to publish on
+@return: The data sender ID to use for operations on the data sender
+
+@throws: This function can throw exceptions
+*/
+std::string createZMQDataSender(const std::string &inputSourceConnectionString, int inputPortNumberToPublishOn);
 
 /**
 This function initializes a casterDataSender to establish a connection and register an unauthenticated basestation with it.
@@ -151,6 +170,15 @@ std::map<std::string, std::set<std::string> > dataReceiverConnectionStringToList
 
 protected:
 int URINumberGenerator = 0;
+
+/**
+This function adds the given data sender reference to the transceiver's maps and generates/returns the associated URI.
+@param inputSourceConnectionString: The connection string that the sender is connected to
+@param inputDataSender: A reference to the unique_ptr which currently owns the data sender (ownership is transferred to the dataReceiverConnectionStringToDataReceiver map)
+
+@return: The URI that has been assigned to this sender
+*/
+std::string addDataSender(const std::string &inputSourceConnectionString, std::unique_ptr<dataSender> &inputDataSender);
 };
 
 

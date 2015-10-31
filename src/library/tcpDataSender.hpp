@@ -23,7 +23,7 @@ namespace pylongps
 /**
 This class takes data published on an inproc ZMQ PUB socket and forwards it to anyone that connects to it via a TCP socket. 
 */
-class tcpDataSender
+class tcpDataSender : public dataSender
 {
 public:
 /**

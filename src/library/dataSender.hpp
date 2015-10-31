@@ -23,12 +23,12 @@ public:
 This function is required to return a ZMQ inproc address which can be used with the context given to the data receiver to access status notifications regarding the object.
 @return: The connection string required to connect to the given object's notification stream
 */
-virtual std::string notificationAddress();
+virtual std::string notificationAddress() = 0;
 
 /**
 This specifies the destructor as virtual so that the derived classes will have their destructors called if a base class pointer to them is deleted.
 */
-virtual ~dataSender(){}
+virtual ~dataSender() {}
 };
 
 

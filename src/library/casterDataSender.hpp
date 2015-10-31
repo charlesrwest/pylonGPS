@@ -27,7 +27,7 @@ const int CASTER_DATA_SENDER_MAX_WAIT_TIME = 1000; //Milliseconds
 /**
 This class takes data published on an inproc ZMQ PUB socket and forwards it to PylonGPS caster.
 */
-class casterDataSender
+class casterDataSender : public dataSender
 {
 public:
 /**

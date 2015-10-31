@@ -105,7 +105,6 @@ SOM_CATCH("Error, unable to receive message\n")
 SOM_TRY
 publishingSocket->send(messageBuffer.data(), messageBuffer.size());
 SOM_CATCH("Error forwarding to publisher\n")
-
 }
 catch(const std::exception &inputException)
 {
