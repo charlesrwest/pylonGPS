@@ -18,69 +18,28 @@ throw SOMException("Received negative port number\n", INVALID_FUNCTION_INPUT, __
 }
 
 informationSourceConnectionString = inputSourceConnectionString;
+//TODO: finish function
+SOM_TRY //Make TCP socket for server to use
+tcpSocket.reset(new Poco::Net::ServerSocket(inputPortNumberToPublishOn));
+SOM_CATCH("Error, unable to create Poco server socket\n")
 
-//Construct reactor
+std::unique_ptr<tcpDataSenderTCPServerConnectionFactoryImplementation> connectionFactory;
+SOM_TRY //Make connection factory for server to use
+connectionFactory.reset(new tcpDataSenderTCPServerConnectionFactoryImplementation(informationSourceConnectionString, context));
+SOM_CATCH("Error, unable to make Poco connection factory\n")
+
+Poco::Net::TCPServerParams *serverParameters = new Poco::Net::TCPServerParams; //TCPServer takes ownership
+
 SOM_TRY
-senderReactor.reset(new reactor<tcpDataSender>(&context, this));
-SOM_CATCH("Error initializing reactor\n")
+tcpServer.reset(new Poco::Net::TCPServer(connectionFactory.get(), *tcpSocket, serverParameters));
+SOM_CATCH("Error initializing Poco tcp server\n")
 
-//Create socket for broadcasting
-std::unique_ptr<zmq::socket_t> tcpSocket;
+connectionFactory.release(); //Release ownership to server
+
 SOM_TRY
-tcpSocket.reset(new zmq::socket_t(context, ZMQ_STREAM));
-SOM_CATCH("Error making socket\n")
-
-std::string connectionString = "tcp://*:" +std::to_string(inputPortNumberToPublishOn);
-
-SOM_TRY //Bind
-tcpSocket->bind(connectionString.c_str());
-SOM_CATCH("Error connecting socket\n")
-
-
-//Create socket for subscribing
-SOM_TRY
-subscriberSocket.reset(new zmq::socket_t(context, ZMQ_SUB));
-SOM_CATCH("Error making socket\n")
-
-//Set to receive all messages
-SOM_TRY //Set filter to allow any published messages to be received
-subscriberSocket->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
-SOM_CATCH("Error setting subscription for subscriberSocket\n")
-
-//Connect to information source
-SOM_TRY
-subscriberSocket->connect(informationSourceConnectionString.c_str());
-SOM_CATCH("Error connecting socket\n")
-
-//Create socket for notification publishing
-SOM_TRY
-notificationPublishingSocket.reset(new zmq::socket_t(context, ZMQ_PUB));
-SOM_CATCH("Error making socket\n")
-
-//Bind socket for publishing and store address
-int extensionStringNumber = 0;
-SOM_TRY //Bind to an dynamically generated address
-std::tie(notificationConnectionString, extensionStringNumber) = bindZMQSocketWithAutomaticAddressGeneration(*notificationPublishingSocket, "zmqDataSenderNotificationSocketAddress");
-SOM_CATCH("Error binding notificationPublishingSocket\n")
-
-//Give ownership of the subscriber socket to the reactor
-SOM_TRY
-senderReactor->addInterface(subscriberSocket, &tcpDataSender::readAndWriteData);
-SOM_CATCH("Error, unable to add interface\n")
-
-tcpSocketReference = tcpSocket.get();
-
-//Give ownership of the tcp socket to the reactor
-SOM_TRY
-senderReactor->addInterface(tcpSocket, &tcpDataSender::handleConnectionDisconnection);
-SOM_CATCH("Error, unable to add interface\n")
-
-//Start the reactor thread
-SOM_TRY
-senderReactor->start();
-SOM_CATCH("Error, unable to start interface\n")
+tcpServer->start();
+SOM_CATCH("Error starting tcp server\n")
 }
-
 
 
 /**
@@ -93,116 +52,82 @@ return notificationConnectionString;
 }
 
 /**
-This function forwards any received messages to the publisher socket
-@param inputReactor: The reactor which called the function
-@param inputSocket: The ZMQ socket to read from
-
-@throw: This function can throw exceptions
+This function shuts down the Poco TCP server.
 */
-bool tcpDataSender::readAndWriteData(reactor<tcpDataSender> &inputReactor, zmq::socket_t &inputSocket)
+tcpDataSender::~tcpDataSender()
 {
-try
-{
-zmq::message_t messageBuffer;
-
-SOM_TRY
-if(!inputSocket.recv(&messageBuffer))
-{
-return false; //False alarm
-}
-SOM_CATCH("Error, unable to receive message\n")
-
-for(auto iter = connectionIDs.begin(); iter != connectionIDs.end(); iter++)
-{
-SOM_TRY //Send message to indicate tcp connection to send to
-tcpSocketReference->send(iter->c_str(), iter->size(), ZMQ_SNDMORE);
-SOM_CATCH("Error forwarding to publisher\n")
-
-SOM_TRY
-tcpSocketReference->send(messageBuffer.data(), messageBuffer.size());
-SOM_CATCH("Error forwarding to publisher\n")
-}
-
-}
-catch(const std::exception &inputException)
-{
-//Send notification and then kill the reactor by throwing an exception
-data_receiver_status_notification notification;
-notification.set_unrecoverable_error_has_occurred(true);
-
-SOM_TRY
-sendProtobufMessage(*notificationPublishingSocket, notification);
-SOM_CATCH("Error sending error notification\n")
-
-throw inputException;
-}
-
-return false;
+tcpServer->stop();
 }
 
 /**
-This function is called when the tcp socket receives a message, which typically signifies a connection starting or terminating.
-@param inputReactor: The reactor which called the function
-@param inputSocket: The ZMQ socket to read from
+This function initializes the connection handler so that it can forward data received from the given source connection string.
+@param inputConnectionSocket: The socket to forward data to
+@param inputSourceConnectionString: The connection string to use for the data source
+@param inputContext: The context to use with the source connection string
 
-@throw: This function can throw exceptions
+@throws: This function can throw exception
 */
-bool tcpDataSender::handleConnectionDisconnection(reactor<tcpDataSender> &inputReactor, zmq::socket_t &inputSocket)
+tcpDataSenderTCPConnectionHandler::tcpDataSenderTCPConnectionHandler(const Poco::Net::StreamSocket &inputConnectionSocket, const std::string &inputSourceConnectionString, zmq::context_t &inputContext) : Poco::Net::TCPServerConnection(inputConnectionSocket), context(inputContext), connectionSocket(inputConnectionSocket)
 {
-try
+sourceConnectionString = inputSourceConnectionString;
+
+SOM_TRY //Init socket
+subscriberSocket.reset(new zmq::socket_t(context, ZMQ_SUB));
+SOM_CATCH("Error making socket\n")
+
+SOM_TRY //Set filter to allow any published messages to be received
+subscriberSocket->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
+SOM_CATCH("Error setting subscription for socket\n")
+
+SOM_TRY //Connect to caster
+subscriberSocket->connect(sourceConnectionString.c_str());
+SOM_CATCH("Error connecting socket with info source\n")
+}
+
+/**
+This function is called to handle the TCP connection that is owned by the base TCPServerConnection object and forwards the received data over the connection.
+*/
+void tcpDataSenderTCPConnectionHandler::run()
 {
-zmq::message_t messageBuffer[2];
+std::unique_ptr<zmq::message_t> messageBuffer;
+Poco::Net::StreamSocket &connection = socket();
+
+while(true)
+{
+SOM_TRY
+messageBuffer.reset(new zmq::message_t);
+SOM_CATCH("Error making zmq message buffer\n")
 
 SOM_TRY
-if(!inputSocket.recv(&(messageBuffer[0])) )
+if(subscriberSocket->recv(messageBuffer.get()) == false)
 {
-return false; //False alarm
+continue; //Nothing received
 }
-SOM_CATCH("Error, unable to receive message\n")
-
-do
-{ //Receive until the entire multipart message has been read
-SOM_TRY
-messageBuffer[1].rebuild(); //Rebuild so it can be used to receive again
-SOM_CATCH("Error rebuilding message buffer\n")
+SOM_CATCH("Error, unable to forward data\n")
 
 SOM_TRY
-inputSocket.recv(&(messageBuffer[1]));
-SOM_CATCH("Error receiving multipart message\n")
-} while(messageBuffer[1].more());
-
-if(messageBuffer[1].size() != 0)
-{
-return false; //This isn't a connect/disconnect notification, so ignore it
-} 
-
-//If the connection ID is new, add it to the list (connection notification)
-//If it is not, remove it from the list (disconnection notification)
-std::string connectionID((char *) messageBuffer[0].data(), messageBuffer[0].size());
-
-if(connectionIDs.count(connectionID) == 0)
-{
-connectionIDs.insert(connectionID);
+connection.sendBytes(messageBuffer->data(), messageBuffer->size());
+SOM_CATCH("Error, couldn't send via Poco socket\n")
 }
-else
-{
-connectionIDs.erase(connectionID);
 }
 
-}
-catch(const std::exception &inputException)
+/**
+This function initializes the factory with the values to pass to the connection handlers.
+@param inputSourceConnectionString: The connection string to connect to a ZMQ_PUB socket which is sending information to forward
+@param inputContext: The zmq context to use
+*/
+tcpDataSenderTCPServerConnectionFactoryImplementation::tcpDataSenderTCPServerConnectionFactoryImplementation(const std::string &inputSourceConnectionString, zmq::context_t &inputContext) : context(inputContext)
 {
-//Send notification and then kill the reactor by throwing an exception
-data_receiver_status_notification notification;
-notification.set_unrecoverable_error_has_occurred(true);
+sourceConnectionString = inputSourceConnectionString;
+}
 
+/**
+This function creates a tcpDataSenderTCPConnectionHandler to handle a particular TCP connection.
+@param inputConnectionSocket: The connection socket to forward the data over
+*/
+Poco::Net::TCPServerConnection *tcpDataSenderTCPServerConnectionFactoryImplementation::createConnection(const Poco::Net::StreamSocket &inputConnectionSocket)
+{
 SOM_TRY
-sendProtobufMessage(*notificationPublishingSocket, notification);
-SOM_CATCH("Error sending error notification\n")
-
-throw inputException;
-}
-
-return false;
-
+return new tcpDataSenderTCPConnectionHandler(inputConnectionSocket, sourceConnectionString, context);
+SOM_CATCH("Error, unable to create connection handler\n")
 }

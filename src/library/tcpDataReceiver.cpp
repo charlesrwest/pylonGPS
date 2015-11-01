@@ -101,8 +101,6 @@ return false; //False alarm
 }
 SOM_CATCH("Error, unable to receive message\n")
 
-printf("Got message0\n");
-
 if(!messageBuffer.more())
 {
 SOM_TRY

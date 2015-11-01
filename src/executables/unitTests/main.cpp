@@ -573,56 +573,39 @@ caster myCaster(context.get(), casterID,registrationPort,clientRequestPort, clie
 
 SECTION( "Register a unauthenticated stream")
 {
-//Create a basestation and register it
-std::string serializedRegistrationRequest;
-transmitter_registration_request registrationRequest;
-auto basestationInfo = registrationRequest.mutable_stream_info();
-basestationInfo->set_latitude(1.0);
-basestationInfo->set_longitude(2.0);
-basestationInfo->set_expected_update_rate(3.0);
-basestationInfo->set_message_format(RTCM_V3_1);
-basestationInfo->set_informal_name("testBasestation");
-
-registrationRequest.SerializeToString(&serializedRegistrationRequest);
-
-
-//Create socket to talk with caster
-std::unique_ptr<zmq::socket_t> registrationSocket;
+std::unique_ptr<zmq::socket_t> testMessagePublisher;
 
 SOM_TRY //Init socket
-registrationSocket.reset(new zmq::socket_t(*context, ZMQ_DEALER));
+testMessagePublisher.reset(new zmq::socket_t(*context, ZMQ_PUB));
 SOM_CATCH("Error making socket\n")
 
-SOM_TRY
-int timeoutWaitTime = 5000; //Max 5 seconds
-registrationSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
-SOM_CATCH("Error setting socket timeout\n")
-
-SOM_TRY //Connect to caster
-std::string connectionString = "tcp://127.0.0.1:" +std::to_string(registrationPort);
-registrationSocket->connect(connectionString.c_str());
-SOM_CATCH("Error connecting socket for registration with caster\n")
-
-SOM_TRY //Send registration request
-registrationSocket->send(serializedRegistrationRequest.c_str(), serializedRegistrationRequest.size());
-SOM_CATCH("Error sending base station registration request\n")
-
-std::unique_ptr<zmq::message_t> messageBuffer;
+std::string ZMQPubSocketAddressString = "tcp://*:10001";
 
 SOM_TRY
-messageBuffer.reset(new zmq::message_t);
-SOM_CATCH("Error initializing ZMQ message")
+testMessagePublisher->bind(ZMQPubSocketAddressString.c_str());
+SOM_CATCH("Error binding socket\n")
 
-REQUIRE(registrationSocket->recv(messageBuffer.get()) == true);
+std::unique_ptr<transceiver> com;
 
-transmitter_registration_reply registrationReply;
+SOM_TRY
+com.reset(new transceiver(*context));
+SOM_CATCH("Error initializing transceiver\n")
 
-std::string stringToPrint( (const char *) messageBuffer->data(), messageBuffer->size());
+//ZMQ Pub receiver
+std::string pubDataReceiverAddress;
 
-registrationReply.ParseFromArray(messageBuffer->data(), messageBuffer->size());
-REQUIRE(registrationReply.IsInitialized() == true);
+SOM_TRY
+pubDataReceiverAddress = com->createZMQPubDataReceiver("127.0.0.1:10001");
+SOM_CATCH("Error, unable to create data receiver\n")
 
-REQUIRE(registrationReply.request_succeeded() == true);
+//Caster data sender
+std::string senderURI;
+SOM_TRY 
+senderURI = com->createPylonGPSV2DataSender(pubDataReceiverAddress, "127.0.0.1:" +std::to_string(registrationPort), 1.0, 2.0, RTCM_V3_1, "testBasestation", 3.0);
+SOM_CATCH("Error making caster sender\n")
+
+std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
 
 SECTION( "Send a query, Send/receive update")
 {
@@ -753,12 +736,6 @@ REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation");
 
 //Base station registered, so subscribe and see if we get the next message send
 
-std::unique_ptr<transceiver> com;
-
-SOM_TRY
-com.reset(new transceiver(*context));
-SOM_CATCH("Error initializing transceiver\n")
-
 //Make transciever subscribe to our basestation in the caster and forward the data to a ZMQ PUB socket
 std::string receiverConnectionString;
 
@@ -800,8 +777,10 @@ std::this_thread::sleep_for(std::chrono::milliseconds(10));
 //Send message to caster and see if we get it back with the subscriber
 std::string testString = "This is a test string\n";
 SOM_TRY
-registrationSocket->send(testString.c_str(), testString.size());
+testMessagePublisher->send(testString.c_str(), testString.size());
 SOM_CATCH("Error sending message to caster\n")
+
+std::unique_ptr<zmq::message_t> messageBuffer;
 
 SOM_TRY
 messageBuffer.reset(new zmq::message_t);
@@ -813,12 +792,6 @@ REQUIRE(subscriberSocket->recv(messageBuffer.get()) == true);
 REQUIRE(messageBuffer->size() == testString.size());
 
 REQUIRE(std::string((const char *) messageBuffer->data(), messageBuffer->size()) == testString);
-
-std::unique_ptr<dataSender> bob;
-
-SOM_TRY
-bob.reset((dataSender *) new zmqDataSender(receiverConnectionString, *context, 10001));
-SOM_CATCH("Error making exterior data sender\n")
 
 } //Send/receive update
 
@@ -1657,8 +1630,6 @@ std::string testMessage = "C";
 std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
 //Send test message through chain
-printf("Test message chain starting\n");
-
 SOM_TRY
 messagePublishingSocket->send(testMessage.c_str(), testMessage.size());
 SOM_CATCH("Error sending test message\n")
