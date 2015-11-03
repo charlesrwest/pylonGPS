@@ -16,6 +16,8 @@ SOM_CATCH("Error initializing widget\n")
 QUrl source = QUrl::fromLocalFile("qml/main.qml");
 
 widget->setSource(source);
+//widget->setResizeMode(QQuickView::SizeViewToRootObject);
+widget->setResizeMode(QQuickView::SizeRootObjectToView);
 
 widget->show();
 
