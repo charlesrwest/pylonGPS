@@ -8,7 +8,7 @@ Rectangle
 {
 id: root
 width: 800; height: 800
-color: "white"
+color: "#000000"
 //anchors.fill: parent
 
 Rectangle
@@ -16,6 +16,8 @@ Rectangle
 id: windowPanel
 width: {return parent.width*2;}
 height: parent.height;
+color: "#EEEEEE"
+
 property bool guiMode: true
 anchors.left: parent.left
 anchors.leftMargin:
@@ -47,8 +49,10 @@ return Math.min(Math.max(root.width/5, 150), 200);
 }
  
 height: root.height;
+radius: 3
 
-color: "red"
+color: "#FBFBFB"
+border.color: "#C8C8C8"
 anchors.left: parent.left;
 }
 
@@ -61,7 +65,9 @@ return Math.min(Math.max(root.width/5, 150), 200);
 }
 height: root.height;
 
-color: "blue"
+color: "#FBFBFB"
+border.color: "#C8C8C8"
+radius: 3
 anchors.right:  parent.horizontalCenter;
 anchors.rightMargin: 
 {
@@ -75,12 +81,50 @@ return -width;
 }
 }
 
+Behavior on anchors.rightMargin 
+{
+NumberAnimation 
+{
+duration: 200 //Milliseconds?
+}
+}
+
+ColumnLayout
+{
+spacing: 0
+DataSourceEntry {mode: windowPanel.guiMode}
+DataSourceEntry {mode: windowPanel.guiMode}
+DataSourceEntry {mode: windowPanel.guiMode}
+DataSourceEntry {mode: windowPanel.guiMode}
+DataSourceEntry {mode: windowPanel.guiMode}
+DataSourceEntry {mode: windowPanel.guiMode}
+DataSourceEntry {mode: windowPanel.guiMode}
+DataSourceEntry {mode: windowPanel.guiMode}
+DataSourceEntry {mode: windowPanel.guiMode}
+DataSourceEntry {mode: windowPanel.guiMode}
+
+
+
+}
+
+Rectangle
+{
+id: guiModeChangeButton
+width: parent.width
+height: parent.height/10;
+color: "#EEEEEE"
+border.color: "#C8C8C8"
+
+anchors.bottom:  parent.bottom;
+radius: 3
 
 MouseArea 
 {
 anchors.fill: parent
 onClicked: windowPanel.guiMode = !windowPanel.guiMode
 }
+}
+
 }
 
 Rectangle
@@ -93,7 +137,8 @@ return Math.min(Math.max(root.width/5, 150), 200);
  
 height: root.height;
 
-color: "green"
+color: "#FBFBFB"
+border.color: "#C8C8C8"
 anchors.right: parent.right;
 }
 
