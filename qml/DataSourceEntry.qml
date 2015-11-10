@@ -7,8 +7,8 @@ import QtQuick.Controls 1.3
 Rectangle
 {
 property bool mode: true
-color: mode ? "#A0A0A9" : "#A0A0A9";
-border.color: "#C8C8C8"
+color: mode ? "#C6D4E1" : "#C6D4E1";
+border.color: "#44749D"
 radius: 5
 
 Layout.alignment: Qt.AlignCenter
@@ -33,7 +33,7 @@ anchors.fill: parent
 
 Label
 {
-color: "#FFFFFF"
+color: "#44749D"
 anchors.left: parent.left;
 anchors.leftMargin: 5
 anchors.top: parent.top;

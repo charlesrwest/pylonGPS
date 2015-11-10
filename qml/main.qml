@@ -1,149 +1,32 @@
 import QtQuick 2.3
-import QtQuick.Layouts 1.1
+import QtPositioning 5.4
+import QtLocation 5.4
 
-/**
-Window size controlled from the C++ side of the application.
-*/
-Rectangle
-{
-id: root
-width: 800; height: 800
-color: "#000000"
-//anchors.fill: parent
 
-Rectangle
-{
-id: windowPanel
-width: {return parent.width*2;}
-height: parent.height;
-color: "#EEEEEE"
+Map {
+    id: map
 
-property bool guiMode: true
-anchors.left: parent.left
-anchors.leftMargin:
-{
-if(!guiMode)
-{
-return -parent.width;
-}
-else
-{
-return 0;
-}
+    plugin: somePlugin
+
+    center {
+        latitude: -27
+        longitude: 153
+    }
+    zoomLevel: map.minimumZoomLevel
+
+    gesture.enabled: true
 }
 
-Behavior on anchors.leftMargin 
-{
-NumberAnimation 
-{
-duration: 200 //Milliseconds?
-}
-}
 
-Rectangle
-{
-id: sourceSelectionMenuBar
-width: 
-{
-return Math.min(Math.max(root.width/5, 150), 200);
-}
- 
-height: root.height;
-radius: 3
-
-color: "#FBFBFB"
-border.color: "#C8C8C8"
-anchors.left: parent.left;
-}
-
-Rectangle
-{
-id: selectedSourceMenuBar
-width: 
-{
-return Math.min(Math.max(root.width/5, 150), 200);
-}
-height: root.height;
-
-color: "#FBFBFB"
-border.color: "#C8C8C8"
-radius: 3
-anchors.right:  parent.horizontalCenter;
-anchors.rightMargin: 
-{
-if(windowPanel.guiMode)
-{
-return 0;
-}
-else
-{
-return -width;
-}
-}
-
-Behavior on anchors.rightMargin 
-{
-NumberAnimation 
-{
-duration: 200 //Milliseconds?
-}
-}
-
-ColumnLayout
-{
-spacing: 0
-DataSourceEntry {mode: windowPanel.guiMode}
-DataSourceEntry {mode: windowPanel.guiMode}
-DataSourceEntry {mode: windowPanel.guiMode}
-DataSourceEntry {mode: windowPanel.guiMode}
-DataSourceEntry {mode: windowPanel.guiMode}
-DataSourceEntry {mode: windowPanel.guiMode}
-DataSourceEntry {mode: windowPanel.guiMode}
-DataSourceEntry {mode: windowPanel.guiMode}
-DataSourceEntry {mode: windowPanel.guiMode}
-DataSourceEntry {mode: windowPanel.guiMode}
-
-
-
-}
-
-Rectangle
-{
-id: guiModeChangeButton
-width: parent.width
-height: parent.height/10;
-color: "#EEEEEE"
-border.color: "#C8C8C8"
-
-anchors.bottom:  parent.bottom;
-radius: 3
-
-MouseArea 
-{
-anchors.fill: parent
-onClicked: windowPanel.guiMode = !windowPanel.guiMode
-}
-}
-
-}
-
-Rectangle
-{
-id: senderDisplayAndRemovalMenuBar
-width: 
-{
-return Math.min(Math.max(root.width/5, 150), 200);
-}
- 
-height: root.height;
-
-color: "#FBFBFB"
-border.color: "#C8C8C8"
-anchors.right: parent.right;
-}
-
-}
-
+Plugin {
+    id: somePlugin
+    // code here to choose the plugin as necessary
+    name: "osm"
+    PluginParameter { name: "osm.useragent"; value: "My great Qt OSM application" }
+    PluginParameter { name: "osm.mapping.host"; value: "http://osm.tile.server.address/" }
+    PluginParameter { name: "osm.mapping.copyright"; value: "All mine" }
+    PluginParameter { name: "osm.routing.host"; value: "http://osrm.server.address/viaroute" }
+    PluginParameter { name: "osm.geocoding.host"; value: "http://geocoding.server.address" }
 }
 
 
