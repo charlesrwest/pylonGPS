@@ -147,7 +147,7 @@ std::string testString = "ABC";
 }
 }
 
-/*
+
 TEST_CASE("Test Key Generation/format conversion functions", "[key management functions]")
 {
 SECTION("Test Key Generation/format conversion functions", "[key management functions]")
@@ -192,7 +192,7 @@ REQUIRE(decodedSecretKey == binarySecretKey);
 
 }
 }
-*/
+
 
 TEST_CASE("Test ZMQ/Protobuf convenience functions", "[send/receive protobuf]")
 {
@@ -1607,7 +1607,7 @@ SOM_TRY
 messagePublishingSocket.reset(new zmq::socket_t(*context, ZMQ_PUB));
 SOM_CATCH("Error creating socket\n")
 
-std::string pubSocketAddressString = "ipc://pubSocketAddress";
+std::string pubSocketAddressString = "inproc://pubSocketAddress";
 
 SOM_TRY
 messagePublishingSocket->bind(pubSocketAddressString.c_str());
@@ -1649,7 +1649,6 @@ SOM_TRY
 com->createTCPDataSender(receiverAddress, 9002);
 SOM_CATCH("Error creating sender\n")
 
-printf("Made it this far\n");
 
 SOM_TRY
 receiverAddress = "";

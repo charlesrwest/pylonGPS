@@ -22,8 +22,6 @@ SOM_TRY //Make TCP socket for server to use
 tcpSocket.reset(new Poco::Net::ServerSocket(inputPortNumberToPublishOn));
 SOM_CATCH("Error, unable to create Poco server socket\n")
 
-printf("Yoda %s\n", informationSourceConnectionString.c_str());
-
 tcpDataSenderTCPServerConnectionFactoryImplementation *connectionFactory = nullptr;
 SOM_TRY //Make connection factory for server to use
 connectionFactory = new tcpDataSenderTCPServerConnectionFactoryImplementation(informationSourceConnectionString, context);
@@ -33,19 +31,11 @@ Poco::Net::TCPServerParams *serverParameters = new Poco::Net::TCPServerParams; /
 
 Poco::Net::ServerSocket *serverSocket = tcpSocket.get();
 
-printf("Connection factory: %p\n", connectionFactory);
-printf("Pointer serverSocket: %p\n", serverSocket);
-printf("Pointer TCPServerParams: %p\n", serverParameters);
-
 tcpSocket.release(); //Release ownership
-
-printf("Yowsers\n");
 
 SOM_TRY //tcpServer takes ownership of connection factory
 tcpServer.reset(new Poco::Net::TCPServer(connectionFactory, *serverSocket, serverParameters));
 SOM_CATCH("Error initializing Poco tcp server\n")
-
-printf("Tau %p\n", tcpServer.get());
 
 SOM_TRY
 tcpServer->start();
@@ -67,7 +57,6 @@ This function shuts down the Poco TCP server.
 */
 tcpDataSender::~tcpDataSender()
 {
-printf("Nala\n");
 tcpServer->stop();
 }
 
@@ -81,7 +70,6 @@ This function initializes the connection handler so that it can forward data rec
 */
 tcpDataSenderTCPConnectionHandler::tcpDataSenderTCPConnectionHandler(const Poco::Net::StreamSocket &inputConnectionSocket, const std::string &inputSourceConnectionString, zmq::context_t &inputContext) : Poco::Net::TCPServerConnection(inputConnectionSocket), context(inputContext), connectionSocket(inputConnectionSocket)
 {
-printf("Pala\n");
 sourceConnectionString = inputSourceConnectionString;
 
 SOM_TRY //Init socket
@@ -102,7 +90,6 @@ This function is called to handle the TCP connection that is owned by the base T
 */
 void tcpDataSenderTCPConnectionHandler::run()
 {
-printf("Makala\n");
 std::unique_ptr<zmq::message_t> messageBuffer;
 Poco::Net::StreamSocket &connection = socket();
 
@@ -132,7 +119,6 @@ This function initializes the factory with the values to pass to the connection 
 */
 tcpDataSenderTCPServerConnectionFactoryImplementation::tcpDataSenderTCPServerConnectionFactoryImplementation(const std::string &inputSourceConnectionString, zmq::context_t &inputContext) : context(inputContext)
 {
-printf("Zumba\n");
 sourceConnectionString = inputSourceConnectionString;
 }
 
@@ -142,7 +128,6 @@ This function creates a tcpDataSenderTCPConnectionHandler to handle a particular
 */
 Poco::Net::TCPServerConnection *tcpDataSenderTCPServerConnectionFactoryImplementation::createConnection(const Poco::Net::StreamSocket &inputConnectionSocket)
 {
-printf("Plunta\n");
 SOM_TRY
 return new tcpDataSenderTCPConnectionHandler(inputConnectionSocket, sourceConnectionString, context);
 SOM_CATCH("Error, unable to create connection handler\n")

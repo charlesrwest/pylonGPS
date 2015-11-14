@@ -64,6 +64,55 @@ This function generates a new signing key pair and outputs it to files with the 
 */
 void generateKeyPairFiles(const std::string &inputBasePath);
 
+/**
+This function loads the public signing key to assign to the caster.
+*/
+void loadCasterConfigurationPublicSigningKey();
+
+/**
+This function loads the secret signing key to assign to the caster.
+*/
+void loadCasterConfigurationSecretSigningKey();
+
+/**
+This function loads the public signing key to assign to the caster.
+*/
+void loadCasterConfigurationKeyManagementPublicSigningKey();
+
+/**
+This function loads the public key to generate a credentials message for.
+*/
+void loadCredentialsPublicKey();
+
+/**
+This function loads a public key to sign the credentials with.
+*/
+void addCredentialsSigningPublicKey();
+
+/**
+This function loads a secret key to sign the credentials with.
+*/
+void addCredentialsSigningSecretKey();
+
+/**
+This function loads the key management key to use with key management requests.
+*/
+void loadKeyManagementSigningSecretKey();
+
+/**
+This function loads a public key to add to the Official list using a key managment request.
+*/
+void loadOfficialPublicKeyForKeyManagementRequest();
+
+/**
+This function loads a public key to add to the Registered Community list using a key managment request.
+*/
+void loadRegisteredCommunityPublicKeyForKeyManagementRequest();
+
+/**
+This function loads a public key to add to the black list using a key managment request.
+*/
+void loadPublicKeyToBlacklistForKeyManagementRequest();
 
 signals:
 void keyPairGenerationFolderSelected(std::string);
@@ -75,15 +124,37 @@ void couldNotReadPublicKeyFile();
 void couldNotReadSecretKeyFile();
 
 protected:
+/**
+This function opens a dialog box asking for a key file, with the default path being given by inputPathStartFormAt.  If a proper key file is selected and is valid, it loads the key into the string given by inputKeyStringToLoadTo.
+@param inputKeyStringToLoadTo: The string buffer to load the decoded string into
+@param inputIsPublicKey: True if the key to load is a public key and false if it is a private key
+@param inputPathToStartFormAt: A string containing where the file dialog should start looking (typically last variable loaded).  The selected path will be saved to this variable
+@return: True if this function loaded a key
+*/
+bool runKeyLoadDialogForString(std::string &inputKeyStringToLoadTo, bool inputIsPublicKey, std::string &inputPathStartFormAt);
+
+//Save last secret, public key path loaded 
+std::string lastPublicKeyPath;
+std::string lastSecretKeyPath;
+
 //Caster configuration page variables
 std::string casterConfigurationPublicSigningKey;
-std::string casterConfigurationPrivateSigningKey;
+std::string casterConfigurationSecretSigningKey;
 std::string casterConfigurationKeyManagementPublicSigningKey;
 
 //Generate key pair variables
 std::string pathToFolderToPlaceGeneratedKeyPairIn;
 
+//Generate Credentials message
+std::string credentialsPublicKey;
+std::vector<std::string> credentialsSigningPublicKeys;
+std::vector<std::string> credentialsSigningPrivateKeys;
 
+//Send key management requests
+std::string keyManagementPrivateKeyToUse;
+std::string officialPublicKeyToAdd;
+std::string registeredCommunityPublicKeyToAdd;
+std::string publicKeyToBlacklist;
 };
 
 

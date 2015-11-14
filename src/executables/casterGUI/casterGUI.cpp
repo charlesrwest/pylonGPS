@@ -35,13 +35,19 @@ casterPortLineEdit->setValidator( new QIntValidator(0, portNumberMax, this) );
 
 selectCredentialsBasestationLimit->setValidator( new QIntValidator(0, INT_MAX, this) );
 
-printf("Public: %d\n", crypto_sign_PUBLICKEYBYTES);
-printf("Secret: %d\n", crypto_sign_SECRETKEYBYTES);
+//Connect add key buttons to add key dialogs
+connect(selectCasterPublicSigningKeyPushButton, SIGNAL(clicked(bool)), this, SLOT(loadCasterConfigurationPublicSigningKey()));
+connect(selectCasterPrivateSigningKeyPushButton, SIGNAL(clicked(bool)), this, SLOT(loadCasterConfigurationSecretSigningKey()));
+connect(selectKeyManagementPublicSigningKeyPushButton, SIGNAL(clicked(bool)), this, SLOT(loadCasterConfigurationKeyManagementPublicSigningKey()));
 
-printf("Public Z85: %d\n", z85PublicKeySize);
-printf("Secret Z85: %d\n", z85SecretKeySize);
+connect(selectCredentialsPublicKeyPushButton, SIGNAL(clicked(bool)), this, SLOT(loadCredentialsPublicKey()));
+connect(selectCredentialsPublicSigningKey, SIGNAL(clicked(bool)), this, SLOT(addCredentialsSigningPublicKey()));
+connect(selectCredentialsPrivateSigningKey, SIGNAL(clicked(bool)), this, SLOT(addCredentialsSigningSecretKey()));
 
-
+connect(selectKeyManagementPrivateKeyPushButton, SIGNAL(clicked(bool)), this, SLOT(loadKeyManagementSigningSecretKey()));
+connect(selectOfficialPublicSigningKeyToAdd, SIGNAL(clicked(bool)), this, SLOT(loadOfficialPublicKeyForKeyManagementRequest()));
+connect(selectRegisteredCommunitySigningKeyToAddPushButton, SIGNAL(clicked(bool)), this, SLOT(loadRegisteredCommunityPublicKeyForKeyManagementRequest()));
+connect(selectBlackListPublicKey, SIGNAL(clicked(bool)), this, SLOT(loadPublicKeyToBlacklistForKeyManagementRequest()));
 } 
 
 
@@ -123,4 +129,136 @@ return;
 }
 }
 
+/**
+This function loads the public signing key to assign to the caster.
+*/
+void casterGUI::loadCasterConfigurationPublicSigningKey()
+{
+runKeyLoadDialogForString(casterConfigurationPublicSigningKey, true, lastPublicKeyPath);
+}
+
+/**
+This function loads the secret signing key to assign to the caster.
+*/
+void casterGUI::loadCasterConfigurationSecretSigningKey()
+{
+runKeyLoadDialogForString(casterConfigurationSecretSigningKey, false, lastSecretKeyPath);
+}
+
+/**
+This function loads the public signing key to assign to the caster.
+*/
+void casterGUI::loadCasterConfigurationKeyManagementPublicSigningKey()
+{
+runKeyLoadDialogForString(casterConfigurationKeyManagementPublicSigningKey, true, lastPublicKeyPath);
+}
+
+/**
+This function loads the public key to generate a credentials message for.
+*/
+void casterGUI::loadCredentialsPublicKey()
+{
+runKeyLoadDialogForString(credentialsPublicKey, true, lastPublicKeyPath);
+}
+
+/**
+This function loads a public key to sign the credentials with.
+*/
+void casterGUI::addCredentialsSigningPublicKey()
+{
+std::string keyBuffer;
+if(runKeyLoadDialogForString(keyBuffer, true, lastPublicKeyPath) == true)
+{
+credentialsSigningPublicKeys.push_back(keyBuffer);
+}
+}
+
+/**
+This function loads a secret key to sign the credentials with.
+*/
+void casterGUI::addCredentialsSigningSecretKey()
+{
+std::string keyBuffer;
+if(runKeyLoadDialogForString(keyBuffer, false, lastSecretKeyPath) == true)
+{
+credentialsSigningPrivateKeys.push_back(keyBuffer);
+}
+}
+
+/**
+This function loads the key management key to use with key management requests.
+*/
+void casterGUI::loadKeyManagementSigningSecretKey()
+{
+runKeyLoadDialogForString(keyManagementPrivateKeyToUse, false, lastSecretKeyPath);
+}
+
+/**
+This function loads a public key to add to the Official list using a key managment request.
+*/
+void casterGUI::loadOfficialPublicKeyForKeyManagementRequest()
+{
+runKeyLoadDialogForString(officialPublicKeyToAdd, true, lastPublicKeyPath);
+}
+
+/**
+This function loads a public key to add to the Registered Community list using a key managment request.
+*/
+void casterGUI::loadRegisteredCommunityPublicKeyForKeyManagementRequest()
+{
+runKeyLoadDialogForString(registeredCommunityPublicKeyToAdd, true, lastPublicKeyPath);
+}
+
+/**
+This function loads a public key to add to the black list using a key managment request.
+*/
+void casterGUI::loadPublicKeyToBlacklistForKeyManagementRequest()
+{
+runKeyLoadDialogForString(publicKeyToBlacklist, true, lastPublicKeyPath);
+}
+
+/**
+This function opens a dialog box asking for a key file, with the default path being given by inputPathStartFormAt.  If a proper key file is selected and is valid, it loads the key into the string given by inputKeyStringToLoadTo.
+@param inputKeyStringToLoadTo: The string buffer to load the decoded string into
+@param inputIsPublicKey: True if the key to load is a public key and false if it is a private key
+@param inputPathToStartFormAt: A string containing where the file dialog should start looking (typically last variable loaded).  The selected path will be saved to this variable
+@return: True if this function loaded a key
+*/
+bool casterGUI::runKeyLoadDialogForString(std::string &inputKeyStringToLoadTo, bool inputIsPublicKey, std::string &inputPathStartFormAt)
+{
+QString qPath;
+if(inputIsPublicKey)
+{
+qPath = QFileDialog::getOpenFileName(this, "Open Public Key File", QString(inputPathStartFormAt.c_str()), "Public Keys (*.pylonPublicKey)");
+}
+else
+{
+qPath = QFileDialog::getOpenFileName(this, "Open Secret Key File", QString(inputPathStartFormAt.c_str()), "Secret Keys (*.pylonSecretKey)");
+}
+std::string path = qPath.toStdString();
+
+//Try loading the key
+std::string loadedKey;
+if(inputIsPublicKey)
+{
+loadedKey = loadPublicKeyFromFile(path);
+if(loadedKey.size() == 0)
+{
+emit couldNotReadPublicKeyFile();
+}
+}
+else
+{
+loadedKey = loadSecretKeyFromFile(path);
+if(loadedKey.size() == 0)
+{
+emit couldNotReadSecretKeyFile();
+}
+}
+
+//Key loaded OK
+inputKeyStringToLoadTo = loadedKey;
+inputPathStartFormAt = path;
+return true;
+}
 

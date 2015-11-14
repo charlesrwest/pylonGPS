@@ -12,7 +12,7 @@ COMMENT "Generating API documentation with Doxygen" VERBATIM
 )
 endif(DOXYGEN_FOUND)
 
-#set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} /usr/share/kde4/apps/cmake/modules/)
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} /usr/share/kde4/apps/cmake/modules/)
 
 #QT stuff
 #Access QT5 packages
@@ -31,7 +31,7 @@ add_subdirectory(./messages)
 
 
 #Tell compiler where to find required libraries
-link_directories(/usr/lib/x86_64-linux-gnu/ /usr/local/lib/ lib/ ./messages)
+link_directories(/usr/lib/x86_64-linux-gnu/ lib/ ./messages)
 
 include_directories(./src/library/ ./messages ./cppzmq-master ./src/executables/unitTests ./src/executables/transceiverGUI ./src/executables/casterGUI ./)
 
@@ -84,25 +84,20 @@ add_library(pylongps SHARED  ${SOURCEFILES})
 #Tell CMake what executables to make
 ADD_EXECUTABLE(unitTests ${UNIT_TESTS_EXECUTABLE_SOURCE} ) 
 
-<<<<<<< Updated upstream
 #ADD_EXECUTABLE(transceiverGUI ${TRANSCEIVER_GUI_EXECUTABLE_SOURCE} ${TRANSCEIVER_GUI_HEADER_FILES_MOC} ${CMAKE_CURRENT_BINARY_DIR}) 
-=======
+
 ADD_EXECUTABLE(transceiverGUI ${TRANSCEIVER_GUI_EXECUTABLE_SOURCE} ${TRANSCEIVER_GUI_HEADER_FILES} ${TRANSCEIVER_FORMS_HEADERS} ${CMAKE_CURRENT_BINARY_DIR}) 
 
 ADD_EXECUTABLE(casterGUI ${CASTER_GUI_EXECUTABLE_SOURCE} ${CASTER_GUI_HEADER_FILES} ${CASTER_FORMS_HEADERS} ${CMAKE_CURRENT_BINARY_DIR}) 
->>>>>>> Stashed changes
 
 target_link_libraries(pylongps dl PocoFoundation PocoNet PocoUtil sqlite3 pylonGPSMessages zmq ${PROTOBUF_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} sodium)
 
 #link libraries to executable
 target_link_libraries(unitTests pylongps )
 
-<<<<<<< Updated upstream
-#target_link_libraries(transceiverGUI pylongps Qt5::Widgets Qt5::Quick)
-=======
 target_link_libraries(transceiverGUI pylongps Qt4::QtCore Qt4::QtGui marblewidget)
 
 target_link_libraries(casterGUI pylongps Qt4::QtCore Qt4::QtGui)
->>>>>>> Stashed changes
+
 
 
