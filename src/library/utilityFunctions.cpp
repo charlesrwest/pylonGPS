@@ -1,6 +1,8 @@
 #include "utilityFunctions.hpp"
 
- /**
+using namespace pylongps;
+
+/**
 This function compactly allows binding a ZMQ socket to inproc address without needing to specify an exact address.  The function will try binding to addresses in the format: inproc://inputBaseString.inputExtensionNumberAsString and will try repeatedly while incrementing inputExtensionNumber until it succeeds or the maximum number of tries has been exceeded.
 @param inputSocket: The ZMQ socket to bind
 @param inputBaseString: The base string to use
@@ -195,4 +197,169 @@ unsigned char cryptoSignature[crypto_sign_BYTES];
 crypto_sign_detached(cryptoSignature, nullptr, (const unsigned char *) inputMessage.c_str(), inputMessage.size(), (const unsigned char *) inputSigningSecretKey.c_str());
 
 return std::string((const char *) cryptoSignature, crypto_sign_BYTES) + inputMessage;
+}
+
+/**
+This function generates a pair of libsodium signing keys, stored as binary strings.
+@return: <public key, secret key>, sizes of crypto_sign_PUBLICKEYBYTES and crypto_sign_SECRETKEYBYTES respectively
+*/
+std::pair<std::string, std::string> pylongps::generateSigningKeys()
+{
+//Generate signing key pair
+unsigned char publicKeyArray[crypto_sign_PUBLICKEYBYTES];
+unsigned char secretKeyArray[crypto_sign_SECRETKEYBYTES];
+crypto_sign_keypair(publicKeyArray, secretKeyArray);
+
+std::string publicKey((const char *) publicKeyArray, crypto_sign_PUBLICKEYBYTES);
+std::string secretKey((const char *) secretKeyArray, crypto_sign_SECRETKEYBYTES);
+
+return std::pair<std::string, std::string>(publicKey, secretKey);
+}
+
+/**
+This function converts a string to Z85 format.
+@param inputString: The string to convert
+@return: The converted string
+
+@throw: This function can throw exceptions
+*/
+std::string pylongps::convertStringToZ85Format(const std::string &inputString)
+{
+int z85StringSize = (((inputString.size()*5)/4)+1)+(((inputString.size()*5)/4))%4;
+
+//Allocate character array to use on stack
+std::vector<char> Z85Characters(z85StringSize); 
+
+if(zmq_z85_encode(Z85Characters.data(), (unsigned char*) inputString.c_str(), inputString.size()) == nullptr)
+{
+throw SOMException("Could not encode to Z85\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __FILE__, __LINE__);
+}
+
+return std::string((char *) Z85Characters.data(), Z85Characters.size());
+}
+
+/**
+This function converts a string from Z85 format.
+@param inputZ85String: The string to convert (must be null terminated)
+@return: The converted string
+
+@throw: This function can throw exceptions
+*/
+std::string pylongps::convertStringFromZ85Format(const std::string &inputZ85String)
+{
+long int binaryStringSize = (inputZ85String.size()-1)*4/5;
+std::vector<char> binaryCharacters(binaryStringSize);
+
+//Convert back to binary
+if(zmq_z85_decode((unsigned char *) binaryCharacters.data(), (char *)  inputZ85String.c_str()) == nullptr)
+{
+throw SOMException("Could not decode from Z85\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __FILE__, __LINE__);
+}
+
+return std::string(binaryCharacters.data(), binaryCharacters.size());
+}
+
+/**
+This function saves a string to the given file path
+@param inputString: The string to save
+@param inputPath: The path for the file to save to
+@return: true if the string was written successfully and false otherwise
+*/
+bool pylongps::saveStringToFile(const std::string &inputString, const std::string &inputPath)
+{
+auto fileFreeingLambda = [](FILE *inputFile){fclose(inputFile);};
+
+FILE *buffer = fopen(inputPath.c_str(), "wb");
+if(buffer == nullptr)
+{
+return false;
+}
+std::unique_ptr<FILE, decltype(fileFreeingLambda)> file(buffer, fileFreeingLambda);
+
+if(fwrite(inputString.c_str(), inputString.size(), 1, file.get()) != 1)
+{
+return false;
+}
+
+return true;
+}
+
+/**
+This function saves a string to the given file path
+@param inputStringBuffer: The string to save the read data to
+@param inputSizeOfStringToRead: The path for the file to save to
+@param inputPath: The path for the file to save to
+@return: true if the string was read successfully and false otherwise
+*/
+bool pylongps::readStringFromFile(std::string &inputStringBuffer, unsigned int inputSizeOfStringToRead, const std::string &inputPath)
+{
+auto fileFreeingLambda = [](FILE *inputFile){fclose(inputFile);};
+
+FILE *buffer = fopen(inputPath.c_str(), "rb");
+if(buffer == nullptr)
+{
+return false;
+}
+std::unique_ptr<FILE, decltype(fileFreeingLambda)> file(buffer, fileFreeingLambda);
+
+std::vector<char> characterArray(inputSizeOfStringToRead);
+
+if(fread(characterArray.data(), inputSizeOfStringToRead, 1, file.get()) != 1)
+{
+return false;
+}
+
+return true;
+}
+
+/**
+This function loads a public key and decodes it from a Z85 encoded file.
+@param inputPath: The path to load the key from
+@return: a string of length crypto_sign_PUBLICKEYBYTES if successful and empty otherwise
+*/
+std::string pylongps::loadPublicKeyFromFile(const std::string &inputPath)
+{
+std::string z85Key;
+if(readStringFromFile(z85Key, (unsigned int) (z85PublicKeySize-1), inputPath) == false)
+{
+return "";
+}
+//Add terminating null character
+z85Key[z85PublicKeySize-1] = '\0';
+
+unsigned char publicKeyBuffer[crypto_sign_PUBLICKEYBYTES];
+
+//Convert back to binary
+if(zmq_z85_decode(publicKeyBuffer, (char *) z85Key.c_str()) == nullptr)
+{
+return "";
+}
+
+return std::string((char *) publicKeyBuffer, crypto_sign_PUBLICKEYBYTES);
+}
+
+/**
+This function loads a secret key and decodes it from a Z85 encoded file.
+@param inputPath: The path to load the key from
+@return: a string of length crypto_sign_SECRETKEYBYTES if successful and empty otherwise
+*/
+std::string pylongps::loadSecretKeyFromFile(const std::string &inputPath)
+{
+std::string z85Key;
+if(readStringFromFile(z85Key, (unsigned int) (z85SecretKeySize-1), inputPath) == false)
+{
+return "";
+}
+//Add terminating null character
+z85Key[z85SecretKeySize-1] = '\0';
+
+unsigned char secretKeyBuffer[crypto_sign_SECRETKEYBYTES];
+
+//Convert back to binary
+if(zmq_z85_decode(secretKeyBuffer, (char *) z85Key.c_str()) == nullptr)
+{
+return "";
+}
+
+return std::string((char *) secretKeyBuffer, crypto_sign_SECRETKEYBYTES);
 }

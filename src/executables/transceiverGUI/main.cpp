@@ -1,25 +1,18 @@
-#include<QApplication>
-#include<QQuickView>
-#include<QUrl>
-#include<memory>
-#include "SOMException.hpp"
+#include<qt4/QtGui/QApplication>
+#include "transceiverGUI.hpp"
 
-int main(int argc, char **argv)
+using namespace pylongps;
+
+int main(int argc, char** argv)
 {
 QApplication app(argc, argv);
-std::unique_ptr<QQuickView> widget;
 
-SOM_TRY
-widget.reset(new QQuickView);
-SOM_CATCH("Error initializing widget\n")
+transceiverGUI *gui = new transceiverGUI();
 
-QUrl source = QUrl::fromLocalFile("qml/main.qml");
+gui->show();
 
-widget->setSource(source);
-//widget->setResizeMode(QQuickView::SizeViewToRootObject);
-widget->setResizeMode(QQuickView::SizeRootObjectToView);
-
-widget->show();
 
 return app.exec();
-} 
+}
+
+

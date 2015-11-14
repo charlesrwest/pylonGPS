@@ -1,5 +1,4 @@
-#ifndef  UTILITYFUNCTIONSHPP
-#define  UTILITYFUNCTIONSHPP
+#pragma once
 
 #include "zmq.hpp"
 #include "SOMException.hpp"
@@ -8,9 +7,14 @@
 #include<google/protobuf/message.h>
 #include <sodium.h>
 #include<iostream>
+#include<array>
 
 namespace pylongps
 {
+
+//Includes null terminating character, which is left out when it is written to a file
+const int z85PublicKeySize = (((crypto_sign_PUBLICKEYBYTES*5)/4)+1)+(((crypto_sign_PUBLICKEYBYTES*5)/4))%4;
+const int z85SecretKeySize = (((crypto_sign_SECRETKEYBYTES*5)/4)+1)+(((crypto_sign_SECRETKEYBYTES*5)/4))%4;
 
 /**
 This function compactly allows binding a ZMQ socket to inproc address without needing to specify an exact address.  The function will try binding to addresses in the format: inproc://inputBaseString.inputExtensionNumberAsString and will try repeatedly while incrementing inputExtensionNumber until it succeeds or the maximum number of tries has been exceeded.
@@ -75,6 +79,60 @@ This function calculates the signature for the given string/private signing key 
 */
 std::string calculateAndPreappendSignature(const std::string &inputMessage, const std::string &inputSigningSecretKey);
 
+/**
+This function generates a pair of libsodium signing keys, stored as binary strings.
+@return: <public key, secret key>, sizes of crypto_sign_PUBLICKEYBYTES and crypto_sign_SECRETKEYBYTES respectively
+*/
+std::pair<std::string, std::string> generateSigningKeys();
+
+/**
+This function converts a string to Z85 format.
+@param inputString: The string to convert
+@return: The converted string
+
+@throw: This function can throw exceptions
+*/
+std::string convertStringToZ85Format(const std::string &inputString);
+
+/**
+This function converts a string from Z85 format. 
+@param inputZ85String: The string to convert (must be null terminated)
+@return: The converted string
+
+@throw: This function can throw exceptions
+*/
+std::string convertStringFromZ85Format(const std::string &inputZ85String);
+
+/**
+This function saves a string to the given file path
+@param inputString: The string to save
+@param inputPath: The path for the file to save to
+@return: true if the string was written successfully and false otherwise
+*/
+bool saveStringToFile(const std::string &inputString, const std::string &inputPath);
+
+/**
+This function saves a string to the given file path
+@param inputStringBuffer: The string to save the read data to
+@param inputSizeOfStringToRead: The path for the file to save to
+@param inputPath: The path for the file to save to
+@return: true if the string was read successfully and false otherwise
+*/
+bool readStringFromFile(std::string &inputStringBuffer, unsigned int inputSizeOfStringToRead, const std::string &inputPath);
+
+/**
+This function loads a public key and decodes it from a Z85 encoded file.
+@param inputPath: The path to load the key from
+@return: a string of length crypto_sign_PUBLICKEYBYTES if successful and empty otherwise
+*/
+std::string loadPublicKeyFromFile(const std::string &inputPath);
+
+/**
+This function loads a secret key and decodes it from a Z85 encoded file.
+@param inputPath: The path to load the key from
+@return: a string of length crypto_sign_SECRETKEYBYTES if successful and empty otherwise
+*/
+std::string loadSecretKeyFromFile(const std::string &inputPath);
+
 }
 
-#endif

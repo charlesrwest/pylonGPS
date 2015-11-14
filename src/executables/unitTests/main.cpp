@@ -147,6 +147,53 @@ std::string testString = "ABC";
 }
 }
 
+/*
+TEST_CASE("Test Key Generation/format conversion functions", "[key management functions]")
+{
+SECTION("Test Key Generation/format conversion functions", "[key management functions]")
+{
+
+//Generate keys
+std::string binaryPublicKey;
+std::string binarySecretKey;
+
+std::tie(binaryPublicKey, binarySecretKey) = generateSigningKeys();
+
+REQUIRE(binaryPublicKey.size() == crypto_sign_PUBLICKEYBYTES);
+REQUIRE(binarySecretKey.size() == crypto_sign_SECRETKEYBYTES);
+
+std::string z85PublicKey;
+std::string z85SecretKey;
+SOM_TRY
+z85PublicKey = convertStringToZ85Format(binaryPublicKey);
+SOM_CATCH("Error, unable to convert to z85 format\n")
+
+REQUIRE(z85PublicKey.size() == z85PublicKeySize);
+
+SOM_TRY
+z85SecretKey = convertStringToZ85Format(binarySecretKey);
+SOM_CATCH("Error, unable to convert to z85 format\n")
+
+REQUIRE(z85SecretKey.size() == z85SecretKeySize);
+
+std::string decodedPublicKey;
+std::string decodedSecretKey;
+
+SOM_TRY
+decodedPublicKey = convertStringFromZ85Format(z85PublicKey);
+SOM_CATCH("Error, unable to convert string\n")
+
+SOM_TRY
+decodedSecretKey = convertStringFromZ85Format(z85SecretKey);
+SOM_CATCH("Error, unable to convert string\n")
+
+REQUIRE(decodedPublicKey == binaryPublicKey);
+REQUIRE(decodedSecretKey == binarySecretKey);
+
+}
+}
+*/
+
 TEST_CASE("Test ZMQ/Protobuf convenience functions", "[send/receive protobuf]")
 {
 SECTION("Test send/receive and RPC", "[send/receive protobuf]")
@@ -169,7 +216,7 @@ int timeoutWaitTime = 5000; //Max 5 seconds
 testReplySocket->setsockopt(ZMQ_RCVTIMEO, (void *) &timeoutWaitTime, sizeof(timeoutWaitTime));
 SOM_CATCH("Error setting socket timeout\n")
 
-std::string replySocketAddressString = "ipc://replySocketAddress";
+std::string replySocketAddressString = "inproc://replySocketAddress";
 
 SOM_TRY
 testReplySocket->bind(replySocketAddressString.c_str());
@@ -269,7 +316,6 @@ std::string keyManagerSecretKey((const char *) keyManagerSecretKeyArray, crypto_
 caster myCaster(context.get(), 0,9001,9002,9003, 9004, 9005, 9006, decodedCasterPublicKey, decodedCasterSecretKey, keyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
 
 REQUIRE( true == true);
-
 }
 }
 
@@ -957,6 +1003,7 @@ std::this_thread::sleep_for(std::chrono::milliseconds(10));
 //basestationInfo->set_informal_name("testBasestation");
 
 
+
 //Generate an update and listen for it
 SECTION( "Send/receive update")
 {
@@ -1186,6 +1233,7 @@ REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation");
 
 TEST_CASE( "Test simple proxying", "[test]")
 {
+
 
 SECTION( "Build two casters")
 {
@@ -1538,7 +1586,6 @@ REQUIRE(receivedUpdateContent == secondSocketUpdateString);
 
 TEST_CASE( "Test tranceiver", "[test]")
 {
-
 SECTION( "Ping pong updates across many different receivers/senders")
 {
 //Make ZMQ context
@@ -1586,6 +1633,7 @@ std::string tempFilePath = "tempFile902e809843";
 //Remove temp file if it is left over
 remove(tempFilePath.c_str());
 
+
 SOM_TRY
 com->createFileDataSender(receiverAddress, tempFilePath);
 SOM_CATCH("Error creating sender\n")
@@ -1595,14 +1643,20 @@ receiverAddress = "";
 receiverAddress = com->createFileDataReceiver(tempFilePath);
 SOM_CATCH("Error creating sender\n")
 
+
+
 SOM_TRY
 com->createTCPDataSender(receiverAddress, 9002);
 SOM_CATCH("Error creating sender\n")
+
+printf("Made it this far\n");
 
 SOM_TRY
 receiverAddress = "";
 receiverAddress = com->createTCPDataReceiver("127.0.0.1:9002");
 SOM_CATCH("Error creating sender\n")
+
+
 
 std::unique_ptr<zmq::socket_t> subscriberSocket;
 
@@ -1625,6 +1679,7 @@ subscriberSocket->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
 SOM_CATCH("Error setting subscription for socket\n")
 
 std::string testMessage = "C";
+
 
 //Sleep for a little while to let subscribers connect so messages aren't dropped
 std::this_thread::sleep_for(std::chrono::milliseconds(10));
