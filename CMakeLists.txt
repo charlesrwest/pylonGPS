@@ -64,13 +64,13 @@ add_library(pylongps SHARED  ${SOURCEFILES})
 #Tell CMake what executables to make
 ADD_EXECUTABLE(unitTests ${UNIT_TESTS_EXECUTABLE_SOURCE} ) 
 
-ADD_EXECUTABLE(transceiverGUI ${TRANSCEIVER_GUI_EXECUTABLE_SOURCE} ${TRANSCEIVER_GUI_HEADER_FILES_MOC} ${CMAKE_CURRENT_BINARY_DIR}) 
+#ADD_EXECUTABLE(transceiverGUI ${TRANSCEIVER_GUI_EXECUTABLE_SOURCE} ${TRANSCEIVER_GUI_HEADER_FILES_MOC} ${CMAKE_CURRENT_BINARY_DIR}) 
 
 target_link_libraries(pylongps dl PocoFoundation PocoNet PocoUtil sqlite3 pylonGPSMessages zmq ${PROTOBUF_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} sodium)
 
 #link libraries to executable
 target_link_libraries(unitTests pylongps )
 
-target_link_libraries(transceiverGUI pylongps Qt5::Widgets Qt5::Quick)
+#target_link_libraries(transceiverGUI pylongps Qt5::Widgets Qt5::Quick)
 
 
