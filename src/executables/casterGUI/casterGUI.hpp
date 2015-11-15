@@ -9,7 +9,6 @@
 #include "zmq.hpp"
 #include "SOMException.hpp"
 #include "utilityFunctions.hpp"
-#include "caster_configuration.pb.h"
 #include "Poco/ByteOrder.h"
 
 #include<climits>
@@ -17,11 +16,23 @@
 #include<memory>
 #include<cstdlib>
 
+#include "caster_configuration.pb.h"
+#include "authorized_permissions.pb.h"
+#include "credentials.pb.h"
+#include "signature.pb.h"
+#include "key_management_request.pb.h"
+#include "key_management_reply.pb.h"
+#include "key_status_changes.pb.h"
 
 
 namespace pylongps
 {
-
+enum keyManagementRequestType
+{
+ADD_OFFICIAL_SIGNING_KEY,
+ADD_REGISTERED_COMMUNITY_SIGNING_KEY,
+BLACKLIST_SIGNING_KEY
+};
 
 /**
 This class is the main window used with the pylon GPS 2.0 tranceiver.  It is written to use Qt4 with the Marble GIS library because that is what is currently available in the Ubuntu repositories.
@@ -79,6 +90,31 @@ This function opens a file dialog to select a caster configuration file to open.
 void openCasterConfigurationFile();
 
 /**
+This function removes all of the keys that have been stored for signing credentials.
+*/
+void clearCredentialsSignatureKeys();
+
+/**
+This function opens a file dialog and then generates/saves a credentials file based on the keys that have been loaded.  It emits a couldNotWriteCredentialsFile signal if there was not enough information loaded or a operation failed.
+*/
+void createCredentialsFile();
+
+/**
+This function adds a Official Signing key to the caster whose IP address/key management port has been entered.  This function makes a network call and waits a maximum of .25 seconds for it to send a response back.  This can cause the GUI to hang for a little bit.
+*/
+void addOfficialSigningKeyToCaster();
+
+/**
+This function adds a Registered Community Signing key to the caster whose IP address/key management port has been entered.  This function makes a network call and waits a maximum of .25 seconds for it to send a response back.  This can cause the GUI to hang for a little bit.
+*/
+void addRegisteredCommunitySigningKeyToCaster();
+
+/**
+This function adds a Signing key the black list maintained by the caster whose IP address/key management port has been entered.  This function makes a network call and waits a maximum of .25 seconds for it to send a response back.  This can cause the GUI to hang for a little bit.
+*/
+void addSigningKeyToCasterBlacklist();
+
+/**
 This function loads the public signing key to assign to the caster.
 */
 void loadCasterConfigurationPublicSigningKey();
@@ -109,7 +145,12 @@ This function loads a secret key to sign the credentials with.
 void addCredentialsSigningSecretKey();
 
 /**
-This function loads the key management key to use with key management requests.
+This function loads the key management public key to use with key management requests.
+*/
+void loadKeyManagementSigningPublicKey();
+
+/**
+This function loads the key management secret key to use with key management requests.
 */
 void loadKeyManagementSigningSecretKey();
 
@@ -141,6 +182,14 @@ void couldNotReadConfigurationFile();
 
 void couldNotWriteConfigurationFile();
 
+void couldNotWriteCredentialsFile();
+
+void couldNotAddOfficialKeyToCaster();
+
+void couldNotAddRegistedCommunityKeyToCaster();
+
+void couldNotAddKeyToCasterBlacklist();
+
 protected:
 /**
 This function opens a dialog box asking for a key file, with the default path being given by inputPathStartFormAt.  If a proper key file is selected and is valid, it loads the key into the string given by inputKeyStringToLoadTo.
@@ -150,6 +199,23 @@ This function opens a dialog box asking for a key file, with the default path be
 @return: True if this function loaded a key
 */
 bool runKeyLoadDialogForString(std::string &inputKeyStringToLoadTo, bool inputIsPublicKey, std::string &inputPathStartFormAt);
+
+/**
+This function generates a key mangement request, sends it to the specified caster and verifies if the request succeeded.
+@param inputCasterIPAddressString: A string containing the IP address to send to
+@param inputCasterKeyManagementPortString: A string containing the key management port to send to
+@param inputKeyManagementPublicKey: The public key associated with the caster's key management port
+@param inputKeyMangementSecretKey: The secret key associated with the caster's key managment port
+@param inputKeyToSendRequestFor: The key to do the key management operation for
+@param inputTypeOfKeyManagementRequest: The type of operation to perform with the given key
+@param inputRequestValidUntil:  When the requested change will expire (int Milliseconds since the Unix epoch)
+@param inputMaximumResponseDelay: How long in seconds to wait for the reply
+@return: true if the request succeeded and false otherwise
+*/
+bool sendKeyManagementRequest(const std::string &inputCasterIPAddressString, const std::string &inputCasterKeyManagementPortString, const std::string &inputKeyManagementPublicKey, const std::string &inputKeyManagementSecretKey, const std::string inputKeyToSendRequestFor, keyManagementRequestType inputTypeOfKeyManagementRequest, int64_t inputRequestValidUntil, double inputMaximumResponseDelay);
+
+//ZMQ context to use for requests
+zmq::context_t context;
 
 //Save last secret, public key path loaded 
 std::string lastPublicKeyPath;
@@ -168,14 +234,15 @@ std::string pathToFolderToPlaceGeneratedKeyPairIn;
 std::string credentialsPublicKey;
 std::vector<std::string> credentialsSigningPublicKeys;
 std::vector<std::string> credentialsSigningPrivateKeys;
+std::string credentialsFilePath;
 
 //Send key management requests
 std::string keyManagementPrivateKeyToUse;
+std::string keyManagementPublicKeyToUse;
 std::string officialPublicKeyToAdd;
 std::string registeredCommunityPublicKeyToAdd;
-std::string publicKeyToBlacklist;
+std::string publicKeyToAddToBlacklist;
 };
-
 
 
 

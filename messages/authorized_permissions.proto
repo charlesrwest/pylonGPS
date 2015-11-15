@@ -4,7 +4,7 @@ package pylongps; //Put in pylongps namespace
 message authorized_permissions
 {
 required bytes public_key = 1; //The public key of the entity the permissions are granted to
-optional int64 valid_until = 2; //These permissions are granted until revoked by blacklist or the timepointed defined by valid_until which is defined as the 64 bit unix timestamp given by the Poco Timestamp function.
+optional int64 valid_until = 2; //These permissions are granted until revoked by blacklist or the timepointed defined by valid_until which is defined as the 64 bit unix timestamp given by the Poco Timestamp function (microseconds since Unix Epoc).
 
 //The granted permissions
 optional uint32 number_of_permitted_base_stations = 3;  //The number of simultaneous base station streams the owner of the key may open with a PylonGPS on behalf of the signers

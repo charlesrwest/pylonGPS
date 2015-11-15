@@ -33,7 +33,7 @@
     <item>
      <widget class="QStackedWidget" name="casterConfigurationStackedWidget">
       <property name="currentIndex">
-       <number>0</number>
+       <number>2</number>
       </property>
       <widget class="QWidget" name="configureCasterPage">
        <property name="layoutDirection">
@@ -477,7 +477,7 @@
            </size>
           </property>
           <property name="text">
-           <string>Select Key File</string>
+           <string>Add Key File</string>
           </property>
          </widget>
         </item>
@@ -554,7 +554,7 @@
            </size>
           </property>
           <property name="text">
-           <string>Select Key File</string>
+           <string>Add Key File</string>
           </property>
          </widget>
         </item>
@@ -598,7 +598,7 @@
          </widget>
         </item>
         <item row="6" column="2">
-         <widget class="QPushButton" name="pushButton">
+         <widget class="QPushButton" name="clearSignaturesPushButton">
           <property name="minimumSize">
            <size>
             <width>150</width>
@@ -638,7 +638,7 @@
            <enum>QFrame::Raised</enum>
           </property>
           <layout class="QGridLayout" name="gridLayout_3">
-           <item row="3" column="1">
+           <item row="4" column="1">
             <spacer name="horizontalSpacer_18">
              <property name="orientation">
               <enum>Qt::Horizontal</enum>
@@ -658,7 +658,7 @@
              </property>
             </widget>
            </item>
-           <item row="0" column="2">
+           <item row="0" column="3">
             <widget class="QLineEdit" name="casterIPAddressLineEdit">
              <property name="text">
               <string>192.168.1.1</string>
@@ -668,7 +668,7 @@
              </property>
             </widget>
            </item>
-           <item row="2" column="2">
+           <item row="2" column="3">
             <widget class="QLineEdit" name="casterPortLineEdit">
              <property name="text">
               <string>10006</string>
@@ -678,14 +678,14 @@
              </property>
             </widget>
            </item>
-           <item row="3" column="0">
+           <item row="4" column="0">
             <widget class="QLabel" name="label_21">
              <property name="text">
-              <string>Select Key Management Private Key</string>
+              <string>Select Key Management Secret Key</string>
              </property>
             </widget>
            </item>
-           <item row="3" column="2">
+           <item row="4" column="3">
             <widget class="QPushButton" name="selectKeyManagementPrivateKeyPushButton">
              <property name="minimumSize">
               <size>
@@ -730,6 +730,33 @@
               <string>Port</string>
              </property>
             </widget>
+           </item>
+           <item row="3" column="3">
+            <widget class="QPushButton" name="selectKeyManagementPublicKeyPushButton">
+             <property name="text">
+              <string>Select Key File</string>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="0">
+            <widget class="QLabel" name="label_25">
+             <property name="text">
+              <string>Select Key Management Public Key</string>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="1">
+            <spacer name="horizontalSpacer_12">
+             <property name="orientation">
+              <enum>Qt::Horizontal</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>40</width>
+               <height>20</height>
+              </size>
+             </property>
+            </spacer>
            </item>
           </layout>
          </widget>

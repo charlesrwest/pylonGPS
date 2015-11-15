@@ -54,6 +54,7 @@ connect(selectCredentialsPublicKeyPushButton, SIGNAL(clicked(bool)), this, SLOT(
 connect(selectCredentialsPublicSigningKey, SIGNAL(clicked(bool)), this, SLOT(addCredentialsSigningPublicKey()));
 connect(selectCredentialsPrivateSigningKey, SIGNAL(clicked(bool)), this, SLOT(addCredentialsSigningSecretKey()));
 
+connect(selectKeyManagementPublicKeyPushButton, SIGNAL(clicked(bool)), this, SLOT(loadKeyManagementSigningPublicKey()));
 connect(selectKeyManagementPrivateKeyPushButton, SIGNAL(clicked(bool)), this, SLOT(loadKeyManagementSigningSecretKey()));
 connect(selectOfficialPublicSigningKeyToAdd, SIGNAL(clicked(bool)), this, SLOT(loadOfficialPublicKeyForKeyManagementRequest()));
 connect(selectRegisteredCommunitySigningKeyToAddPushButton, SIGNAL(clicked(bool)), this, SLOT(loadRegisteredCommunityPublicKeyForKeyManagementRequest()));
@@ -61,6 +62,13 @@ connect(selectBlackListPublicKey, SIGNAL(clicked(bool)), this, SLOT(loadPublicKe
 
 connect(saveCasterConfigurationPushButton, SIGNAL(clicked(bool)), this, SLOT(generateCasterConfigurationFile()));
 connect(loadCasterConfigurationPushButton, SIGNAL(clicked(bool)), this, SLOT(openCasterConfigurationFile()));
+
+connect(clearSignaturesPushButton, SIGNAL(clicked(bool)), this, SLOT(clearCredentialsSignatureKeys()));
+connect(createCredentialsPushButton_2, SIGNAL(clicked(bool)), this, SLOT(createCredentialsFile()));
+
+connect(addOfficialSigningKeyPushButton, SIGNAL(clicked(bool)), this, SLOT(addOfficialSigningKeyToCaster()));
+connect(addRegisteredCommunitySigningKeyPushButton, SIGNAL(clicked(bool)), this, SLOT(addRegisteredCommunitySigningKeyToCaster()));
+connect(blacklistKeyPushButton, SIGNAL(clicked(bool)), this, SLOT(addSigningKeyToCasterBlacklist()));
 } 
 
 
@@ -266,6 +274,120 @@ casterConfigurationKeyManagementPublicSigningKey = configuration.signing_keys_ma
 }
 
 /**
+This function removes all of the keys that have been stored for signing credentials.
+*/
+void casterGUI::clearCredentialsSignatureKeys()
+{
+credentialsSigningPublicKeys.clear();
+credentialsSigningPrivateKeys.clear();
+}
+
+/**
+This function opens a file dialog and then generates/saves a credentials file based on the keys that have been loaded.  It emits a couldNotWriteCredentialsFile signal if there was not enough information loaded or a operation failed.
+*/
+void casterGUI::createCredentialsFile()
+{
+//Check that a public key to sign has been loaded and that at least one signature file has been loaded
+if(credentialsPublicKey.size() == 0 || credentialsSigningPublicKeys.size() == 0 || credentialsSigningPrivateKeys.size() == 0)
+{
+emit couldNotWriteCredentialsFile();
+return;
+}
+
+authorized_permissions permissions;
+permissions.set_public_key(credentialsPublicKey);
+permissions.set_valid_until(selectCredentialsExpirationDateTimeEdit->dateTime().toMSecsSinceEpoch()*1000); //Microseconds since epoc
+permissions.set_number_of_permitted_base_stations(std::atoll(selectCredentialsBasestationLimit->text().toStdString().c_str())); 
+
+std::string serializedPermissions;
+permissions.SerializeToString(&serializedPermissions);
+
+//Generate signatures
+unsigned char cryptoSignature[crypto_sign_BYTES];
+std::vector<signature> signatures;
+for(int i=0; i<credentialsSigningPublicKeys.size() && i<credentialsSigningPrivateKeys.size(); i++)
+{
+crypto_sign_detached(cryptoSignature, nullptr, (const unsigned char *) serializedPermissions.c_str(), serializedPermissions.size(), (const unsigned char *) credentialsSigningPrivateKeys[i].c_str());
+
+signature generatedSignature;
+generatedSignature.set_public_key(credentialsSigningPublicKeys[i]);
+generatedSignature.set_cryptographic_signature(std::string((char *) cryptoSignature, crypto_sign_BYTES));
+
+signatures.push_back(generatedSignature);
+}
+
+//Create and serialize credentials object
+std::string serializedCredentialsObject;
+credentials credentialsObject;
+credentialsObject.set_permissions(serializedPermissions);
+
+//Add signatures
+for(int i=0; i<signatures.size(); i++)
+{
+*(credentialsObject.add_signatures()) = signatures[i];
+}
+
+credentialsObject.SerializeToString(&serializedCredentialsObject);
+
+//Create serialized object size
+Poco::Int64 credentialsObjectSizeNetworkOrder = Poco::ByteOrder::toNetwork(Poco::Int64(serializedCredentialsObject.size()));
+
+//Open file dialog
+QString qPath = QFileDialog::getSaveFileName(this, "Save Credentials", QString(credentialsFilePath.c_str()), "Pylon Credentials File (*.pylonCredentials)");
+std::string path = qPath.toStdString();
+credentialsFilePath = path;
+
+//Save to file
+if(!saveStringToFile(std::string((char *) &credentialsObjectSizeNetworkOrder, sizeof(Poco::Int64)) + serializedCredentialsObject, path+".pylonCredentials"))
+{
+emit couldNotWriteCredentialsFile();
+return;
+}
+}
+
+/**
+This function adds a Official Signing key to the caster whose IP address/key management port has been entered.  This function makes a network call and waits a maximum of .25 seconds for it to send a response back.  This can cause the GUI to hang for a little bit.
+*/
+void casterGUI::addOfficialSigningKeyToCaster()
+{
+
+if(sendKeyManagementRequest(casterIPAddressLineEdit->text().toStdString(), casterPortLineEdit->text().toStdString(), keyManagementPublicKeyToUse, keyManagementPrivateKeyToUse, officialPublicKeyToAdd, ADD_OFFICIAL_SIGNING_KEY, officialPublicKeyToAddExpirationDateTimeEdit->dateTime().toMSecsSinceEpoch()*1000, .25) == false)
+{
+emit couldNotAddOfficialKeyToCaster();
+return;
+}
+
+}
+
+/**
+This function adds a Registered Community Signing key to the caster whose IP address/key management port has been entered.  This function makes a network call and waits a maximum of .25 seconds for it to send a response back.  This can cause the GUI to hang for a little bit.
+*/
+void casterGUI::addRegisteredCommunitySigningKeyToCaster()
+{
+
+if(sendKeyManagementRequest(casterIPAddressLineEdit->text().toStdString(), casterPortLineEdit->text().toStdString(), keyManagementPublicKeyToUse, keyManagementPrivateKeyToUse, registeredCommunityPublicKeyToAdd, ADD_REGISTERED_COMMUNITY_SIGNING_KEY, registeredCommunityPublicKeyToAddExpirationTimeDateTimeEdit->dateTime().toMSecsSinceEpoch()*1000, .25) == false)
+{
+emit couldNotAddRegistedCommunityKeyToCaster();
+return;
+}
+
+}
+
+/**
+This function adds a Signing key the black list maintained by the caster whose IP address/key management port has been entered.  This function makes a network call and waits a maximum of .25 seconds for it to send a response back.  This can cause the GUI to hang for a little bit.
+*/
+void casterGUI::addSigningKeyToCasterBlacklist()
+{
+
+if(sendKeyManagementRequest(casterIPAddressLineEdit->text().toStdString(), casterPortLineEdit->text().toStdString(), keyManagementPublicKeyToUse, keyManagementPrivateKeyToUse, publicKeyToAddToBlacklist, BLACKLIST_SIGNING_KEY, blacklistPublicKeyExpirationTimeDateTimeEdit->dateTime().toMSecsSinceEpoch()*1000, .25) == false)
+{
+emit couldNotAddKeyToCasterBlacklist();
+return;
+}
+
+}
+
+/**
 This function loads the public signing key to assign to the caster.
 */
 void casterGUI::loadCasterConfigurationPublicSigningKey()
@@ -322,6 +444,14 @@ credentialsSigningPrivateKeys.push_back(keyBuffer);
 }
 
 /**
+This function loads the key management public key to use with key management requests.
+*/
+void casterGUI::loadKeyManagementSigningPublicKey()
+{
+runKeyLoadDialogForString(keyManagementPublicKeyToUse, true, lastPublicKeyPath);
+}
+
+/**
 This function loads the key management key to use with key management requests.
 */
 void casterGUI::loadKeyManagementSigningSecretKey()
@@ -350,7 +480,7 @@ This function loads a public key to add to the black list using a key managment 
 */
 void casterGUI::loadPublicKeyToBlacklistForKeyManagementRequest()
 {
-runKeyLoadDialogForString(publicKeyToBlacklist, true, lastPublicKeyPath);
+runKeyLoadDialogForString(publicKeyToAddToBlacklist, true, lastPublicKeyPath);
 }
 
 /**
@@ -395,6 +525,108 @@ emit couldNotReadSecretKeyFile();
 //Key loaded OK
 inputKeyStringToLoadTo = loadedKey;
 inputPathStartFormAt = path;
+return true;
+}
+
+
+/**
+This function generates a key mangement request, sends it to the specified caster and verifies if the request succeeded.
+@param inputCasterIPAddressString: A string containing the IP address to send to
+@param inputCasterKeyManagementPortString: A string containing the key management port to send to
+@param inputKeyManagementPublicKey: The public key associated with the caster's key management port
+@param inputKeyMangementSecretKey: The secret key associated with the caster's key managment port
+@param inputKeyToSendRequestFor: The key to do the key management operation for
+@param inputTypeOfKeyManagementRequest: The type of operation to perform with the given key
+@param inputRequestValidUntil:  When the requested change will expire (int Milliseconds since the Unix epoch)
+@param inputMaximumResponseDelay: How long in seconds to wait for the reply
+@return: true if the request succeeded and false otherwise
+*/
+bool casterGUI::sendKeyManagementRequest(const std::string &inputCasterIPAddressString, const std::string &inputCasterKeyManagementPortString, const std::string &inputKeyManagementPublicKey, const std::string &inputKeyManagementSecretKey, const std::string inputKeyToSendRequestFor, keyManagementRequestType inputTypeOfKeyManagementRequest, int64_t inputRequestValidUntil, double inputMaximumResponseDelay)
+{
+//Check that the required keys have been inserted
+if(inputCasterIPAddressString.size() == 0 || inputCasterKeyManagementPortString.size() == 0 || inputKeyManagementPublicKey.size() == 0 || inputKeyManagementSecretKey.size() == 0)
+{
+return false;
+}
+
+//Create socket with a connection to the key manager
+std::unique_ptr<zmq::socket_t> requestSocket;
+try
+{
+requestSocket.reset(new zmq::socket_t(context, ZMQ_REQ));
+int maxWaitTime = inputMaximumResponseDelay*1000 + .5; //Convert to milliseconds
+
+SOM_TRY
+requestSocket->setsockopt(ZMQ_RCVTIMEO, (void *) &maxWaitTime, sizeof(maxWaitTime));
+SOM_CATCH("Error setting timeout time\n")
+
+SOM_TRY
+requestSocket->connect(("tcp://" + inputCasterIPAddressString + ":" + inputCasterKeyManagementPortString).c_str());
+SOM_CATCH("Error connecting socket\n")
+}
+catch(const std::exception &inputException)
+{
+return false;
+}
+
+//Construct request
+std::string serializedChangesToMake;
+key_status_changes changesToMake;
+if(inputTypeOfKeyManagementRequest == ADD_OFFICIAL_SIGNING_KEY)
+{
+(*changesToMake.add_official_signing_keys_to_add()) = inputKeyToSendRequestFor;
+changesToMake.add_official_signing_keys_to_add_valid_until(inputRequestValidUntil);
+}
+else if(inputTypeOfKeyManagementRequest == ADD_REGISTERED_COMMUNITY_SIGNING_KEY)
+{
+(*changesToMake.add_registered_community_signing_keys_to_add()) = inputKeyToSendRequestFor;
+changesToMake.add_registered_community_signing_keys_to_add_valid_until(inputRequestValidUntil);
+}
+else
+{
+(*changesToMake.add_keys_to_add_to_blacklist()) = inputKeyToSendRequestFor;
+changesToMake.keys_to_add_to_blacklist_valid_until(inputRequestValidUntil);
+}
+
+changesToMake.SerializeToString(&serializedChangesToMake);
+
+//Generate signature
+unsigned char cryptoSignature[crypto_sign_BYTES];
+crypto_sign_detached(cryptoSignature, nullptr, (const unsigned char *) serializedChangesToMake.c_str(), serializedChangesToMake.size(), (const unsigned char *) inputKeyManagementSecretKey.c_str());
+
+signature keyManagementSignature;
+keyManagementSignature.set_public_key(inputKeyManagementPublicKey);
+keyManagementSignature.set_cryptographic_signature(std::string((char *) cryptoSignature, crypto_sign_BYTES));
+
+key_management_request request;
+request.set_serialized_key_status_changes(serializedChangesToMake);
+(*request.mutable_signature()) = keyManagementSignature;
+
+key_management_reply reply;
+
+//Send request and get reply
+bool replyReceived = false;
+bool replyDeserializedCorrectly = false;
+
+try
+{
+std::tie(replyReceived, replyDeserializedCorrectly) = remoteProcedureCall(*requestSocket, request, reply);
+}
+catch(const std::exception &inputException)
+{
+return false;
+}
+
+if(replyReceived == false || replyDeserializedCorrectly == false)
+{
+return false;
+}
+
+if(reply.request_succeeded() == false)
+{
+return false;
+}
+
 return true;
 }
 
