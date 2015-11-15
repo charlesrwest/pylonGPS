@@ -304,10 +304,12 @@ std::unique_ptr<FILE, decltype(fileFreeingLambda)> file(buffer, fileFreeingLambd
 
 std::vector<char> characterArray(inputSizeOfStringToRead);
 
-if(fread(characterArray.data(), inputSizeOfStringToRead, 1, file.get()) != 1)
+if(fread(characterArray.data(), 1, inputSizeOfStringToRead, file.get()) != inputSizeOfStringToRead)
 {
 return false;
 }
+
+inputStringBuffer = std::string(characterArray.data(), characterArray.size());
 
 return true;
 }

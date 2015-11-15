@@ -9,10 +9,14 @@
 #include "zmq.hpp"
 #include "SOMException.hpp"
 #include "utilityFunctions.hpp"
+#include "caster_configuration.pb.h"
+#include "Poco/ByteOrder.h"
 
 #include<climits>
 #include<string>
 #include<memory>
+#include<cstdlib>
+
 
 
 namespace pylongps
@@ -63,6 +67,16 @@ This function generates a new signing key pair and outputs it to files with the 
 @throw: This function can throw exceptions
 */
 void generateKeyPairFiles(const std::string &inputBasePath);
+
+/**
+This function opens up a file dialog to select where to save the current caster settings.  Once the path is selected, it saves.  If something fails, it emits the couldNotWriteConfigurationFile signal.
+*/
+void generateCasterConfigurationFile();
+
+/**
+This function opens a file dialog to select a caster configuration file to open.  Once the file is loaded, it puts the values into the configuration menu for modification/saving.  If something fails, it emits the couldNotReadConfigurationFile() signal. 
+*/
+void openCasterConfigurationFile();
 
 /**
 This function loads the public signing key to assign to the caster.
@@ -123,6 +137,10 @@ void couldNotReadPublicKeyFile();
 
 void couldNotReadSecretKeyFile();
 
+void couldNotReadConfigurationFile();
+
+void couldNotWriteConfigurationFile();
+
 protected:
 /**
 This function opens a dialog box asking for a key file, with the default path being given by inputPathStartFormAt.  If a proper key file is selected and is valid, it loads the key into the string given by inputKeyStringToLoadTo.
@@ -141,6 +159,7 @@ std::string lastSecretKeyPath;
 std::string casterConfigurationPublicSigningKey;
 std::string casterConfigurationSecretSigningKey;
 std::string casterConfigurationKeyManagementPublicSigningKey;
+std::string configurationFilePath;
 
 //Generate key pair variables
 std::string pathToFolderToPlaceGeneratedKeyPairIn;

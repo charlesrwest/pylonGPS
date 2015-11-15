@@ -35,6 +35,16 @@ casterPortLineEdit->setValidator( new QIntValidator(0, portNumberMax, this) );
 
 selectCredentialsBasestationLimit->setValidator( new QIntValidator(0, INT_MAX, this) );
 
+//Validate IP addresses
+QRegExp IPAddressRegex("^0*([1-9]?\\d|1\\d\\d|2[0-4]\\d|25[0-5])\\.0*([1-9]?\\d|1\\d\\d|2[0-4]\\d|25[0-5])\\.0*([1-9]?\\d|1\\d\\d|2[0-4]\\d|25[0-5])\\.0*([1-9]?\\d|1\\d\\d|2[0-4]\\d|25[0-5])$");
+casterIPAddressLineEdit->setValidator(new QRegExpValidator(IPAddressRegex, this));
+
+//Set datetimes to one year from startup
+selectCredentialsExpirationDateTimeEdit->setDateTime(QDateTime::currentDateTime().addYears(1));
+officialPublicKeyToAddExpirationDateTimeEdit->setDateTime(QDateTime::currentDateTime().addYears(1));
+registeredCommunityPublicKeyToAddExpirationTimeDateTimeEdit->setDateTime(QDateTime::currentDateTime().addYears(1));
+blacklistPublicKeyExpirationTimeDateTimeEdit->setDateTime(QDateTime::currentDateTime().addYears(1));
+
 //Connect add key buttons to add key dialogs
 connect(selectCasterPublicSigningKeyPushButton, SIGNAL(clicked(bool)), this, SLOT(loadCasterConfigurationPublicSigningKey()));
 connect(selectCasterPrivateSigningKeyPushButton, SIGNAL(clicked(bool)), this, SLOT(loadCasterConfigurationSecretSigningKey()));
@@ -48,6 +58,9 @@ connect(selectKeyManagementPrivateKeyPushButton, SIGNAL(clicked(bool)), this, SL
 connect(selectOfficialPublicSigningKeyToAdd, SIGNAL(clicked(bool)), this, SLOT(loadOfficialPublicKeyForKeyManagementRequest()));
 connect(selectRegisteredCommunitySigningKeyToAddPushButton, SIGNAL(clicked(bool)), this, SLOT(loadRegisteredCommunityPublicKeyForKeyManagementRequest()));
 connect(selectBlackListPublicKey, SIGNAL(clicked(bool)), this, SLOT(loadPublicKeyToBlacklistForKeyManagementRequest()));
+
+connect(saveCasterConfigurationPushButton, SIGNAL(clicked(bool)), this, SLOT(generateCasterConfigurationFile()));
+connect(loadCasterConfigurationPushButton, SIGNAL(clicked(bool)), this, SLOT(openCasterConfigurationFile()));
 } 
 
 
@@ -127,6 +140,129 @@ if(!saveStringToFile(z85SecretKey.substr(0, z85SecretKey.size()-1), inputBasePat
 emit couldNotWriteKeyPairFiles();
 return;
 }
+}
+
+/**
+This function opens up a file dialog to select where to save the current caster settings.  Once the path is selected, it saves.  If something fails, it emits the couldNotWriteConfigurationFile signal.
+*/
+void casterGUI::generateCasterConfigurationFile()
+{
+//Get path to save to
+QString qPath = QFileDialog::getSaveFileName(this, "Save File", QString(configurationFilePath.c_str()), "Pylon GPS 2.0 Caster Configuration (*.pylonCasterConfiguration)");
+std::string path = qPath.toStdString();
+
+if(path.size() == 0)
+{
+return; //Dialog cancelled
+}
+
+//Generate config object
+caster_configuration configurationObject;
+configurationObject.set_caster_id(std::atoll(casterIDLineEdit->text().toStdString().c_str()));
+configurationObject.set_transmitter_registration_and_streaming_port_number(std::atoll(dataSenderPortNumberLineEdit->text().toStdString().c_str()));
+configurationObject.set_client_request_port_number(std::atoll(clientRequestPortNumberLineEdit->text().toStdString().c_str()));
+configurationObject.set_client_stream_publishing_port_number(std::atoll(clientStreamPublishingPortNumberLineEdit->text().toStdString().c_str()));
+configurationObject.set_proxy_stream_publishing_port_number(std::atoll(proxyStreamPublishingPortNumberLineEdit->text().toStdString().c_str()));
+configurationObject.set_stream_status_notification_port_number(std::atoll(streamStatusNotificationPortNumberLineEdit->text().toStdString().c_str()));
+configurationObject.set_key_registration_and_removal_port_number(std::atoll(keyManagementPortNumberLineEdit->text().toStdString().c_str()));
+
+if(casterConfigurationPublicSigningKey.size() == 0 || casterConfigurationSecretSigningKey.size() == 0 || casterConfigurationKeyManagementPublicSigningKey.size() == 0)
+{//Generate keys
+std::string casterPublicKey;
+std::string casterSecretKey;
+std::tie(casterPublicKey, casterSecretKey) = generateSigningKeys();
+
+std::string keyManagementPublicKey;
+std::string keyManagementSecretKey;
+std::tie(keyManagementPublicKey, keyManagementSecretKey) = generateSigningKeys();
+
+configurationObject.set_caster_public_key(casterPublicKey);
+configurationObject.set_caster_secret_key(casterSecretKey);
+configurationObject.set_signing_keys_management_key(keyManagementPublicKey);
+}
+else
+{
+configurationObject.set_caster_public_key(casterConfigurationPublicSigningKey);
+configurationObject.set_caster_secret_key(casterConfigurationSecretSigningKey);
+configurationObject.set_signing_keys_management_key(casterConfigurationKeyManagementPublicSigningKey);
+}
+
+//Serialize to string
+std::string serializedConfigurationObject;
+configurationObject.SerializeToString(&serializedConfigurationObject);
+
+//Save in format (Poco::64 bit network int indicating object size), object
+Poco::Int64 objectSizeNetworkOrder = Poco::ByteOrder::toNetwork(Poco::Int64(serializedConfigurationObject.size()));
+
+//Save to file
+if(!saveStringToFile(std::string((char *) &objectSizeNetworkOrder, sizeof(Poco::Int64)) + serializedConfigurationObject, path+".pylonCasterConfiguration"))
+{
+emit couldNotWriteConfigurationFile();
+}
+}
+
+/**
+This function opens a file dialog to select a caster configuration file to open.  Once the file is loaded, it puts the values into the configuration menu for modification/saving.  If something fails, it emits the couldNotReadConfigurationFile() signal. 
+*/
+void casterGUI::openCasterConfigurationFile()
+{
+//Get path
+QString qPath;
+qPath = QFileDialog::getOpenFileName(this, "Open Configuration file", QString(configurationFilePath.c_str()), "Caster configuration file (*.pylonCasterConfiguration)");
+std::string path = qPath.toStdString();
+
+//Read size of object in file
+std::string sizeString;
+if(readStringFromFile(sizeString, sizeof(Poco::Int64), path) == false) 
+{
+emit couldNotReadConfigurationFile();
+return;
+}
+
+Poco::Int64 objectSizeNetworkOrder = *((Poco::Int64 *) sizeString.c_str());
+Poco::Int64 objectSize = Poco::ByteOrder::fromNetwork(objectSizeNetworkOrder);
+
+//Read size+object
+std::string sizeAndObjectString;
+if(readStringFromFile(sizeAndObjectString, sizeof(Poco::Int64)+objectSize, path) == false || objectSize == 0) 
+{
+emit couldNotReadConfigurationFile();
+return;
+}
+
+std::string objectString = sizeAndObjectString.substr(sizeof(Poco::Int64));
+
+//Deserialize the protobuf object
+caster_configuration configuration;
+
+configuration.ParseFromString(objectString);
+
+if(!configuration.IsInitialized())
+{
+emit couldNotReadConfigurationFile();
+return;
+}
+
+//Check that all required fields are there
+if(!configuration.has_caster_id() || !configuration.has_transmitter_registration_and_streaming_port_number() || !configuration.has_client_request_port_number() || !configuration.has_client_stream_publishing_port_number() || !configuration.has_proxy_stream_publishing_port_number() || !configuration.has_stream_status_notification_port_number() || !configuration.has_key_registration_and_removal_port_number() || !configuration.has_caster_public_key() || !configuration.has_caster_secret_key() || !configuration.has_signing_keys_management_key())
+{
+emit couldNotReadConfigurationFile();
+return;
+}
+
+//Valid configuration has been received
+configurationFilePath = path;
+casterIDLineEdit->setText(QString(std::to_string(configuration.caster_id()).c_str()));
+dataSenderPortNumberLineEdit->setText(QString(std::to_string(configuration.transmitter_registration_and_streaming_port_number()).c_str()));
+clientRequestPortNumberLineEdit->setText(QString(std::to_string(configuration.client_request_port_number()).c_str()));
+clientStreamPublishingPortNumberLineEdit->setText(QString(std::to_string(configuration.client_stream_publishing_port_number()).c_str()));
+proxyStreamPublishingPortNumberLineEdit->setText(QString(std::to_string(configuration.proxy_stream_publishing_port_number()).c_str()));
+streamStatusNotificationPortNumberLineEdit->setText(QString(std::to_string(configuration.stream_status_notification_port_number()).c_str()));
+keyManagementPortNumberLineEdit->setText(QString(std::to_string(configuration.key_registration_and_removal_port_number()).c_str()));
+
+casterConfigurationPublicSigningKey = configuration.caster_public_key();
+casterConfigurationSecretSigningKey = configuration.caster_secret_key();
+casterConfigurationKeyManagementPublicSigningKey = configuration.signing_keys_management_key();
 }
 
 /**
