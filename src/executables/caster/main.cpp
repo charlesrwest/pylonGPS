@@ -8,7 +8,7 @@ using namespace pylongps;
 
 int main(int argc, char** argv)
 {
-//Define options
+//Defined options
 // -C configurationFile
 // -caster_id casterIDNumber
 // -transmitter_streaming_port streamingPortNumber 
@@ -20,11 +20,31 @@ int main(int argc, char** argv)
 // -caster_public_key_path pathToPublicKeyFileForCaster
 // -caster_secret_key_path pathToSecretKeyFileForCaster
 // -caster_key_management_public_key_path pathToPublicKeyAllowedToSendKeyManagementRequests
+// -help list of possible options
 
 std::map<std::string, std::string> processedArguments = parseStringArguments(argv+1, argc-1); //Skip program name
 
 caster_configuration currentConfiguration;
 long int buffer;
+
+// -help list of possible options
+if(processedArguments.count("help") > 0)
+{ //Print options and exit
+printf("Possible options: \n");
+printf("-C configurationFile\n");
+printf("-caster_id casterIDNumber\n");
+printf("-transmitter_streaming_port streamingPortNumber\n"); 
+printf("-client_request_port clientRequestPortNumber\n");
+printf("-client_streaming_port clientStreamingPortNumber\n");
+printf("-proxy_streaming_publishing_port proxyStreamingPublishingPortNumber\n");
+printf("-stream_status_notification_port streamStatusNotificationPortNumber\n");
+printf("-key_management_port keyManagementPortNumber\n");
+printf("-caster_public_key_path pathToPublicKeyFileForCaster\n");
+printf("-caster_secret_key_path pathToSecretKeyFileForCaster\n");
+printf("-caster_key_management_public_key_path pathToPublicKeyAllowedToSendKeyManagementRequests\n");
+printf("-help get list of possible options\n");
+return 0;
+}
 
 // -C configurationFile
 if(processedArguments.count("C") > 0)
