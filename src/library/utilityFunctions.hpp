@@ -7,7 +7,8 @@
 #include<google/protobuf/message.h>
 #include <sodium.h>
 #include<iostream>
-#include<array>
+#include<map>
+#include "Poco/ByteOrder.h"
 
 namespace pylongps
 {
@@ -133,6 +134,46 @@ This function loads a secret key and decodes it from a Z85 encoded file.
 @return: a string of length crypto_sign_SECRETKEYBYTES if successful and empty otherwise
 */
 std::string loadSecretKeyFromFile(const std::string &inputPath);
+
+/**
+This function loads a protobuf object from a file using the assumption that it is proceeded with a 64 bit Poco::Int64 in network byte order that holds the size of the object to be loaded and deserialized.
+@param inputPath: The path to the file to load from
+@param inputMessageBuffer: The protobuf object to deserialize to
+@return: true if the message could be loaded and deserialized and false otherwise
+*/
+bool loadProtobufObjectFromFile(const std::string &inputPath, google::protobuf::Message &inputMessageBuffer);
+
+/**
+This function saves a protobuf object to a file with a proceeded 64 bit Poco::Int64 in network byte order that holds the size of the object to be loaded and deserialized.
+@param inputPath: The path to the file to save the object to
+@param inputMessageBuffer: The protobuf object to serialize
+@return: true if the message could be serialized/saved and false otherwise
+*/
+bool saveProtobufObjectToFile(const std::string &inputPath, google::protobuf::Message &inputMessageBuffer);
+
+/**
+This function parses the passed strings and looks for arguments starting with "-".  If the next argument after a "-" argument doesn't start with "-", it stores the pair <"optionWithout-Character", "associatedValue">.  If it does start with "-", it simply stores <"optionWithout-Character", ""> and processes the next argument.
+@param inputArguments: The set of strings to process
+@param inputNumberOfArguments: The number of strings to process
+@return: a map of form "option" -> value
+*/
+std::map<std::string, std::string> parseStringArguments(char **inputArguments, unsigned int inputNumberOfArguments);
+
+/**
+This function converts a string to an integer without having bad defaults or needing to throw exceptions.
+@param inputString: The string to convert
+@param inputIntegerBuffer: The integer variable to store the result in
+@return: True if the conversion was successful and false otherwise
+*/
+bool convertStringToInteger(const std::string &inputString, long int &inputIntegerBuffer);
+
+/**
+This function converts a string to an integer without having bad defaults or needing to throw exceptions.
+@param inputString: The string to convert
+@param inputIntegerBuffer: The integer variable to store the result in
+@return: True if the conversion was successful and false otherwise
+*/
+bool convertStringToInteger(const std::string &inputString, int &inputIntegerBuffer);
 
 }
 

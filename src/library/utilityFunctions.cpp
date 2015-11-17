@@ -365,3 +365,146 @@ return "";
 
 return std::string((char *) secretKeyBuffer, crypto_sign_SECRETKEYBYTES);
 }
+
+/**
+This function loads a protobuf object from a file using the assumption that it is proceeded with a 64 bit Poco::Int64 in network byte order that holds the size of the object to be loaded and deserialized.
+@param inputPath: The path to the file to load from
+@param inputMessageBuffer: The protobuf object to deserialize to
+@return: true if the message could be loaded and deserialized and false otherwise
+*/
+bool pylongps::loadProtobufObjectFromFile(const std::string &inputPath, google::protobuf::Message &inputMessageBuffer)
+{
+//Read size of object in file
+std::string sizeString;
+if(readStringFromFile(sizeString, sizeof(Poco::Int64), inputPath) == false) 
+{
+return false;
+}
+
+Poco::Int64 objectSizeNetworkOrder = *((Poco::Int64 *) sizeString.c_str());
+Poco::Int64 objectSize = Poco::ByteOrder::fromNetwork(objectSizeNetworkOrder);
+
+//Read size+object
+std::string sizeAndObjectString;
+if(readStringFromFile(sizeAndObjectString, sizeof(Poco::Int64)+objectSize, inputPath) == false || objectSize == 0) 
+{
+return false;
+}
+
+//Clip off size
+std::string objectString = sizeAndObjectString.substr(sizeof(Poco::Int64));
+
+//Deserialize the protobuf object
+inputMessageBuffer.ParseFromString(objectString);
+
+if(!inputMessageBuffer.IsInitialized())
+{
+return false;
+}
+
+return true;
+}
+
+/**
+This function saves a protobuf object to a file with a proceeded 64 bit Poco::Int64 in network byte order that holds the size of the object to be loaded and deserialized.
+@param inputPath: The path to the file to save the object to
+@param inputMessageBuffer: The protobuf object to serialize
+@return: true if the message could be serialized/saved and false otherwise
+*/
+bool pylongps::saveProtobufObjectToFile(const std::string &inputPath, google::protobuf::Message &inputMessageBuffer)
+{
+std::string serializedObject;
+try
+{
+inputMessageBuffer.SerializeToString(&serializedObject);
+}
+catch(const std::exception &inputException)
+{
+return false;
+}
+
+//Create serialized object size
+Poco::Int64 objectSizeNetworkOrder = Poco::ByteOrder::toNetwork(Poco::Int64(serializedObject.size()));
+
+//Save to file
+if(!saveStringToFile(std::string((char *) &objectSizeNetworkOrder, sizeof(Poco::Int64)) + serializedObject, inputPath))
+{
+return false;
+}
+
+return true;
+}
+
+/**
+This function parses the passed strings and looks for arguments starting with "-".  If the next argument after a "-" argument doesn't start with "-", it stores the pair <"optionWithout-Character", "associatedValue">.  If it does start with "-", it simply stores <"optionWithout-Character", ""> and processes the next argument.
+@param inputArguments: The set of strings to process
+@param inputNumberOfArguments: The number of strings to process
+@return: a map of form "option" -> value
+*/
+std::map<std::string, std::string> pylongps::parseStringArguments(char **inputArguments, unsigned int inputNumberOfArguments)
+{
+//Convert arguments to strings
+std::vector<std::string> arguments;
+for(int i=0; i<inputNumberOfArguments; i++)
+{
+arguments.push_back(std::string(inputArguments[i]));
+}
+
+std::map<std::string, std::string> results;
+for(int i=0; i<arguments.size(); i++)
+{
+if(arguments[i].find("-") == 0)
+{
+if((i+1) < arguments.size())
+{//Check if next argument isn't an option
+if(arguments[i+1].find("-") != 0)
+{
+results[arguments[i].substr(1)] = arguments[i+1];
+continue;
+}
+}
+
+results[arguments[i].substr(1)] = "";
+}
+}
+
+return results;
+}
+
+/**
+This function converts a string to an integer without having bad defaults or needing to throw exceptions.
+@param inputString: The string to convert
+@param inputIntegerBuffer: The integer variable to store the result in
+@return: True if the conversion was successful and false otherwise
+*/
+bool pylongps::convertStringToInteger(const std::string &inputString, long int &inputIntegerBuffer)
+{
+char *stringEnd = nullptr;
+inputIntegerBuffer = strtol(inputString.c_str(), &stringEnd, 0);
+
+if(((const char *) stringEnd) == inputString.c_str())
+{ //Couldn't convert correctly
+return false;
+}
+
+return true;
+}
+
+/**
+This function converts a string to an integer without having bad defaults or needing to throw exceptions.
+@param inputString: The string to convert
+@param inputIntegerBuffer: The integer variable to store the result in
+@return: True if the conversion was successful and false otherwise
+*/
+bool pylongps::convertStringToInteger(const std::string &inputString, int &inputIntegerBuffer)
+{
+char *stringEnd = nullptr;
+inputIntegerBuffer = strtol(inputString.c_str(), &stringEnd, 0);
+
+if(((const char *) stringEnd) == inputString.c_str())
+{ //Couldn't convert correctly
+return false;
+}
+
+return true;
+}

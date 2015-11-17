@@ -24,6 +24,7 @@
 #include <sodium.h>
 #include "reactor.hpp"
 
+#include "caster_configuration.pb.h"
 #include "database_request.pb.h"
 #include "database_reply.pb.h"
 #include "client_query_request.pb.h"
@@ -88,6 +89,15 @@ This function initializes the class, creates the associated database, and starts
 @throws: This function can throw exceptions
 */
 caster(zmq::context_t *inputContext, int64_t inputCasterID, uint32_t inputTransmitterRegistrationAndStreamingPortNumber, uint32_t inputClientRequestPortNumber, uint32_t inputClientStreamPublishingPortNumber, uint32_t inputProxyStreamPublishingPortNumber, uint32_t inputStreamStatusNotificationPortNumber, uint32_t inputKeyRegistrationAndRemovalPortNumber, const std::string &inputCasterPublicKey, const std::string &inputCasterSecretKey, const std::string &inputSigningKeysManagementKey, const std::vector<std::string> &inputOfficialSigningKeys, const std::vector<std::string> &inputRegisteredCommunitySigningKeys, const std::vector<std::string> &inputBlacklistedKeys, const std::string &inputCasterSQLITEConnectionString = "");
+
+/**
+This function intializes the object based on the parameters in a protobuf message (which allows serialization/deserialization of configuration parameters).
+@param inputContext: The ZMQ context to use
+@param inputConfiguration: The protobuf message containing the configuration information
+
+@throws: This function can throw exceptions
+*/
+caster(zmq::context_t *inputContext, const caster_configuration &inputConfiguration);
 
 /**
 This thread safe function adds a new caster to proxy.  The function may have some lag as a query needs to be sent to the caster to proxy and the results returned before this function does.
@@ -159,6 +169,28 @@ std::map<std::string, std::tuple<std::string, std::string, std::string> > client
 //Used to determine if a proxied basestation has timed out localID -> poco timestamp
 std::map<int64_t, Poco::Timestamp> localBasestationIDToLastMessageTimestamp;
 
+
+/**
+This function initializes the class, creates the associated database, and starts the two threads associated with it (used in constructors).
+@param inputContext: The ZMQ context that this object should use
+@param inputCasterID: The 64 bit ID associated with this caster (make sure it does not collide with caster IDs the clients are likely to run into)
+@param inputTransmitterRegistrationAndStreamingPortNumber: The port number to register the ZMQ router socket used for receiving PylonGPS transmitter registrations/streams
+@param inputClientRequestPortNumber: The port to open to receive client requests (including requests from proxies for the list of sources)
+@param inputClientStreamPublishingPortNumber: The port to open for the interface to publish stream data to clients
+@param inputProxyStreamPublishingPortNumber: The port to open for the interface to publish stream data to proxies (potentially higher priority)
+@param inputStreamStatusNotificationPortNumber: The port for the interface that is used to to publish stream status changes
+@param inputKeyRegistrationAndRemovalPortNumber: The port for the interface that is used to add/remove 
+@param inputCasterPublicKey: The public key for this caster to use for encryption/authentation
+@param inputCasterSecretKey: The secret key for this caster to use for encryption/authentation
+@param inputSigningKeysManagementKey: The signing key that has permission to add/remove allowed signing keys from the caster
+@param inputOfficialSigningKeys: A list of the initial set of approved keys for official basestations
+@param inputRegisteredCommunitySigningKeys: A list of the initial set of approved keys for registered community basestations
+@param inputBlacklistedKeys: A list of signing keys not to trust 
+@param inputCasterSQLITEConnectionString: The connection string used to connect to or create the SQLITE database used for stream source entry management and query resolution.  If an empty string is given (by default), it will connect/create an in memory database with a random 64 bit number string (example: "file:9735926149617295559?mode=memory&cache=shared")
+
+@throws: This function can throw exceptions
+*/
+void commonConstructor(zmq::context_t *inputContext, int64_t inputCasterID, uint32_t inputTransmitterRegistrationAndStreamingPortNumber, uint32_t inputClientRequestPortNumber, uint32_t inputClientStreamPublishingPortNumber, uint32_t inputProxyStreamPublishingPortNumber, uint32_t inputStreamStatusNotificationPortNumber, uint32_t inputKeyRegistrationAndRemovalPortNumber, const std::string &inputCasterPublicKey, const std::string &inputCasterSecretKey, const std::string &inputSigningKeysManagementKey, const std::vector<std::string> &inputOfficialSigningKeys, const std::vector<std::string> &inputRegisteredCommunitySigningKeys, const std::vector<std::string> &inputBlacklistedKeys, const std::string &inputCasterSQLITEConnectionString = "");
 
 /**
 This function processes any events that are scheduled to have occurred by now and returns when the next event is scheduled to occur.  Which thread is calling this function is determined by the type of events in the event queue.

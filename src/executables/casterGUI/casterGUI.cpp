@@ -195,17 +195,11 @@ configurationObject.set_caster_secret_key(casterConfigurationSecretSigningKey);
 configurationObject.set_signing_keys_management_key(casterConfigurationKeyManagementPublicSigningKey);
 }
 
-//Serialize to string
-std::string serializedConfigurationObject;
-configurationObject.SerializeToString(&serializedConfigurationObject);
-
-//Save in format (Poco::64 bit network int indicating object size), object
-Poco::Int64 objectSizeNetworkOrder = Poco::ByteOrder::toNetwork(Poco::Int64(serializedConfigurationObject.size()));
-
 //Save to file
-if(!saveStringToFile(std::string((char *) &objectSizeNetworkOrder, sizeof(Poco::Int64)) + serializedConfigurationObject, path+".pylonCasterConfiguration"))
+if(saveProtobufObjectToFile(path + ".pylonCasterConfiguration", configurationObject) == false)
 {
 emit couldNotWriteConfigurationFile();
+return;
 }
 }
 
@@ -219,33 +213,9 @@ QString qPath;
 qPath = QFileDialog::getOpenFileName(this, "Open Configuration file", QString(configurationFilePath.c_str()), "Caster configuration file (*.pylonCasterConfiguration)");
 std::string path = qPath.toStdString();
 
-//Read size of object in file
-std::string sizeString;
-if(readStringFromFile(sizeString, sizeof(Poco::Int64), path) == false) 
-{
-emit couldNotReadConfigurationFile();
-return;
-}
-
-Poco::Int64 objectSizeNetworkOrder = *((Poco::Int64 *) sizeString.c_str());
-Poco::Int64 objectSize = Poco::ByteOrder::fromNetwork(objectSizeNetworkOrder);
-
-//Read size+object
-std::string sizeAndObjectString;
-if(readStringFromFile(sizeAndObjectString, sizeof(Poco::Int64)+objectSize, path) == false || objectSize == 0) 
-{
-emit couldNotReadConfigurationFile();
-return;
-}
-
-std::string objectString = sizeAndObjectString.substr(sizeof(Poco::Int64));
-
-//Deserialize the protobuf object
+//Load configuration from file
 caster_configuration configuration;
-
-configuration.ParseFromString(objectString);
-
-if(!configuration.IsInitialized())
+if(loadProtobufObjectFromFile(path, configuration) == false)
 {
 emit couldNotReadConfigurationFile();
 return;
@@ -317,7 +287,6 @@ signatures.push_back(generatedSignature);
 }
 
 //Create and serialize credentials object
-std::string serializedCredentialsObject;
 credentials credentialsObject;
 credentialsObject.set_permissions(serializedPermissions);
 
@@ -327,18 +296,13 @@ for(int i=0; i<signatures.size(); i++)
 *(credentialsObject.add_signatures()) = signatures[i];
 }
 
-credentialsObject.SerializeToString(&serializedCredentialsObject);
-
-//Create serialized object size
-Poco::Int64 credentialsObjectSizeNetworkOrder = Poco::ByteOrder::toNetwork(Poco::Int64(serializedCredentialsObject.size()));
-
 //Open file dialog
 QString qPath = QFileDialog::getSaveFileName(this, "Save Credentials", QString(credentialsFilePath.c_str()), "Pylon Credentials File (*.pylonCredentials)");
 std::string path = qPath.toStdString();
 credentialsFilePath = path;
 
 //Save to file
-if(!saveStringToFile(std::string((char *) &credentialsObjectSizeNetworkOrder, sizeof(Poco::Int64)) + serializedCredentialsObject, path+".pylonCredentials"))
+if(saveProtobufObjectToFile(path+".pylonCredentials", credentialsObject) != false)
 {
 emit couldNotWriteCredentialsFile();
 return;

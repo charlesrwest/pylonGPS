@@ -24,13 +24,74 @@ This function initializes the class, creates the associated database, and starts
 */
 caster::caster(zmq::context_t *inputContext, int64_t inputCasterID, uint32_t inputTransmitterRegistrationAndStreamingPortNumber, uint32_t inputClientRequestPortNumber, uint32_t inputClientStreamPublishingPortNumber, uint32_t inputProxyStreamPublishingPortNumber, uint32_t inputStreamStatusNotificationPortNumber, uint32_t inputKeyRegistrationAndRemovalPortNumber, const std::string &inputCasterPublicKey, const std::string &inputCasterSecretKey, const std::string &inputSigningKeysManagementKey, const std::vector<std::string> &inputOfficialSigningKeys, const std::vector<std::string> &inputRegisteredCommunitySigningKeys, const std::vector<std::string> &inputBlacklistedKeys, const std::string &inputCasterSQLITEConnectionString)  : databaseConnection(nullptr, &sqlite3_close_v2)
 {
+SOM_TRY
+commonConstructor(inputContext, inputCasterID, inputTransmitterRegistrationAndStreamingPortNumber, inputClientRequestPortNumber, inputClientStreamPublishingPortNumber, inputProxyStreamPublishingPortNumber, inputStreamStatusNotificationPortNumber, inputKeyRegistrationAndRemovalPortNumber, inputCasterPublicKey, inputCasterSecretKey, inputSigningKeysManagementKey, inputOfficialSigningKeys, inputRegisteredCommunitySigningKeys, inputBlacklistedKeys, inputCasterSQLITEConnectionString);
+SOM_CATCH("Error in subconstructor\n")
+}
+
+/**
+This function intializes the object based on the parameters in a protobuf message (which allows serialization/deserialization of configuration parameters).
+@param inputContext: The ZMQ context to use
+@param inputConfiguration: The protobuf message containing the configuration information
+
+@throws: This function can throw exceptions
+*/
+caster::caster(zmq::context_t *inputContext, const caster_configuration &inputConfiguration)  : databaseConnection(nullptr, &sqlite3_close_v2)
+{
+//Convert repeated fields into std::vectors
+std::vector<std::string> officialSigningKeys;
+for(int i=0; i<inputConfiguration.official_signing_keys_size(); i++)
+{
+officialSigningKeys.push_back(inputConfiguration.official_signing_keys(i));
+}
+
+std::vector<std::string> registeredCommunitySigningKeys;
+for(int i=0; i<inputConfiguration.registered_community_signing_keys_size(); i++)
+{
+registeredCommunitySigningKeys.push_back(inputConfiguration.registered_community_signing_keys(i));
+}
+
+std::vector<std::string> blacklistedKeys;
+for(int i=0; i<inputConfiguration.blacklisted_keys_size(); i++)
+{
+blacklistedKeys.push_back(inputConfiguration.blacklisted_keys(i));
+}
+
+
+SOM_TRY
+commonConstructor(inputContext, inputConfiguration.caster_id(), inputConfiguration.transmitter_registration_and_streaming_port_number(), inputConfiguration.client_request_port_number(), inputConfiguration.client_stream_publishing_port_number(), inputConfiguration.proxy_stream_publishing_port_number(), inputConfiguration.stream_status_notification_port_number(), inputConfiguration.key_registration_and_removal_port_number(), inputConfiguration.caster_public_key(), inputConfiguration.caster_secret_key(), inputConfiguration.signing_keys_management_key(), officialSigningKeys, registeredCommunitySigningKeys, blacklistedKeys);
+SOM_CATCH("Error in subconstructor\n")
+}
+
+/**
+This function initializes the class, creates the associated database, and starts the two threads associated with it (used in constructors).
+@param inputContext: The ZMQ context that this object should use
+@param inputCasterID: The 64 bit ID associated with this caster (make sure it does not collide with caster IDs the clients are likely to run into)
+@param inputTransmitterRegistrationAndStreamingPortNumber: The port number to register the ZMQ router socket used for receiving PylonGPS transmitter registrations/streams
+@param inputClientRequestPortNumber: The port to open to receive client requests (including requests from proxies for the list of sources)
+@param inputClientStreamPublishingPortNumber: The port to open for the interface to publish stream data to clients
+@param inputProxyStreamPublishingPortNumber: The port to open for the interface to publish stream data to proxies (potentially higher priority)
+@param inputStreamStatusNotificationPortNumber: The port for the interface that is used to to publish stream status changes
+@param inputKeyRegistrationAndRemovalPortNumber: The port for the interface that is used to add/remove 
+@param inputCasterPublicKey: The public key for this caster to use for encryption/authentation
+@param inputCasterSecretKey: The secret key for this caster to use for encryption/authentation
+@param inputSigningKeysManagementKey: The signing key that has permission to add/remove allowed signing keys from the caster
+@param inputOfficialSigningKeys: A list of the initial set of approved keys for official basestations
+@param inputRegisteredCommunitySigningKeys: A list of the initial set of approved keys for registered community basestations
+@param inputBlacklistedKeys: A list of signing keys not to trust 
+@param inputCasterSQLITEConnectionString: The connection string used to connect to or create the SQLITE database used for stream source entry management and query resolution.  If an empty string is given (by default), it will connect/create an in memory database with a random 64 bit number string (example: "file:9735926149617295559?mode=memory&cache=shared")
+
+@throws: This function can throw exceptions
+*/
+void caster::commonConstructor(zmq::context_t *inputContext, int64_t inputCasterID, uint32_t inputTransmitterRegistrationAndStreamingPortNumber, uint32_t inputClientRequestPortNumber, uint32_t inputClientStreamPublishingPortNumber, uint32_t inputProxyStreamPublishingPortNumber, uint32_t inputStreamStatusNotificationPortNumber, uint32_t inputKeyRegistrationAndRemovalPortNumber, const std::string &inputCasterPublicKey, const std::string &inputCasterSecretKey, const std::string &inputSigningKeysManagementKey, const std::vector<std::string> &inputOfficialSigningKeys, const std::vector<std::string> &inputRegisteredCommunitySigningKeys, const std::vector<std::string> &inputBlacklistedKeys, const std::string &inputCasterSQLITEConnectionString)
+{
 if(inputContext == nullptr)
 {
 throw SOMException("Invalid ZMQ context\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
 }
 
 //Check that keys are the right size
-if((inputCasterPublicKey.size() != 32) || (inputCasterSecretKey.size() != 32 ))
+if((inputCasterPublicKey.size() != crypto_sign_PUBLICKEYBYTES) || (inputCasterSecretKey.size() != crypto_sign_SECRETKEYBYTES ))
 {
 throw SOMException("Invalid ZMQ key(s)\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
 }

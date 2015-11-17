@@ -132,6 +132,23 @@ fwrite(messageBuffer.data(), sizeof(char), messageBuffer.size(), stdout);
 
 */
 
+TEST_CASE("Test argument parser", "[argument parser]")
+{
+SECTION("Make sure parser works as expected", "[argument parsing]")
+{
+const char *arguments[] = {"-", "test", "otherTest", "-C", "beta", "-o"};
+int numberOfArguments = 6;
+
+std::map<std::string, std::string> results = parseStringArguments((char **) arguments, numberOfArguments);
+
+REQUIRE(results.size() == 3);
+REQUIRE(results.at("") == "test");
+REQUIRE(results.at("C") == "beta");
+REQUIRE(results.at("o") == "");
+
+}
+}
+
 TEST_CASE("Test template deduction", "[template deduction]")
 {
 SECTION("See if type deduction works as I understand it", "[template deduction]")
@@ -289,21 +306,9 @@ context.reset(new zmq::context_t);
 SOM_CATCH("Error initializing ZMQ context\n")
 
 //Generate keys to use
-char z85CasterPublicKey[41];
-char z85CasterSecretKey[41];
-
-REQUIRE(zmq_curve_keypair(z85CasterPublicKey, z85CasterSecretKey) == 0);
-
-//Convert to binary format
-char buffer[32];
-std::string decodedCasterPublicKey;
-std::string decodedCasterSecretKey;
-
-zmq_z85_decode((uint8_t *) buffer, z85CasterPublicKey);
-decodedCasterPublicKey = std::string(buffer, 32);
-
-zmq_z85_decode((uint8_t *) buffer, z85CasterSecretKey);
-decodedCasterSecretKey = std::string(buffer, 32);
+std::string casterPublicKey;
+std::string casterPrivateKey;
+std::tie(casterPublicKey, casterPrivateKey) = generateSigningKeys();
 
 //Generate key manager signing key
 unsigned char keyManagerPublicKeyArray[crypto_sign_PUBLICKEYBYTES];
@@ -313,7 +318,7 @@ crypto_sign_keypair(keyManagerPublicKeyArray, keyManagerSecretKeyArray);
 std::string keyManagerPublicKey((const char *) keyManagerPublicKeyArray, crypto_sign_PUBLICKEYBYTES);
 std::string keyManagerSecretKey((const char *) keyManagerSecretKeyArray, crypto_sign_SECRETKEYBYTES);
 
-caster myCaster(context.get(), 0,9001,9002,9003, 9004, 9005, 9006, decodedCasterPublicKey, decodedCasterSecretKey, keyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
+caster myCaster(context.get(), 0,9001,9002,9003, 9004, 9005, 9006, casterPublicKey, casterPrivateKey, keyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
 
 REQUIRE( true == true);
 }
@@ -581,21 +586,9 @@ context.reset(new zmq::context_t);
 SOM_CATCH("Error initializing ZMQ context\n")
 
 //Generate keys to use
-char z85CasterPublicKey[41];
-char z85CasterSecretKey[41];
-
-REQUIRE(zmq_curve_keypair(z85CasterPublicKey, z85CasterSecretKey) == 0);
-
-//Convert to binary format
-char buffer[32];
-std::string decodedCasterPublicKey;
-std::string decodedCasterSecretKey;
-
-zmq_z85_decode((uint8_t *) buffer, z85CasterPublicKey);
-decodedCasterPublicKey = std::string(buffer, 32);
-
-zmq_z85_decode((uint8_t *) buffer, z85CasterSecretKey);
-decodedCasterSecretKey = std::string(buffer, 32);
+std::string casterPublicKey;
+std::string casterPrivateKey;
+std::tie(casterPublicKey, casterPrivateKey) = generateSigningKeys();
 
 //Generate key manager signing key
 unsigned char keyManagerPublicKeyArray[crypto_sign_PUBLICKEYBYTES];
@@ -614,7 +607,7 @@ int streamStatusNotificationPort = 9016;
 int keyManagementPort = 9017;
 
 
-caster myCaster(context.get(), casterID,registrationPort,clientRequestPort, clientPublishingPort, proxyPublishingPort, streamStatusNotificationPort, keyManagementPort, decodedCasterPublicKey, decodedCasterSecretKey, keyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
+caster myCaster(context.get(), casterID,registrationPort,clientRequestPort, clientPublishingPort, proxyPublishingPort, streamStatusNotificationPort, keyManagementPort, casterPublicKey, casterPrivateKey, keyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
 //caster myCaster(context.get(), casterID,registrationPort,clientRequestPort, clientPublishingPort, proxyPublishingPort, streamStatusNotificationPort, decodedCasterPublicKey, decodedCasterSecretKey, keyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0), "testSQLDatabase.db");
 
 SECTION( "Register a unauthenticated stream")
@@ -1245,21 +1238,9 @@ context.reset(new zmq::context_t);
 SOM_CATCH("Error initializing ZMQ context\n")
 
 //Generate keys to use
-char firstZ85CasterPublicKey[41];
-char firstZ85CasterSecretKey[41];
-
-REQUIRE(zmq_curve_keypair(firstZ85CasterPublicKey, firstZ85CasterSecretKey) == 0);
-
-//Convert to binary format
-char firstBuffer[32];
-std::string firstDecodedCasterPublicKey;
-std::string firstDecodedCasterSecretKey;
-
-zmq_z85_decode((uint8_t *) firstBuffer, firstZ85CasterPublicKey);
-firstDecodedCasterPublicKey = std::string(firstBuffer, 32);
-
-zmq_z85_decode((uint8_t *) firstBuffer, firstZ85CasterSecretKey);
-firstDecodedCasterSecretKey = std::string(firstBuffer, 32);
+std::string firstCasterPublicKey;
+std::string firstCasterPrivateKey;
+std::tie(firstCasterPublicKey, firstCasterPrivateKey) = generateSigningKeys();
 
 //Generate key manager signing key
 unsigned char firstKeyManagerPublicKeyArray[crypto_sign_PUBLICKEYBYTES];
@@ -1278,7 +1259,7 @@ int firstStreamStatusNotificationPort = 9016;
 int firstKeyManagementPort = 9017;
 
 
-caster firstCaster(context.get(), firstCasterID, firstRegistrationPort, firstClientRequestPort, firstClientPublishingPort, firstProxyPublishingPort, firstStreamStatusNotificationPort, firstKeyManagementPort, firstDecodedCasterPublicKey, firstDecodedCasterSecretKey, firstKeyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
+caster firstCaster(context.get(), firstCasterID, firstRegistrationPort, firstClientRequestPort, firstClientPublishingPort, firstProxyPublishingPort, firstStreamStatusNotificationPort, firstKeyManagementPort, firstCasterPublicKey, firstCasterPrivateKey, firstKeyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
 
 //Generate keys to use
 char secondZ85CasterPublicKey[41];
@@ -1287,15 +1268,9 @@ char secondZ85CasterSecretKey[41];
 REQUIRE(zmq_curve_keypair(secondZ85CasterPublicKey, secondZ85CasterSecretKey) == 0);
 
 //Convert to binary format
-char secondBuffer[32];
-std::string secondDecodedCasterPublicKey;
-std::string secondDecodedCasterSecretKey;
-
-zmq_z85_decode((uint8_t *) secondBuffer, secondZ85CasterPublicKey);
-secondDecodedCasterPublicKey = std::string(secondBuffer, 32);
-
-zmq_z85_decode((uint8_t *) secondBuffer, secondZ85CasterSecretKey);
-secondDecodedCasterSecretKey = std::string(secondBuffer, 32);
+std::string secondCasterPublicKey;
+std::string secondCasterPrivateKey;
+std::tie(secondCasterPublicKey, secondCasterPrivateKey) = generateSigningKeys();
 
 //Generate key manager signing key
 unsigned char secondKeyManagerPublicKeyArray[crypto_sign_PUBLICKEYBYTES];
@@ -1314,7 +1289,7 @@ int secondStreamStatusNotificationPort = 9016+100;
 int secondKeyManagementPort = 9017+100;
 
 
-caster secondCaster(context.get(), secondCasterID, secondRegistrationPort, secondClientRequestPort, secondClientPublishingPort, secondProxyPublishingPort, secondStreamStatusNotificationPort, secondKeyManagementPort, secondDecodedCasterPublicKey, secondDecodedCasterSecretKey, secondKeyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
+caster secondCaster(context.get(), secondCasterID, secondRegistrationPort, secondClientRequestPort, secondClientPublishingPort, secondProxyPublishingPort, secondStreamStatusNotificationPort, secondKeyManagementPort, secondCasterPublicKey, secondCasterPrivateKey, secondKeyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
 
 SECTION( "Add stream to first caster, proxy second to first, and add second stream to first caster, then send/receive messages")
 {

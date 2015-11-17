@@ -3,13 +3,13 @@ package pylongps; //Put in pylongps namespace
 //This message is used to store the parameters to configure a Pylon GPS 2.0 caster with.  It can be configured and passed to the caster constructor.
 message caster_configuration
 {
-optional int64 caster_id = 10; //The 64 bit ID associated with this caster (make sure it does not collide with caster IDs the clients are likely to run into) (required)
-optional uint64 transmitter_registration_and_streaming_port_number = 20; //The port number to register the ZMQ router socket used for receiving PylonGPS transmitter registrations/streams (required)
-optional uint64 client_request_port_number = 30; //The port to open to receive client requests (including requests from proxies for the list of sources) (required)
-optional uint64 client_stream_publishing_port_number = 40; //The port to open for the interface to publish stream data to clients (required)
-optional uint64 proxy_stream_publishing_port_number = 50; // The port to open for the interface to publish stream data to proxies (potentially higher priority) (required)
-optional uint64 stream_status_notification_port_number = 60; // The port for the interface that is used to to publish stream status changes (required)
-optional uint64 key_registration_and_removal_port_number = 70; // The port for the interface that is used to add/remove (required)
+optional int64 caster_id = 10 [default = 0]; //The 64 bit ID associated with this caster (make sure it does not collide with caster IDs the clients are likely to run into) (required)
+optional uint64 transmitter_registration_and_streaming_port_number = 20 [default = 10001]; //The port number to register the ZMQ router socket used for receiving PylonGPS transmitter registrations/streams (required)
+optional uint64 client_request_port_number = 30 [default = 10002]; //The port to open to receive client requests (including requests from proxies for the list of sources) (required)
+optional uint64 client_stream_publishing_port_number = 40 [default = 10003]; //The port to open for the interface to publish stream data to clients (required)
+optional uint64 proxy_stream_publishing_port_number = 50 [default = 10004]; // The port to open for the interface to publish stream data to proxies (potentially higher priority) (required)
+optional uint64 stream_status_notification_port_number = 60 [default = 10005]; // The port for the interface that is used to to publish stream status changes (required)
+optional uint64 key_registration_and_removal_port_number = 70 [default = 10006]; // The port for the interface that is used to add/remove (required)
 optional bytes caster_public_key = 80; // The public key for this caster to use for encryption/authentation (binary format).  Caster will generate a new one if this is missing
 optional bytes caster_secret_key = 90; // The secret key for this caster to use for encryption/authentation (binary format).  Caster will generate a new one if this is missing
 optional bytes signing_keys_management_key = 100; //The signing key that has permission to add/remove allowed signing keys from the caster (binary format)  (required)
