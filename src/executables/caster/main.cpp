@@ -188,7 +188,7 @@ context.reset(new zmq::context_t);
 SOM_CATCH("Error initializing ZMQ context\n")
 
 //Create caster
-caster(context.get(), currentConfiguration);
+caster mycaster(context.get(), currentConfiguration);
 
 //Sleep forever while caster operates
 while(true)

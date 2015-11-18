@@ -7,11 +7,14 @@
 
 using namespace pylongps;
 
-//Construct a pair of dummy basestations that send regular updates to the pylongps.com caster (port 10001)
-const int REGISTRATION_PORT = 10001;
-const int CLIENT_REQUEST_PORT = 10002;
-const int CLIENT_PUBLISHING_PORT = 10003;
+//Construct a pair of dummy basestations that send regular updates to the pylongps.com caster (port 43101)
+const int REGISTRATION_PORT = 9010;
+const int CLIENT_REQUEST_PORT = 9013;
+const int CLIENT_PUBLISHING_PORT = 9014;
 const int CASTER_ID = 0;
+
+//host.addresses()[0].toString()
+
 
 void REQUIRE(bool inputCondition)
 {
@@ -20,6 +23,7 @@ throw SOMException("Required condition not met\n", INVALID_FUNCTION_INPUT, __FIL
 
 int main(int argc, char** argv)
 {
+/*
 Poco::Net::HostEntry host;
 
 SOM_TRY
@@ -36,12 +40,14 @@ if(host.addresses().size() == 0)
 {
 fprintf(stderr,"Error, unable to resolve address\n");
 }
+*/
 
 std::unique_ptr<zmq::context_t> context;
 
 SOM_TRY
 context.reset(new zmq::context_t);
 SOM_CATCH("Error, unable to initialize caster\n")
+
 
 
 //Register a unauthenticated stream
@@ -51,11 +57,15 @@ SOM_TRY //Init socket
 testMessagePublisher.reset(new zmq::socket_t(*context, ZMQ_PUB));
 SOM_CATCH("Error making socket\n")
 
-std::string ZMQPubSocketAddressString = "tcp://*:11001";
+std::string ZMQPubSocketAddressString = "tcp://*:9031";
 
 SOM_TRY
 testMessagePublisher->bind(ZMQPubSocketAddressString.c_str());
 SOM_CATCH("Error binding socket\n")
+
+while(true)
+{
+}
 
 std::unique_ptr<transceiver> com;
 
@@ -63,29 +73,31 @@ SOM_TRY
 com.reset(new transceiver(*context));
 SOM_CATCH("Error initializing transceiver\n")
 
+
 //ZMQ Pub receiver
 std::string pubDataReceiverAddress;
 
 SOM_TRY
-pubDataReceiverAddress = com->createZMQPubDataReceiver("127.0.0.1:11001");
+pubDataReceiverAddress = com->createZMQPubDataReceiver("127.0.0.1:9031");
 SOM_CATCH("Error, unable to create data receiver\n")
 
-printf("Connection string: %s\n", (host.addresses()[0].toString() + ":" +std::to_string(REGISTRATION_PORT)).c_str());
+printf("Connection string: %s\n", ("127.0.0.1:" +std::to_string(REGISTRATION_PORT)).c_str());
 
 //Caster data sender
 std::string senderURI;
 SOM_TRY 
-senderURI = com->createPylonGPSV2DataSender(pubDataReceiverAddress, host.addresses()[0].toString() + ":" +std::to_string(REGISTRATION_PORT), 1.0, 2.0, RTCM_V3_1, "testBasestation", 3.0);
+senderURI = com->createPylonGPSV2DataSender(pubDataReceiverAddress, "127.0.0.1:" +std::to_string(REGISTRATION_PORT), 1.0, 2.0, RTCM_V3_1, "testBasestation", 3.0);
 SOM_CATCH("Error making caster sender\n")
 
 std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
 
 //Send a query and see if we get a valid response
 client_query_request queryRequest; //Empty request should return all
 client_query_reply queryReply;
 
 SOM_TRY
-queryReply = transceiver::queryPylonGPSV2Caster(queryRequest, host.addresses()[0].toString() + ":" + std::to_string(CLIENT_REQUEST_PORT), 5000, *context);
+queryReply = transceiver::queryPylonGPSV2Caster(queryRequest, "127.0.0.1:" + std::to_string(CLIENT_REQUEST_PORT), 5000, *context);
 SOM_CATCH("Error querying caster\n")
 
 
