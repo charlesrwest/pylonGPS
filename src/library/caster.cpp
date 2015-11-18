@@ -107,6 +107,12 @@ streamStatusNotificationPortNumber = inputStreamStatusNotificationPortNumber;
 casterPublicKey = inputCasterPublicKey;
 casterSecretKey = inputCasterSecretKey;
 
+printf("Caster ID: %ld\n", inputCasterID);
+printf("Registration port: %d\n", transmitterRegistrationAndStreamingPortNumber);
+printf("Query port: %d\n", clientRequestPortNumber);
+printf("Client streaming port: %d\n", clientStreamPublishingPortNumber);
+
+
 //Check key lengths and place the keys in the set
 if(inputSigningKeysManagementKey.size() != crypto_sign_PUBLICKEYBYTES)
 {

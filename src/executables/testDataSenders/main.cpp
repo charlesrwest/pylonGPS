@@ -70,6 +70,8 @@ SOM_TRY
 pubDataReceiverAddress = com->createZMQPubDataReceiver("127.0.0.1:10001");
 SOM_CATCH("Error, unable to create data receiver\n")
 
+printf("Connection string: %s\n", (host.addresses()[0].toString() + ":" +std::to_string(REGISTRATION_PORT)).c_str());
+
 //Caster data sender
 std::string senderURI;
 SOM_TRY 
