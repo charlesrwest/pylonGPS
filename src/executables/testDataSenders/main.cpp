@@ -51,7 +51,7 @@ SOM_TRY //Init socket
 testMessagePublisher.reset(new zmq::socket_t(*context, ZMQ_PUB));
 SOM_CATCH("Error making socket\n")
 
-std::string ZMQPubSocketAddressString = "tcp://*:10001";
+std::string ZMQPubSocketAddressString = "tcp://*:11001";
 
 SOM_TRY
 testMessagePublisher->bind(ZMQPubSocketAddressString.c_str());
@@ -67,7 +67,7 @@ SOM_CATCH("Error initializing transceiver\n")
 std::string pubDataReceiverAddress;
 
 SOM_TRY
-pubDataReceiverAddress = com->createZMQPubDataReceiver("127.0.0.1:10001");
+pubDataReceiverAddress = com->createZMQPubDataReceiver("127.0.0.1:11001");
 SOM_CATCH("Error, unable to create data receiver\n")
 
 printf("Connection string: %s\n", (host.addresses()[0].toString() + ":" +std::to_string(REGISTRATION_PORT)).c_str());
