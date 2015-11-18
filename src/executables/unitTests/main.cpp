@@ -1262,12 +1262,6 @@ int firstKeyManagementPort = 9017;
 caster firstCaster(context.get(), firstCasterID, firstRegistrationPort, firstClientRequestPort, firstClientPublishingPort, firstProxyPublishingPort, firstStreamStatusNotificationPort, firstKeyManagementPort, firstCasterPublicKey, firstCasterPrivateKey, firstKeyManagerPublicKey, std::vector<std::string>(0), std::vector<std::string>(0), std::vector<std::string>(0));
 
 //Generate keys to use
-char secondZ85CasterPublicKey[41];
-char secondZ85CasterSecretKey[41];
-
-REQUIRE(zmq_curve_keypair(secondZ85CasterPublicKey, secondZ85CasterSecretKey) == 0);
-
-//Convert to binary format
 std::string secondCasterPublicKey;
 std::string secondCasterPrivateKey;
 std::tie(secondCasterPublicKey, secondCasterPrivateKey) = generateSigningKeys();
