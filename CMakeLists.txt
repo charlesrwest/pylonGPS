@@ -62,6 +62,8 @@ FILE(GLOB CASTER_GUI_EXECUTABLE_SOURCE ./src/executables/casterGUI/*.cpp ./src/e
 
 FILE(GLOB CASTER_SOURCE_FILES ./src/executables/caster/*.cpp ./src/executables/caster/*.c)
 
+FILE(GLOB TEST_DATA_SENDERS_SOURCE_FILES ./src/executables/testDataSenders/*.cpp ./src/executables/testDataSenders/*.c)
+
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 #set(CMAKE_INCLUDE_CURRENT_BINARY_DIR ON)
 
@@ -91,6 +93,8 @@ ADD_EXECUTABLE(casterGUI ${CASTER_GUI_EXECUTABLE_SOURCE} ${CASTER_GUI_HEADER_FIL
 
 ADD_EXECUTABLE(caster ${CASTER_SOURCE_FILES} ${CMAKE_CURRENT_BINARY_DIR})
 
+ADD_EXECUTABLE(testDataSender ${TEST_DATA_SENDERS_SOURCE_FILES} ${CMAKE_CURRENT_BINARY_DIR})
+
 target_link_libraries(pylongps dl PocoFoundation PocoNet PocoUtil sqlite3 pylonGPSMessages zmq ${PROTOBUF_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} sodium)
 
 #link libraries to executable
@@ -101,6 +105,8 @@ target_link_libraries(transceiverGUI pylongps Qt4::QtCore Qt4::QtGui marblewidge
 target_link_libraries(casterGUI pylongps Qt4::QtCore Qt4::QtGui)
 
 target_link_libraries(caster pylongps)
+
+target_link_libraries(testDataSender pylongps)
 
 
 
