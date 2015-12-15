@@ -508,3 +508,448 @@ return false;
 
 return true;
 }
+
+/**
+This function creates a sqlite statement, binds it with the given statement string and assigns it to the given unique_ptr.
+@param inputStatement: The unique_ptr to assign statement ownership to
+@param inputStatementString: The SQL string to construct the statement from
+@param inputDatabaseConnection: The database connection to use
+
+@throws: This function can throw exceptions
+*/
+void pylongps::prepareStatement(std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> &inputStatement, const std::string &inputStatementString, sqlite3 &inputDatabaseConnection)
+{
+//printf("PREPARING STATEMENT:\n%s\n", inputStatementString.c_str());
+
+int returnValue = 0;
+SOM_TRY
+sqlite3_stmt *buffer;
+returnValue = sqlite3_prepare_v2(&inputDatabaseConnection, inputStatementString.c_str(), inputStatementString.size(), &buffer, NULL);
+inputStatement.reset(buffer);
+SOM_CATCH("Error, unable to initialize SQLite prepared statement\n")
+
+if(returnValue != SQLITE_OK)
+{
+std::string errorMessage(std::string("Error preparing parametric sql statement: ") + sqlite3_errstr(sqlite3_extended_errcode(&inputDatabaseConnection)) + "\n");
+throw SOMException(errorMessage.c_str(), INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
+}
+}
+
+/**
+This function takes a protobuf CppType and returns the string representing the type that it will be stored as the database.  Throws an exception if the type cannot be stored as a database primitive.
+@param inputType: The type to convert
+@return: The string for the database type
+
+@throw: This function can throw exceptions
+*/
+std::string pylongps::cppTypeToDatabaseTypeString(google::protobuf::FieldDescriptor::CppType inputType)
+{
+switch(inputType)
+{
+case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
+case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
+case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
+case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
+case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
+case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
+return "INTEGER";
+break;
+
+case google::protobuf::FieldDescriptor::CPPTYPE_DOUBLE:
+case google::protobuf::FieldDescriptor::CPPTYPE_FLOAT:
+return "REAL";
+break;
+
+case google::protobuf::FieldDescriptor::CPPTYPE_STRING:
+return "BLOB";
+break;
+
+default:
+throw SOMException("Unrecognized data type\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __FILE__, __LINE__);
+break;
+}
+
+}
+
+/**
+This function binds the given value to a SQLite statement.
+@param inputStatement: The statement to bind the field value to
+@param inputSQLStatementIndex: The index of the statement field to bind
+@param inputValue: The value to bind
+
+@throw: This function can throw exceptions
+*/
+void pylongps::bindFieldValueToStatement(sqlite3_stmt &inputStatement, uint32_t inputSQLStatementIndex, int64_t inputValue)
+{
+int returnValue = 0;
+returnValue = sqlite3_bind_int64(&inputStatement, inputSQLStatementIndex, inputValue);
+
+if(returnValue != SQLITE_OK)
+{
+throw SOMException("Database error occurred (" + std::to_string(returnValue)+ ")\n", SQLITE3_ERROR, __FILE__, __LINE__);
+}
+}
+
+/**
+This function binds the given value to a SQLite statement.
+@param inputStatement: The statement to bind the field value to
+@param inputSQLStatementIndex: The index of the statement field to bind
+@param inputValue: The value to bind
+
+@throw: This function can throw exceptions
+*/
+void pylongps::bindFieldValueToStatement(sqlite3_stmt &inputStatement, uint32_t inputSQLStatementIndex, double inputValue)
+{
+int returnValue = 0;
+returnValue = sqlite3_bind_double(&inputStatement, inputSQLStatementIndex, inputValue);
+
+if(returnValue != SQLITE_OK)
+{
+throw SOMException("Database error occurred (" + std::to_string(returnValue)+ ")\n", SQLITE3_ERROR, __FILE__, __LINE__);
+}
+}
+
+/**
+This function binds the given value to a SQLite statement.
+@param inputStatement: The statement to bind the field value to
+@param inputSQLStatementIndex: The index of the statement field to bind
+@param inputValue: The value to bind
+
+@throw: This function can throw exceptions
+*/
+void pylongps::bindFieldValueToStatement(sqlite3_stmt &inputStatement, uint32_t inputSQLStatementIndex, const std::string &inputValue)
+{
+int returnValue = 0;
+returnValue = sqlite3_bind_blob64(&inputStatement, inputSQLStatementIndex, (const void*) inputValue.c_str(), inputValue.size(), SQLITE_TRANSIENT);
+
+if(returnValue != SQLITE_OK)
+{
+throw SOMException("Database error occurred (" + std::to_string(returnValue)+ ")\n", SQLITE3_ERROR, __FILE__, __LINE__);
+}
+}
+
+/**
+This function binds NULL to a SQLite statement field.
+@param inputStatement: The statement to bind the field value to
+@param inputSQLStatementIndex: The index of the statement field to bind
+@param inputValue: The value to bind
+
+@throw: This function can throw exceptions
+*/
+void pylongps::bindFieldValueToStatement(sqlite3_stmt &inputStatement, uint32_t inputSQLStatementIndex)
+{
+int returnValue = 0;
+returnValue = sqlite3_bind_null(&inputStatement, inputSQLStatementIndex);
+
+if(returnValue != SQLITE_OK)
+{
+throw SOMException("Database error occurred (" + std::to_string(returnValue)+ ")\n", SQLITE3_ERROR, __FILE__, __LINE__);
+}
+}
+
+/**
+This function binds the value of a protobuf field to a SQLite statement according to the type of the field (can only be a primative type).
+@param inputStatement: The statement to bind the field value to
+@param inputSQLStatementIndex: The index of the statement field to bind
+@param inputMessage: The message to get the value from
+@param inputField: The field (from the message) to get the value from
+
+@throw: This function can throw exceptions
+*/
+void pylongps::bindFieldValueToStatement(sqlite3_stmt &inputStatement, uint32_t inputSQLStatementIndex, const google::protobuf::Message &inputMessage, const google::protobuf::FieldDescriptor *inputField)
+{
+const google::protobuf::Reflection *messageReflection = inputMessage.GetReflection();
+
+int returnValue = 0;
+
+if(messageReflection->HasField(inputMessage, inputField) == true)
+{
+switch(inputField->cpp_type())
+{
+case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
+returnValue = sqlite3_bind_int64(&inputStatement, inputSQLStatementIndex, messageReflection->GetInt32(inputMessage, inputField));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
+returnValue = sqlite3_bind_int64(&inputStatement, inputSQLStatementIndex, messageReflection->GetInt64(inputMessage, inputField));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
+returnValue = sqlite3_bind_int64(&inputStatement, inputSQLStatementIndex, messageReflection->GetUInt32(inputMessage, inputField));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
+returnValue = sqlite3_bind_int64(&inputStatement, inputSQLStatementIndex, messageReflection->GetUInt64(inputMessage, inputField));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_DOUBLE:
+returnValue = sqlite3_bind_double(&inputStatement, inputSQLStatementIndex, messageReflection->GetDouble(inputMessage, inputField));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_FLOAT:
+returnValue = sqlite3_bind_double(&inputStatement, inputSQLStatementIndex, messageReflection->GetDouble(inputMessage, inputField));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
+returnValue = sqlite3_bind_int64(&inputStatement, inputSQLStatementIndex, messageReflection->GetBool(inputMessage, inputField));
+break;
+
+case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
+returnValue = sqlite3_bind_int64(&inputStatement, inputSQLStatementIndex, messageReflection->GetEnum(inputMessage, inputField)->number());
+break;
+
+case google::protobuf::FieldDescriptor::CPPTYPE_STRING:
+{
+std::string buffer;
+buffer = messageReflection->GetStringReference(inputMessage, inputField, &buffer);
+returnValue = sqlite3_bind_blob64(&inputStatement, inputSQLStatementIndex, (const void*) buffer.c_str(), buffer.size(), SQLITE_TRANSIENT);
+}
+break;
+
+default:
+throw SOMException("Unrecognized data type\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __FILE__, __LINE__);
+break;
+}
+}
+else
+{ //Its a optional field that is not set, so store a NULL value
+returnValue = sqlite3_bind_null(&inputStatement, inputSQLStatementIndex);
+}
+
+if(returnValue != SQLITE_OK)
+{
+throw SOMException("Database error occurred (" + std::to_string(returnValue)+ ")\n", SQLITE3_ERROR, __FILE__, __LINE__);
+}
+}
+
+/**
+This function binds the value of a protobuf field to a SQLite statement according to the type of the field (can only be a primative type).
+@param inputStatement: The statement to bind the field value to
+@param inputSQLStatementIndex: The index of the statement field to bind
+@param inputMessage: The message to get the value from
+@param inputField: The repeated field (from the message) to get the value from
+@param inputIndex: The index of the value in the repeated field
+
+@throw: This function can throw exceptions
+*/
+void pylongps::bindRepeatedFieldValueToStatement(sqlite3_stmt &inputStatement, uint32_t inputSQLStatementIndex, const google::protobuf::Message &inputMessage, const google::protobuf::FieldDescriptor *inputField, unsigned int inputIndex)
+{
+const google::protobuf::Reflection *messageReflection = inputMessage.GetReflection();
+
+int returnValue = 0;
+
+switch(inputField->cpp_type())
+{
+case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
+returnValue = sqlite3_bind_int64(&inputStatement, inputSQLStatementIndex, messageReflection->GetRepeatedInt32(inputMessage, inputField, inputIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
+returnValue = sqlite3_bind_int64(&inputStatement, inputSQLStatementIndex, messageReflection->GetRepeatedInt64(inputMessage, inputField, inputIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
+returnValue = sqlite3_bind_int64(&inputStatement, inputSQLStatementIndex, messageReflection->GetRepeatedUInt32(inputMessage, inputField, inputIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
+returnValue = sqlite3_bind_int64(&inputStatement, inputSQLStatementIndex, messageReflection->GetRepeatedUInt64(inputMessage, inputField, inputIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_DOUBLE:
+returnValue = sqlite3_bind_double(&inputStatement, inputSQLStatementIndex, messageReflection->GetRepeatedDouble(inputMessage, inputField, inputIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_FLOAT:
+returnValue = sqlite3_bind_double(&inputStatement, inputSQLStatementIndex, messageReflection->GetRepeatedDouble(inputMessage, inputField, inputIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
+returnValue = sqlite3_bind_int64(&inputStatement, inputSQLStatementIndex, messageReflection->GetRepeatedBool(inputMessage, inputField, inputIndex));
+break;
+
+case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
+returnValue = sqlite3_bind_int64(&inputStatement, inputSQLStatementIndex, messageReflection->GetRepeatedEnum(inputMessage, inputField, inputIndex)->number());
+break;
+
+case google::protobuf::FieldDescriptor::CPPTYPE_STRING:
+{
+std::string buffer;
+buffer = messageReflection->GetRepeatedStringReference(inputMessage, inputField, inputIndex, &buffer);
+returnValue = sqlite3_bind_blob64(&inputStatement, inputSQLStatementIndex, (const void*) buffer.c_str(), buffer.size(), SQLITE_TRANSIENT);
+}
+break;
+
+default:
+throw SOMException("Unrecognized data type\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __FILE__, __LINE__);
+break;
+}
+
+if(returnValue != SQLITE_OK)
+{
+throw SOMException("Database error occurred (" + std::to_string(returnValue)+ ")\n", SQLITE3_ERROR, __FILE__, __LINE__);
+}
+}
+
+/**
+This function retrieves the the value of a protobuf field from a SQLite statement according to the type of the field (can only be a primative type).
+@param inputStatement: The statement to retrieve the field value from (should already be stepped)
+@param inputSQLStatementIndex: The index of the statement field to retrieve from
+@param inputMessage: The message to store the value to
+@param inputField: The field (from the message) to store the value in
+
+@throw: This function can throw exceptions
+*/
+void pylongps::retrieveFieldValueFromStatement(sqlite3_stmt &inputStatement, uint32_t inputSQLStatementIndex, google::protobuf::Message &inputMessage, const google::protobuf::FieldDescriptor *inputField)
+{
+const google::protobuf::Reflection *messageReflection = inputMessage.GetReflection();
+
+if(sqlite3_column_type(&inputStatement, inputSQLStatementIndex) != SQLITE_NULL)
+{
+switch(inputField->cpp_type())
+{
+case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
+messageReflection->SetInt32(&inputMessage, inputField, sqlite3_column_int64(&inputStatement, inputSQLStatementIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
+messageReflection->SetInt64(&inputMessage, inputField, sqlite3_column_int64(&inputStatement, inputSQLStatementIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
+messageReflection->SetUInt32(&inputMessage, inputField, sqlite3_column_int64(&inputStatement, inputSQLStatementIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
+messageReflection->SetUInt64(&inputMessage, inputField, sqlite3_column_int64(&inputStatement, inputSQLStatementIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_DOUBLE:
+messageReflection->SetDouble(&inputMessage, inputField, sqlite3_column_double(&inputStatement, inputSQLStatementIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_FLOAT:
+messageReflection->SetFloat(&inputMessage, inputField, sqlite3_column_double(&inputStatement, inputSQLStatementIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
+messageReflection->SetBool(&inputMessage, inputField, sqlite3_column_int64(&inputStatement, inputSQLStatementIndex));
+break;
+
+case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
+messageReflection->SetEnum(&inputMessage, inputField, inputField->enum_type()->FindValueByNumber(sqlite3_column_int64(&inputStatement, inputSQLStatementIndex)));
+break;
+
+case google::protobuf::FieldDescriptor::CPPTYPE_STRING:
+{
+int stringSize = sqlite3_column_bytes16(&inputStatement, inputSQLStatementIndex);
+const void *stringData = sqlite3_column_blob(&inputStatement, inputSQLStatementIndex);
+messageReflection->SetString(&inputMessage, inputField, std::string((const char *)stringData, stringSize));
+}
+break;
+
+default:
+throw SOMException("Unrecognized data type " + std::to_string(inputField->cpp_type()) + "\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __FILE__, __LINE__);
+break;
+}
+}
+else
+{ //It was NULL in the database, so clear it
+messageReflection->ClearField(&inputMessage, inputField);
+}
+
+}
+
+/**
+This function retrieves the the value of a protobuf field from a SQLite statement according to the type of the field (can only be a primative type).
+@param inputStatement: The statement to retrieve the field value from (should already be stepped)
+@param inputSQLStatementIndex: The index of the statement field to retrieve from
+@param inputMessage: The message to store the value to
+@param inputField: The field (from the message) to store the value in
+
+@throw: This function can throw exceptions
+*/
+void pylongps::retrieveRepeatedFieldValueFromStatement(sqlite3_stmt &inputStatement, uint32_t inputSQLStatementIndex, google::protobuf::Message &inputMessage, const google::protobuf::FieldDescriptor *inputField)
+{
+const google::protobuf::Reflection *messageReflection = inputMessage.GetReflection();
+
+switch(inputField->cpp_type())
+{
+case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
+messageReflection->AddInt32(&inputMessage, inputField, sqlite3_column_int64(&inputStatement, inputSQLStatementIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
+messageReflection->AddInt64(&inputMessage, inputField, sqlite3_column_int64(&inputStatement, inputSQLStatementIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
+messageReflection->AddUInt32(&inputMessage, inputField, sqlite3_column_int64(&inputStatement, inputSQLStatementIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
+messageReflection->AddUInt64(&inputMessage, inputField, sqlite3_column_int64(&inputStatement, inputSQLStatementIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_DOUBLE:
+messageReflection->AddDouble(&inputMessage, inputField, sqlite3_column_double(&inputStatement, inputSQLStatementIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_FLOAT:
+messageReflection->AddFloat(&inputMessage, inputField, sqlite3_column_double(&inputStatement, inputSQLStatementIndex));
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
+messageReflection->AddBool(&inputMessage, inputField, sqlite3_column_int64(&inputStatement, inputSQLStatementIndex));
+break;
+
+case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
+messageReflection->AddEnum(&inputMessage, inputField, inputField->enum_type()->FindValueByNumber(sqlite3_column_int64(&inputStatement, inputSQLStatementIndex)));
+break;
+
+case google::protobuf::FieldDescriptor::CPPTYPE_STRING:
+{
+int stringSize = sqlite3_column_bytes16(&inputStatement, inputSQLStatementIndex);
+const void *stringData = sqlite3_column_blob(&inputStatement, inputSQLStatementIndex);
+messageReflection->AddString(&inputMessage, inputField, std::string((const char *)stringData, stringSize));
+}
+break;
+
+default:
+throw SOMException("Unrecognized data type\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __FILE__, __LINE__);
+break;
+}
+
+}
+
+/**
+This function steps a SQLite statement and then resets it so that it can be used again.
+@param inputStatement: The statement to step/reset
+
+@throw: This function can throw exceptions
+*/
+void pylongps::stepAndResetSQLiteStatement(sqlite3_stmt &inputStatement)
+{
+int returnValue = sqlite3_step(&inputStatement);
+sqlite3_reset(&inputStatement);
+if(returnValue != SQLITE_DONE)
+{
+throw SOMException("Error executing statement\n", SQLITE3_ERROR, __FILE__, __LINE__);
+}
+}
+
+/**
+This function gets the (assumed to be set) integer field's value from the message and casts it to a int64_t value.
+@param inputMessage: The message to retrieve the integer from
+@param inputField: The specific field to retrieve it from
+
+@throw: This function can throw exceptions
+*/
+int64_t pylongps::getIntegerFieldValue(const google::protobuf::Message &inputMessage, const google::protobuf::FieldDescriptor *inputField)
+{
+const google::protobuf::Reflection *messageReflection = inputMessage.GetReflection();
+
+int64_t value = 0;
+
+switch(inputField->cpp_type())
+{
+case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
+value = messageReflection->GetInt32(inputMessage, inputField);
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
+value = messageReflection->GetInt64(inputMessage, inputField);
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
+value = messageReflection->GetUInt32(inputMessage, inputField);
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
+value = messageReflection->GetUInt64(inputMessage, inputField);
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
+value = messageReflection->GetEnum(inputMessage, inputField)->number();
+break;
+
+default:
+throw SOMException("Non-integer data type\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
+break;
+}
+
+return value;
+}
+

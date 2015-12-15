@@ -86,6 +86,8 @@ isEnum = inputIsEnum;
 std::get<0>(getFunctionPointers) = inputGetFunctionPointer;
 std::get<0>(setOrAddFunctionPointers) = inputSetFunctionPointer;
 hasFunctionPointer = inputHasFunctionPointer;
+
+printf("Int field made: %s\n", inputFieldNameInDatabase.c_str());
 }
 
 /**
@@ -237,14 +239,17 @@ template <class classType> fieldValue field<classType>::get(classType &inputClas
 //Return a fieldValue with the appropriate type using the associated member function
 if(type == INT64_TYPE)
 { //Tuple index 0
+printf("Int\n");
 return fieldValue(std::get<0>(getFunctionPointers)(&inputClass));
 }
 else if(type == DOUBLE_TYPE)
 { //Tuple index 2
+printf("Double\n");
 return fieldValue(std::get<2>(getFunctionPointers)(&inputClass));
 }
 else if(type == STRING_TYPE)
 { //Tuple index 4
+printf("String\n");
 return fieldValue(std::get<4>(getFunctionPointers)(&inputClass));
 }
 
@@ -684,6 +689,8 @@ generatePrimaryRowStatements();
 generateRepeatedFieldStatements();
 SOM_CATCH("Error preparing statements\n") 
 
+
+
 //Start transaction, so either whole object is written or none of it is
 int returnValue = sqlite3_step(startTransactionStatement.get());
 sqlite3_reset(startTransactionStatement.get()); //Reset so that statement can be used again
@@ -698,7 +705,6 @@ SOMScopeGuard rollbackGuard([&] ()
 int returnValue = sqlite3_step(rollbackStatement.get());
 sqlite3_reset(rollbackStatement.get()); //Reset so that statement can be used again
 });
-
 
 //Use prepared statement to insert primary row
 returnValue = 0;
@@ -722,10 +728,12 @@ SOM_CATCH("Error checking if field is set\n")
 if(fieldIsSet)
 {
 fieldValue fieldValueBuffer;
+printf("Field name: %s\n", fields[i].fieldNameInDatabase.c_str());
 SOM_TRY
 fieldValueBuffer = (fields[i].get(inputClass));
 SOM_CATCH("Error geting field value")
 
+printf("Hello %d\n", i);
 if(fieldValueBuffer.type != fields[i].type)
 {
 throw SOMException("field returned wrong type\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, __FILE__, __LINE__);

@@ -1,5 +1,6 @@
 package pylongps_protobuf_sql_converter;
 
+import "client_query_request.proto";
 
 enum test_enum
 {
@@ -10,6 +11,10 @@ TEST_COMMUNITY = 3; //Base stations run by anonymous individuals
 
 message protobuf_sql_converter_test_message
 {
+optional pylongps.client_query_request optional_client_query_request = 1;
+required pylongps.client_query_request required_client_query_request = 2;
+repeated pylongps.client_query_request repeated_client_query_request = 3;
+
 optional int64 optional_int64 = 10;
 optional double optional_double = 20;
 optional bytes optional_string = 30;

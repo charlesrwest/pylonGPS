@@ -9,6 +9,7 @@
 #include<iostream>
 #include<map>
 #include "Poco/ByteOrder.h"
+#include "sqlite3.h"
 
 namespace pylongps
 {
@@ -174,6 +175,128 @@ This function converts a string to an integer without having bad defaults or nee
 @return: True if the conversion was successful and false otherwise
 */
 bool convertStringToInteger(const std::string &inputString, int &inputIntegerBuffer);
+
+
+/**
+This function creates a sqlite statement, binds it with the given statement string and assigns it to the given unique_ptr.
+@param inputStatement: The unique_ptr to assign statement ownership to
+@param inputStatementString: The SQL string to construct the statement from
+@param inputDatabaseConnection: The database connection to use
+
+@throws: This function can throw exceptions
+*/
+void prepareStatement(std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> &inputStatement, const std::string &inputStatementString, sqlite3 &inputDatabaseConnection);
+
+/**
+This function takes a protobuf CppType and returns the string representing the type that it will be stored as the database.  Throws an exception if the type cannot be stored as a database primitive.
+@param inputType: The type to convert
+@return: The string for the database type
+
+@throw: This function can throw exceptions
+*/
+std::string cppTypeToDatabaseTypeString(google::protobuf::FieldDescriptor::CppType inputType);
+
+/**
+This function binds the given value to a SQLite statement.
+@param inputStatement: The statement to bind the field value to
+@param inputSQLStatementIndex: The index of the statement field to bind
+@param inputValue: The value to bind
+
+@throw: This function can throw exceptions
+*/
+void bindFieldValueToStatement(sqlite3_stmt &inputStatement, uint32_t inputSQLStatementIndex, int64_t inputValue);
+
+/**
+This function binds the given value to a SQLite statement.
+@param inputStatement: The statement to bind the field value to
+@param inputSQLStatementIndex: The index of the statement field to bind
+@param inputValue: The value to bind
+
+@throw: This function can throw exceptions
+*/
+void bindFieldValueToStatement(sqlite3_stmt &inputStatement, uint32_t inputSQLStatementIndex, double inputValue);
+
+/**
+This function binds the given value to a SQLite statement.
+@param inputStatement: The statement to bind the field value to
+@param inputSQLStatementIndex: The index of the statement field to bind
+@param inputValue: The value to bind
+
+@throw: This function can throw exceptions
+*/
+void bindFieldValueToStatement(sqlite3_stmt &inputStatement, uint32_t inputSQLStatementIndex, const std::string &inputValue);
+
+/**
+This function binds NULL to a SQLite statement field.
+@param inputStatement: The statement to bind the field value to
+@param inputSQLStatementIndex: The index of the statement field to bind
+@param inputValue: The value to bind
+
+@throw: This function can throw exceptions
+*/
+void bindFieldValueToStatement(sqlite3_stmt &inputStatement, uint32_t inputSQLStatementIndex);
+
+/**
+This function binds the value of a protobuf field to a SQLite statement according to the type of the field (can only be a primative type).
+@param inputStatement: The statement to bind the field value to
+@param inputSQLStatementIndex: The index of the statement field to bind
+@param inputMessage: The message to get the value from
+@param inputField: The field (from the message) to get the value from
+
+@throw: This function can throw exceptions
+*/
+void bindFieldValueToStatement(sqlite3_stmt &inputStatement, uint32_t inputSQLStatementIndex, const google::protobuf::Message &inputMessage, const google::protobuf::FieldDescriptor *inputField);
+
+/**
+This function binds the value of a protobuf field to a SQLite statement according to the type of the field (can only be a primative type).
+@param inputStatement: The statement to bind the field value to
+@param inputSQLStatementIndex: The index of the statement field to bind
+@param inputMessage: The message to get the value from
+@param inputField: The repeated field (from the message) to get the value from
+@param inputIndex: The index of the value in the repeated field
+
+@throw: This function can throw exceptions
+*/
+void bindRepeatedFieldValueToStatement(sqlite3_stmt &inputStatement, uint32_t inputSQLStatementIndex, const google::protobuf::Message &inputMessage, const google::protobuf::FieldDescriptor *inputField, unsigned int inputIndex);
+
+/**
+This function retrieves the the value of a protobuf field from a SQLite statement according to the type of the field (can only be a primative type).
+@param inputStatement: The statement to retrieve the field value from (should already be stepped)
+@param inputSQLStatementIndex: The index of the statement field to retrieve from
+@param inputMessage: The message to store the value to
+@param inputField: The field (from the message) to store the value in
+
+@throw: This function can throw exceptions
+*/
+void retrieveFieldValueFromStatement(sqlite3_stmt &inputStatement, uint32_t inputSQLStatementIndex, google::protobuf::Message &inputMessage, const google::protobuf::FieldDescriptor *inputField);
+
+/**
+This function retrieves the the value of a protobuf field from a SQLite statement according to the type of the field (can only be a primative type).
+@param inputStatement: The statement to retrieve the field value from (should already be stepped)
+@param inputSQLStatementIndex: The index of the statement field to retrieve from
+@param inputMessage: The message to store the value to
+@param inputField: The field (from the message) to store the value in
+
+@throw: This function can throw exceptions
+*/
+void retrieveRepeatedFieldValueFromStatement(sqlite3_stmt &inputStatement, uint32_t inputSQLStatementIndex, google::protobuf::Message &inputMessage, const google::protobuf::FieldDescriptor *inputField);
+
+/**
+This function steps a SQLite statement and then resets it so that it can be used again.
+@param inputStatement: The statement to step/reset
+
+@throw: This function can throw exceptions
+*/
+void stepAndResetSQLiteStatement(sqlite3_stmt &inputStatement);
+
+/**
+This function gets the (assumed to be set) integer field's value from the message and casts it to a int64_t value.
+@param inputMessage: The message to retrieve the integer from
+@param inputField: The specific field to retrieve it from
+
+@throw: This function can throw exceptions
+*/
+int64_t getIntegerFieldValue(const google::protobuf::Message &inputMessage, const google::protobuf::FieldDescriptor *inputField);
 
 }
 

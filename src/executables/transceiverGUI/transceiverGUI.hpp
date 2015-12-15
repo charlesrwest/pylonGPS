@@ -6,6 +6,8 @@
 #include<QStackedWidget>
 #include<marble/MarbleWidget.h>
 #include<marble/AbstractFloatItem.h>
+#include<QThread>
+#include "IPBasedLocationRetriever.hpp"
 
 namespace pylongps
 {

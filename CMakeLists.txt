@@ -16,7 +16,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} /usr/share/kde4/apps/cmake/modules/)
 
 #QT stuff
 #Access QT5 packages
-FIND_PACKAGE(Qt4 REQUIRED)
+find_package(Qt5Widgets)
 
 #Make moc called as nessisary
 set(CMAKE_AUTOMOC ON)
@@ -40,11 +40,12 @@ find_package(Threads)
 #Convert Qt .ui forms to sources
 FILE(GLOB TRANSCEIVER_FORMS src/executables/transceiverGUI/*.ui)
 
-QT4_WRAP_UI(TRANSCEIVER_FORMS_HEADERS ${TRANSCEIVER_FORMS})
+
+QT5_WRAP_UI(TRANSCEIVER_FORMS_HEADERS ${TRANSCEIVER_FORMS})
 
 FILE(GLOB CASTER_FORMS src/executables/casterGUI/*.ui)
 
-QT4_WRAP_UI(CASTER_FORMS_HEADERS ${CASTER_FORMS})
+QT5_WRAP_UI(CASTER_FORMS_HEADERS ${CASTER_FORMS})
 
 
 #Get lists of the source files
@@ -64,12 +65,15 @@ FILE(GLOB CASTER_SOURCE_FILES ./src/executables/caster/*.cpp ./src/executables/c
 
 FILE(GLOB TEST_DATA_SENDERS_SOURCE_FILES ./src/executables/testDataSenders/*.cpp ./src/executables/testDataSenders/*.c)
 
+#Add the QT modules we are going to use
+#QT_USE_QTNETWORK QT_USE_QTOPENGL QT_USE_QTSQL QT_USE_QTXML QT_USE_QTSVG QT_USE_QTTEST QT_USE_QTDBUS QT_USE_QTSCRIPT QT_USE_QTWEBKIT QT_USE_QTXMLPATTERNS QT_USE_PHONON
+SET(QT_USE_QTCORE TRUE)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 #set(CMAKE_INCLUDE_CURRENT_BINARY_DIR ON)
 
 #Add QT definitions
 ADD_DEFINITIONS(${QT_DEFINITIONS})
-INCLUDE(${QT_USE_FILE})
+#INCLUDE(${QT_USE_FILE})
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_BINARY_DIR})
 
 #Set the binaries to be placed in the ./bin/ directory
@@ -100,9 +104,9 @@ target_link_libraries(pylongps dl PocoFoundation PocoNet PocoUtil sqlite3 pylonG
 #link libraries to executable
 target_link_libraries(unitTests pylongps )
 
-target_link_libraries(transceiverGUI pylongps Qt4::QtCore Qt4::QtGui marblewidget)
+target_link_libraries(transceiverGUI pylongps Qt5::Widgets marblewidget-qt5)
 
-target_link_libraries(casterGUI pylongps Qt4::QtCore Qt4::QtGui)
+target_link_libraries(casterGUI pylongps Qt5::Widgets)
 
 target_link_libraries(caster pylongps)
 

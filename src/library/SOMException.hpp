@@ -16,6 +16,7 @@
 #endif
 
 #include<string>
+#include<cstdio>
 
 enum exceptionClass
 {

@@ -9,6 +9,7 @@
 #include <cstdio>
 #include<functional>
 #include "protobufSQLConverter.hpp"
+#include "messageDatabaseDefinition.hpp"
 #include "protobuf_sql_converter_test_message.pb.h"
 #include "utilityFunctions.hpp"
 #include "reactor.hpp"
@@ -148,6 +149,266 @@ REQUIRE(results.at("o") == "");
 
 }
 }
+
+TEST_CASE( "Test protobuf reflection", "[test]")
+{
+
+SECTION( "Print out fields of protobuf object")
+{
+//Make message to test on
+protobuf_sql_converter_test_message testMessage;
+
+client_query_request clientRequest0;
+clientRequest0.set_max_number_of_results(101);
+
+client_subquery subQuery0; //Shouldn't return any results
+subQuery0.add_acceptable_classes(OFFICIAL);
+
+sql_double_condition doubleCondition;
+sql_integer_condition integerCondition;
+sql_string_condition stringCondition;
+
+client_subquery subQuery1; //Should return 1
+subQuery1.add_acceptable_classes(COMMUNITY);
+subQuery1.add_acceptable_formats(RTCM_V3_1);
+
+doubleCondition.set_value(0.9); 
+doubleCondition.set_relation(GREATER_THAN); 
+auto doubleConditionBuffer = subQuery1.add_latitude_condition();
+(*doubleConditionBuffer) = doubleCondition;
+doubleCondition.set_value(1.1); 
+doubleCondition.set_relation(LESS_THAN);
+doubleConditionBuffer = subQuery1.add_latitude_condition(); 
+(*doubleConditionBuffer) = doubleCondition;
+
+
+
+doubleCondition.set_value(1.9); 
+doubleCondition.set_relation(GREATER_THAN_EQUAL_TO); 
+doubleConditionBuffer = subQuery1.add_longitude_condition();
+(*doubleConditionBuffer) = doubleCondition;
+doubleCondition.set_value(2.1); 
+doubleCondition.set_relation(LESS_THAN_EQUAL_TO); 
+doubleConditionBuffer = subQuery1.add_longitude_condition();
+(*doubleConditionBuffer) = doubleCondition;
+
+
+doubleCondition.set_value(.01); //Up longer than .01 seconds
+doubleCondition.set_relation(GREATER_THAN_EQUAL_TO); 
+doubleConditionBuffer = subQuery1.add_uptime_condition();
+(*doubleConditionBuffer) = doubleCondition;
+
+doubleCondition.set_value(2.9); 
+doubleCondition.set_relation(GREATER_THAN_EQUAL_TO); 
+doubleConditionBuffer = subQuery1.add_expected_update_rate_condition();
+(*doubleConditionBuffer) = doubleCondition;
+
+
+stringCondition.set_value("testBasestat%");
+stringCondition.set_relation(LIKE);
+(*subQuery1.mutable_informal_name_condition()) = stringCondition;
+
+integerCondition.set_value(20);
+integerCondition.set_relation(EQUAL_TO);
+auto integerConditionBuffer = subQuery1.add_base_station_id_condition();
+(*integerConditionBuffer) = integerCondition;
+
+
+base_station_radius_subquery circleSubQueryPart;
+circleSubQueryPart.set_latitude(1.0);
+circleSubQueryPart.set_longitude(2.0);
+circleSubQueryPart.set_radius(10);
+(*subQuery1.mutable_circular_search_region()) = circleSubQueryPart;
+
+//Add subqueries to request
+(*clientRequest0.add_subqueries()) = subQuery0;
+(*clientRequest0.add_subqueries()) = subQuery1;
+
+client_query_request clientRequest1 = clientRequest0;
+client_query_request clientRequest2 = clientRequest0;
+client_query_request clientRequest3 = clientRequest0;
+
+//Add required submessage
+(*testMessage.mutable_required_client_query_request()) = clientRequest0;
+
+//Add 3 instances to repeated submessage field
+(*testMessage.add_repeated_client_query_request()) = clientRequest1;
+(*testMessage.add_repeated_client_query_request()) = clientRequest2;
+(*testMessage.add_repeated_client_query_request()) = clientRequest3;
+
+//Leave optional submessage empty
+
+testMessage.set_required_int64(1);
+testMessage.set_required_double(2.0);
+testMessage.set_required_string("3");
+testMessage.set_required_enum(TEST_REGISTERED_COMMUNITY);
+
+testMessage.set_optional_int64(4);
+testMessage.set_optional_double(5.0);
+testMessage.set_optional_string("6");
+testMessage.set_optional_enum(TEST_COMMUNITY);
+
+
+testMessage.add_repeated_int64(7);
+testMessage.add_repeated_int64(8);
+testMessage.add_repeated_int64(9);
+testMessage.add_repeated_double(10.0);
+testMessage.add_repeated_double(11.0);
+testMessage.add_repeated_double(12.0);
+testMessage.add_repeated_string("13");
+testMessage.add_repeated_string("14");
+testMessage.add_repeated_string("15");
+testMessage.add_repeated_enum(TEST_OFFICIAL);
+testMessage.add_repeated_enum(TEST_REGISTERED_COMMUNITY);
+testMessage.add_repeated_enum(TEST_COMMUNITY);
+
+//Create sqlite interface for message
+//Create database connection
+sqlite3 *databaseConnection = nullptr;
+REQUIRE(sqlite3_open_v2(":memory:", &databaseConnection, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE,NULL) == SQLITE_OK);
+//REQUIRE(sqlite3_open_v2("./testDatabase.sqlite3", &databaseConnection, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE,NULL) == SQLITE_OK);
+
+SOMScopeGuard databaseConnectionGuard([&]() {sqlite3_close_v2(databaseConnection);} );
+
+std::unique_ptr<messageDatabaseDefinition> bob;
+
+SOM_TRY
+bob.reset(new messageDatabaseDefinition(*databaseConnection, *protobuf_sql_converter_test_message::descriptor()));
+SOM_CATCH("Error, unable to initialize protobufSQLInterface\n")
+
+SOM_TRY
+bob->store(testMessage);
+SOM_CATCH("Error storing message\n");
+
+protobuf_sql_converter_test_message retrievedMessage;
+
+SOM_TRY
+bob->retrieve(testMessage.optional_int64(), retrievedMessage);
+SOM_CATCH("Error retrieving message\n");
+
+REQUIRE(testMessage.required_int64() == retrievedMessage.required_int64());
+REQUIRE(testMessage.required_double() == retrievedMessage.required_double());
+REQUIRE(testMessage.required_string() == retrievedMessage.required_string());
+REQUIRE(testMessage.required_enum() == retrievedMessage.required_enum());
+
+REQUIRE(retrievedMessage.has_optional_int64() == true);
+REQUIRE(retrievedMessage.has_optional_double() == true);
+REQUIRE(retrievedMessage.has_optional_string() == true);
+REQUIRE(retrievedMessage.has_optional_enum() == true);
+
+REQUIRE(testMessage.optional_int64() == retrievedMessage.optional_int64());
+REQUIRE(testMessage.optional_double() == retrievedMessage.optional_double());
+REQUIRE(testMessage.optional_string() == retrievedMessage.optional_string());
+REQUIRE(testMessage.optional_enum() == retrievedMessage.optional_enum());
+
+REQUIRE(retrievedMessage.repeated_int64_size() == testMessage.repeated_int64_size());
+for(int i=0; i<retrievedMessage.repeated_int64_size(); i++)
+{
+REQUIRE(retrievedMessage.repeated_int64(i) == testMessage.repeated_int64(i));
+}
+
+REQUIRE(retrievedMessage.repeated_double_size() == testMessage.repeated_double_size());
+for(int i=0; i<retrievedMessage.repeated_double_size(); i++)
+{
+REQUIRE(retrievedMessage.repeated_double(i) == testMessage.repeated_double(i));
+}
+
+REQUIRE(retrievedMessage.repeated_string_size() == testMessage.repeated_string_size());
+for(int i=0; i<retrievedMessage.repeated_string_size(); i++)
+{
+REQUIRE(retrievedMessage.repeated_string(i) == testMessage.repeated_string(i));
+}
+
+REQUIRE(retrievedMessage.repeated_enum_size() == testMessage.repeated_enum_size());
+for(int i=0; i<retrievedMessage.repeated_enum_size(); i++)
+{
+REQUIRE(retrievedMessage.repeated_enum(i) == testMessage.repeated_enum(i));
+}
+
+REQUIRE(testMessage.mutable_required_client_query_request()->has_max_number_of_results() == true);
+REQUIRE(retrievedMessage.mutable_required_client_query_request()->has_max_number_of_results() == true);
+
+REQUIRE(testMessage.mutable_required_client_query_request()->max_number_of_results() == retrievedMessage.mutable_required_client_query_request()->max_number_of_results());
+
+REQUIRE(testMessage.mutable_required_client_query_request()->subqueries_size() == retrievedMessage.mutable_required_client_query_request()->subqueries_size());
+
+REQUIRE(testMessage.repeated_client_query_request_size() == retrievedMessage.repeated_client_query_request_size());
+
+REQUIRE(testMessage.mutable_required_client_query_request()->mutable_subqueries(1)->latitude_condition_size() == 2);
+
+REQUIRE(retrievedMessage.mutable_required_client_query_request()->mutable_subqueries(1)->latitude_condition_size() == 2);
+
+for(int i=0; i<testMessage.mutable_required_client_query_request()->mutable_subqueries(1)->latitude_condition_size(); i++)
+{
+REQUIRE(testMessage.mutable_required_client_query_request()->mutable_subqueries(1)->latitude_condition(i).relation()  == retrievedMessage.mutable_required_client_query_request()->mutable_subqueries(1)->latitude_condition(i).relation());
+REQUIRE(testMessage.mutable_required_client_query_request()->mutable_subqueries(1)->latitude_condition(i).value()  == Approx(retrievedMessage.mutable_required_client_query_request()->mutable_subqueries(1)->latitude_condition(i).value()));
+}
+
+SOM_TRY
+bob->update(testMessage.optional_int64(), 11, (int64_t) 1000);
+testMessage.set_required_int64(1);
+SOM_CATCH("Error, unable to update database\n");
+
+SOM_TRY
+bob->deleteMessage(testMessage.optional_int64());
+SOM_CATCH("Error deleting message\n");
+
+/*
+//Print class name
+const google::protobuf::Descriptor *messageDescriptor = testMessage.GetDescriptor();
+const google::protobuf::Reflection* messageReflection = testMessage.GetReflection();
+printf("Message name: %s\n", messageDescriptor->name().c_str());
+printf("Field names/values: \n");
+for(int i=0; i<messageDescriptor->field_count(); i++)
+{
+printf("%s: ", messageDescriptor->field(i)->name().c_str());
+if(messageDescriptor->field(i)->is_required() || messageDescriptor->field(i)->is_required() )
+{//Is singular
+switch(messageDescriptor->field(i)->cpp_type())
+{
+case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
+printf("%d\n", messageReflection->GetInt32(testMessage, messageDescriptor->field(i))); 
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
+printf("%ld\n", messageReflection->GetInt64(testMessage, messageDescriptor->field(i))); 
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
+printf("%u\n", messageReflection->GetUInt32(testMessage, messageDescriptor->field(i))); 
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
+printf("%lu\n", messageReflection->GetUInt64(testMessage, messageDescriptor->field(i))); 
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_DOUBLE:
+printf("%lf\n", messageReflection->GetDouble(testMessage, messageDescriptor->field(i))); 
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_FLOAT:
+printf("%f\n", messageReflection->GetFloat(testMessage, messageDescriptor->field(i))); 
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
+printf("%d\n", messageReflection->GetBool(testMessage, messageDescriptor->field(i))); 
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
+printf("%d\n", messageReflection->GetEnum(testMessage, messageDescriptor->field(i))->number()); 
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_STRING:
+printf("%s\n", messageReflection->GetString(testMessage, messageDescriptor->field(i)).c_str()); 
+break;
+case google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE:
+break;
+}
+}
+else
+{ //Is repeated or map
+}
+
+}
+*/
+
+
+}
+}
+
+/*
 
 TEST_CASE("Test template deduction", "[template deduction]")
 {
@@ -361,6 +622,7 @@ void callFunction(classType &inputTestClass)
 std::function<int(classType*)> memberFunctionPointer;
 };
 
+
 TEST_CASE( "Test member function pointers", "[test]")
 {
 
@@ -428,6 +690,8 @@ testConverter.addField(PYLON_GPS_GEN_REPEATED_DOUBLE_FIELD(protobuf_sql_converte
 testConverter.addField(PYLON_GPS_GEN_REPEATED_STRING_FIELD(protobuf_sql_converter_test_message, repeated_string,  "repeated_string_table", "repeated_string", "key"));
 testConverter.addField(PYLON_GPS_GEN_REPEATED_ENUM_FIELD(protobuf_sql_converter_test_message, test_enum, repeated_enum,  "repeated_enum_table", "repeated_enum", "key"));
 
+
+
 //Automatically generate tables
 testConverter.createTables();
 
@@ -457,13 +721,20 @@ testMessage.add_repeated_enum(TEST_OFFICIAL);
 testMessage.add_repeated_enum(TEST_REGISTERED_COMMUNITY);
 testMessage.add_repeated_enum(TEST_COMMUNITY);
 
-
-
+printf("Manual attempt %ld\n", testMessage.required_int64());
+std::function<const ::google::protobuf::int64 &(const protobuf_sql_converter_test_message* )> functionPointer = (&protobuf_sql_converter_test_message::required_int64) ;
+printf("Fellow\n");
+printf("Try %ld\n", functionPointer(&testMessage));
+printf("Yello\n");
 
 //Print out all of the fields we added
 testConverter.print(testMessage);
+
+
 //Attempt to write to the database
 testConverter.store(testMessage);
+
+printf("Made it this far\n");
 
 std::vector<protobuf_sql_converter_test_message> retrievedValues;
 std::vector<::google::protobuf::int64> keys = {1};
@@ -1032,12 +1303,6 @@ SOM_TRY //Send message pub -> zmqDataReceiver -> caster -> sub
 testMessagePublisher->send(testString.c_str(), testString.size());
 SOM_CATCH("Error publishing\n")
 
-/*
-std::string testStringWithSignature = calculateAndPreappendSignature(testString, connectionSigningSecretKey);
-SOM_TRY
-registrationSocket->send(testStringWithSignature.c_str(), testStringWithSignature.size());
-SOM_CATCH("Error sending message to caster\n")
-*/
 
 SOM_TRY
 messageBuffer.reset(new zmq::message_t);
@@ -1673,4 +1938,5 @@ remove(tempFilePath.c_str());
 }
 
 }
+*/
 

@@ -7,10 +7,10 @@
 
 using namespace pylongps;
 
-//Construct a pair of dummy basestations that send regular updates to the pylongps.com caster (port 43101)
-const int REGISTRATION_PORT = 9010;
-const int CLIENT_REQUEST_PORT = 9013;
-const int CLIENT_PUBLISHING_PORT = 9014;
+//Construct a pair of dummy basestations that send regular updates to the pylongps.com caster (port 10001)
+const int REGISTRATION_PORT = 10001;
+const int CLIENT_REQUEST_PORT = 10002;
+const int CLIENT_PUBLISHING_PORT = 10003;
 const int CASTER_ID = 0;
 
 //host.addresses()[0].toString()
@@ -23,7 +23,6 @@ throw SOMException("Required condition not met\n", INVALID_FUNCTION_INPUT, __FIL
 
 int main(int argc, char** argv)
 {
-/*
 Poco::Net::HostEntry host;
 
 SOM_TRY
@@ -40,7 +39,6 @@ if(host.addresses().size() == 0)
 {
 fprintf(stderr,"Error, unable to resolve address\n");
 }
-*/
 
 std::unique_ptr<zmq::context_t> context;
 
@@ -63,10 +61,6 @@ SOM_TRY
 testMessagePublisher->bind(ZMQPubSocketAddressString.c_str());
 SOM_CATCH("Error binding socket\n")
 
-while(true)
-{
-}
-
 std::unique_ptr<transceiver> com;
 
 SOM_TRY
@@ -81,7 +75,6 @@ SOM_TRY
 pubDataReceiverAddress = com->createZMQPubDataReceiver("127.0.0.1:9031");
 SOM_CATCH("Error, unable to create data receiver\n")
 
-printf("Connection string: %s\n", ("127.0.0.1:" +std::to_string(REGISTRATION_PORT)).c_str());
 
 //Caster data sender
 std::string senderURI;

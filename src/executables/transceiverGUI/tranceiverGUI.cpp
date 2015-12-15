@@ -36,6 +36,15 @@ floatItems.at(i)->hide();
 
 baseStationMapLayout->addWidget(mapWidget);
 
+//Create thread to redirect map/update basestations based on the IP retrieved for the current IP
+QThread *thread = new QThread;
+IPBasedLocationRetriever *retriever = new IPBasedLocationRetriever;
+retriever->moveToThread(thread);
+connect(thread, SIGNAL(started()), retriever, SLOT(operate()));
+connect(retriever, SIGNAL(finished()), thread, SLOT(quit()));
+connect(retriever, SIGNAL(finished()), thread, SLOT(deleteLater()));
+connect(thread, SIGNAL(started()), thread, SLOT(deleteLater()));
+thread->start();
 } 
 
 /**

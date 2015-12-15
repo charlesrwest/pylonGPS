@@ -39,3 +39,27 @@ Generate plain text public/private key pairs (define format, likly one of the he
 Create credentials to authorize a signing key -> message type already defined
 
 Connect to a Pylon GPS 2.0 caster and add/remove keys -> need seperate network thread.
+
+
+Rebuilding SQLite interface:
+
+The first time a class is encountered, storage/retrieval statements are created for it.
+
+Simple case, no submessages stored:
+
+The first integer field encountered (lowest field number) is considered the primary key for the the message.  If there is an attempt to store an object without the primary key field, an exception will be thrown.
+
+Iterate through the fields and create a column entry for each optional or required field.  
+
+For each repeated field, a new table is created of format messageName__repeatedFieldName.  Each row in the repeated field table contains a foreign key which points back to the message__table and cascade delete is enabled.
+
+At the end of the creation process, the following entries in the interface have been made:
+
+struct messageInterface
+{
+std::pair<std::vector<fieldNumbers>, sqlite_statment_to_insert_primary_row> //Field numbers representing optional
+}
+
+std::map<messageName, messageInterface>
+
+
