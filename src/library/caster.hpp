@@ -18,7 +18,7 @@
 #include "utilityFunctions.hpp"
 #include "Poco/Timestamp.h"
 #include "Poco/ByteOrder.h"
-#include "protobufSQLConverter.hpp"
+#include "messageDatabaseDefinition.hpp"
 #include "sqlite3.h"
 #include "connectionStatus.hpp"
 #include <sodium.h>
@@ -214,7 +214,7 @@ Poco::Timestamp handleReactorEvents(reactor<caster> &inputReactor);
 std::unique_ptr<zmq::socket_t> shutdownPublishingSocket; //This inproc PUB socket publishes an empty message when it is time for threads to shut down.
 
 std::unique_ptr<sqlite3, decltype(&sqlite3_close_v2)> databaseConnection; //Pointer to created database connection
-std::unique_ptr<protobufSQLConverter<base_station_stream_information> > basestationToSQLInterface; //Allows storage/retrieval of base_station_stream_information objects in the database
+std::unique_ptr<messageDatabaseDefinition> basestationToSQLInterface; //Allows storage/retrieval of base_station_stream_information objects in the database
 
 //Interfaces
 std::unique_ptr<zmq::socket_t> clientStreamPublishingInterface; ///A ZMQ PUB socket which publishes all data associated with all streams with the caster ID and stream ID preappended for clients to subscribe.  Used by streamRegistrationAndPublishingThread.

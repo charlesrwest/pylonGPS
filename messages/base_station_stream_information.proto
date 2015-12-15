@@ -5,16 +5,18 @@ import "common_enums.proto";
 //This message contains all of the details related to a basestation stream (including public key/organization, if there is one and lat/long, expected update rate, basestation tech? and message protocol).
 message base_station_stream_information
 {
+//Stick first so database interface selects it as primary key
+optional int64 base_station_id = 10; //The 64 bit id assigned by the caster for this stream
+
 //Fields that are expected in registration
-optional double latitude = 10; //The latitude of the information source
-optional double longitude = 20;  //The longitude of the information source
-optional double expected_update_rate = 30; //Expected number of complete protocol messages (RTCM/etc) per second 
-optional corrections_message_format message_format = 40; //The base station stream's message protocol/format 
-optional bytes informal_name = 50; //The name the basestation suggests be used for it in graphical displays/user interfaces.
+optional double latitude = 20; //The latitude of the information source
+optional double longitude = 30;  //The longitude of the information source
+optional double expected_update_rate = 40; //Expected number of complete protocol messages (RTCM/etc) per second 
+optional corrections_message_format message_format = 50; //The base station stream's message protocol/format 
+optional bytes informal_name = 60; //The name the basestation suggests be used for it in graphical displays/user interfaces.
 
 //Fields potentially filled in by the caster
-optional base_station_class station_class = 60; //The type of the basestation (OFFICIAL, COMMUNITY, etc)
-optional int64 base_station_id = 70; //The 64 bit id assigned by the caster for this stream
+optional base_station_class station_class = 70; //The type of the basestation (OFFICIAL, COMMUNITY, etc)
 optional bytes source_public_key = 80; //The public key (in binary) associated with a source (if it has one), this is left blank in registration requests and filled internally via credentials
 repeated bytes signing_keys = 90; //Any keys that have signed the public key associated with this source (if any) in binary format
 optional double real_update_rate = 100; //How many messages/second received on average from the basestation (updated every 30 seconds or so to prevent needing too many database accesses)

@@ -165,7 +165,7 @@ throw SOMException("Unable to open database connection\n", SQLITE3_ERROR, __FILE
 }
 databaseConnection.reset(databaseConnectionBuffer); //Transfer ownership so that connection will be closed when object goes out of scope
 
-//Make sure foreign key relationshcrypto_sign_PUBLICKEYBYTESips will be honored
+//Make sure foreign key relationships will be honored
 if(sqlite3_exec(databaseConnection.get(), "PRAGMA foreign_keys = on;", NULL, NULL, NULL) != SQLITE_OK)
 {
 throw SOMException("Error enabling foreign keys\n", SQLITE3_ERROR, __FILE__, __LINE__);
@@ -1204,28 +1204,8 @@ void caster::setupBaseStationToSQLInterface()
 {
 //Initialize object with database connection and table name
 SOM_TRY
-basestationToSQLInterface.reset(new protobufSQLConverter<base_station_stream_information>(databaseConnection.get(), "base_station_stream_information"));
-SOM_CATCH("Error initializing basestationToSQLInterface\n")
-
-//Register each of the fields with their associated database entries
-basestationToSQLInterface->addField(PYLON_GPS_GEN_OPTIONAL_DOUBLE_FIELD(base_station_stream_information, latitude, "latitude" ));
-basestationToSQLInterface->addField(PYLON_GPS_GEN_OPTIONAL_DOUBLE_FIELD(base_station_stream_information, longitude, "longitude" ));
-basestationToSQLInterface->addField(PYLON_GPS_GEN_OPTIONAL_DOUBLE_FIELD(base_station_stream_information, expected_update_rate, "expected_update_rate" ));
-basestationToSQLInterface->addField(PYLON_GPS_GEN_OPTIONAL_ENUM_FIELD(base_station_stream_information, corrections_message_format, message_format, "message_format"));
-basestationToSQLInterface->addField(PYLON_GPS_GEN_OPTIONAL_STRING_FIELD(base_station_stream_information, informal_name, "informal_name"));
-
-basestationToSQLInterface->addField(PYLON_GPS_GEN_OPTIONAL_ENUM_FIELD(base_station_stream_information, base_station_class, station_class, "station_class"));
-basestationToSQLInterface->addField(PYLON_GPS_GEN_OPTIONAL_INT64_FIELD(base_station_stream_information, base_station_id, "base_station_id"), true); //This field must be set in all all messages stored
-basestationToSQLInterface->addField(PYLON_GPS_GEN_OPTIONAL_STRING_FIELD(base_station_stream_information, source_public_key, "source_public_key"));
-basestationToSQLInterface->addField(PYLON_GPS_GEN_REPEATED_STRING_FIELD(base_station_stream_information, signing_keys,  "signing_keys", "signing_key", "foreign_key"));
-basestationToSQLInterface->addField(PYLON_GPS_GEN_OPTIONAL_DOUBLE_FIELD(base_station_stream_information, real_update_rate, "real_update_rate" ));
-basestationToSQLInterface->addField(PYLON_GPS_GEN_OPTIONAL_DOUBLE_FIELD(base_station_stream_information, uptime, "uptime" ));
-basestationToSQLInterface->addField(PYLON_GPS_GEN_OPTIONAL_INT64_FIELD(base_station_stream_information, start_time, "start_time"));
-
-//Generate associated tables in database
-SOM_TRY
-basestationToSQLInterface->createTables();
-SOM_CATCH("Error creating tables for basestationToSQLInterface")
+basestationToSQLInterface.reset(new messageDatabaseDefinition(*databaseConnection, *base_station_stream_information::descriptor()));
+SOM_CATCH("Error, unable to intialize message/SQL interface\n")
 }
 
 /**
@@ -1610,15 +1590,13 @@ return false;
 
 if(request.delete_base_station_ids_size() > 0)
 {//Perform delete operation
-SOM_TRY
-std::vector<::google::protobuf::int64> keysToDelete;
 for(int i=0; i<request.delete_base_station_ids_size(); i++)
 {
-keysToDelete.push_back(request.delete_base_station_ids(i));
+SOM_TRY
+basestationToSQLInterface->deleteMessage(request.delete_base_station_ids(i));
+SOM_CATCH("Error deleting from database\n")
 }
 
-basestationToSQLInterface->deleteObjects(keysToDelete);
-SOM_CATCH("Error deleting from database\n")
 
 SOM_TRY
 sendReplyLambda(false); //Request succeeded
@@ -1628,8 +1606,8 @@ return false;
 
 if(request.has_base_station_to_update_id() && request.has_real_update_rate())
 { //Perform update operation
-SOM_TRY
-basestationToSQLInterface->update(fieldValue((::google::protobuf::int64) request.base_station_to_update_id()), "real_update_rate", fieldValue(request.real_update_rate()));
+SOM_TRY //TODO: Might want to double check field number
+basestationToSQLInterface->update(request.base_station_to_update_id(), 9, request.real_update_rate());
 SOM_CATCH("Error updating database\n")
 
 SOM_TRY
@@ -1729,7 +1707,7 @@ SOM_CATCH("Error sending reply");
 std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> clientQueryStatement(nullptr, &sqlite3_finalize);
 
 SOM_TRY
-basestationToSQLInterface->prepareStatement(clientQueryStatement, sqlQueryString);
+prepareStatement(clientQueryStatement, sqlQueryString, *databaseConnection);
 SOM_CATCH("Error preparing query statement\n")
 
 int bindingParameterCount = bindClientQueryRequestFields(clientQueryStatement, request);
@@ -1760,7 +1738,7 @@ throw SOMException("Error, wrong type of result columns returned\n", SQLITE3_ERR
 
 
 int stepReturnValue = returnValue;
-std::vector<::google::protobuf::int64> resultPrimaryKeys;
+std::vector<int64_t> resultPrimaryKeys;
 while(true)
 {
 if(stepReturnValue == SQLITE_DONE)
@@ -1768,7 +1746,7 @@ if(stepReturnValue == SQLITE_DONE)
 break; 
 }
 
-resultPrimaryKeys.push_back((::google::protobuf::int64) sqlite3_column_int(clientQueryStatement.get(), 0));
+resultPrimaryKeys.push_back((int64_t) sqlite3_column_int64(clientQueryStatement.get(), 0));
 
 stepReturnValue = sqlite3_step(clientQueryStatement.get());
 
@@ -1778,13 +1756,15 @@ throw SOMException("Error executing query\n", SQLITE3_ERROR, __FILE__, __LINE__)
 }
 }
 
-
 std::vector<base_station_stream_information> results;
+for(int i=0; i<resultPrimaryKeys.size(); i++)
+{
+base_station_stream_information messageBuffer;
+results.push_back(messageBuffer);
 SOM_TRY
-results = basestationToSQLInterface->retrieve(resultPrimaryKeys);
-SOM_CATCH("Error retrieving objects associated with query primary keys\n")
-
-
+basestationToSQLInterface->retrieve(resultPrimaryKeys[i], results.back());
+SOM_CATCH("Error retrieving object associated with a query primary key\n")
+}
 
 Poco::Timestamp currentTime;
 auto timeValue = currentTime.epochMicroseconds();
@@ -2560,12 +2540,9 @@ This function generates the complete query string required to get all of the ids
 @throws: This function can throw exceptions
 */
 std::string caster::generateClientQueryRequestSQLString(const client_query_request &inputRequest, int &inputParameterCountBuffer)
-{
+{//TODO: Probably going to have to double check this
 //Construct SQL query string from client query request
-std::string primaryKeyFieldName;
-SOM_TRY
-primaryKeyFieldName = basestationToSQLInterface->getPrimaryKeyFieldName();
-SOM_CATCH("Error retrieving primary key field name\n")
+std::string primaryKeyFieldName = basestationToSQLInterface->messageDescriptor->field(basestationToSQLInterface->primaryKeyFieldNumber)->name();
 
 //Create and store subquery clauses
 int parameterCount = 0;
@@ -2653,7 +2630,7 @@ if(parameterCount > 0)
 {
 subQueryString += " AND ";
 } //57.2957795130785 -> radian to degrees constant
-subQueryString += "(base_station_id IN (SELECT base_station_id FROM (SELECT base_station_id, (6371000*acos(57.2957795130785*(cos(?)*cos(latitude)*cos(longitude-?) + sin(?)*sin(latitude)))) AS distance FROM " + basestationToSQLInterface->primaryTableName + " GROUP BY distance HAVING distance <= ?)))";
+subQueryString += "(base_station_id IN (SELECT base_station_id FROM (SELECT base_station_id, (6371000*acos(57.2957795130785*(cos(?)*cos(latitude)*cos(longitude-?) + sin(?)*sin(latitude)))) AS distance FROM " + basestationToSQLInterface->messageTableName + " GROUP BY distance HAVING distance <= ?)))";
 //params Qlatitude, Qlongitude, Qlatitude, distance constraint value
 parameterCount += 4;
 }
@@ -2667,7 +2644,7 @@ subQueryStrings.push_back(subQueryString);
 
 } //End subquery string generation
 
-std::string queryString = "SELECT " + primaryKeyFieldName + " FROM " + basestationToSQLInterface->primaryTableName;
+std::string queryString = "SELECT " + primaryKeyFieldName + " FROM " + basestationToSQLInterface->messageTableName;
 
 if(subQueryStrings.size() > 0)
 {
@@ -2782,7 +2759,7 @@ for(int i=0; i<inputRequest.subqueries_size(); i++)
 for(int a=0; a<inputRequest.subqueries(i).acceptable_classes_size(); a++)
 {
 SOM_TRY
-basestationToSQLInterface->bindFieldToStatement(inputStatement.get(), parameterCount+1, fieldValue((::google::protobuf::int64) inputRequest.subqueries(i).acceptable_classes(a)));
+bindFieldValueToStatement(*inputStatement, parameterCount+1, (int64_t) inputRequest.subqueries(i).acceptable_classes(a));
 SOM_CATCH("Error binding statement\n")
 parameterCount++;
 }
@@ -2791,7 +2768,7 @@ parameterCount++;
 for(int a=0; a<inputRequest.subqueries(i).acceptable_formats_size(); a++)
 {
 SOM_TRY
-basestationToSQLInterface->bindFieldToStatement(inputStatement.get(), parameterCount+1, fieldValue((::google::protobuf::int64) inputRequest.subqueries(i).acceptable_formats(a)));
+bindFieldValueToStatement(*inputStatement, parameterCount+1, (int64_t) inputRequest.subqueries(i).acceptable_formats(a));
 SOM_CATCH("Error binding statement\n")
 parameterCount++;
 }
@@ -2800,7 +2777,7 @@ parameterCount++;
 for(int a=0; a<inputRequest.subqueries(i).latitude_condition_size(); a++)
 { //Handle latitude conditions
 SOM_TRY
-basestationToSQLInterface->bindFieldToStatement(inputStatement.get(), parameterCount+1, fieldValue(inputRequest.subqueries(i).latitude_condition(a).value()));
+bindFieldValueToStatement(*inputStatement, parameterCount+1, inputRequest.subqueries(i).latitude_condition(a).value());
 SOM_CATCH("Error binding statement\n")
 parameterCount++;
 }
@@ -2808,7 +2785,7 @@ parameterCount++;
 for(int a=0; a<inputRequest.subqueries(i).longitude_condition_size(); a++)
 { //Handle longitude conditions
 SOM_TRY
-basestationToSQLInterface->bindFieldToStatement(inputStatement.get(), parameterCount+1, fieldValue(inputRequest.subqueries(i).longitude_condition(a).value()));
+bindFieldValueToStatement(*inputStatement, parameterCount+1, inputRequest.subqueries(i).longitude_condition(a).value());
 SOM_CATCH("Error binding statement\n")
 parameterCount++;
 }
@@ -2818,7 +2795,7 @@ auto timeValue = currentTime.epochMicroseconds();
 for(int a=0; a<inputRequest.subqueries(i).uptime_condition_size(); a++)
 { //Handle uptime conditions
 SOM_TRY
-basestationToSQLInterface->bindFieldToStatement(inputStatement.get(), parameterCount+1, fieldValue((::google::protobuf::int64) (timeValue-inputRequest.subqueries(i).uptime_condition(a).value()*1000000.0)));
+bindFieldValueToStatement(*inputStatement, parameterCount+1, (int64_t) (timeValue-inputRequest.subqueries(i).uptime_condition(a).value()*1000000.0));
 SOM_CATCH("Error binding statement\n")
 parameterCount++;
 }
@@ -2826,7 +2803,7 @@ parameterCount++;
 for(int a=0; a<inputRequest.subqueries(i).real_update_rate_condition_size(); a++)
 { //Handle real_update_rate conditions
 SOM_TRY
-basestationToSQLInterface->bindFieldToStatement(inputStatement.get(), parameterCount+1, fieldValue(inputRequest.subqueries(i).real_update_rate_condition(a).value()));
+bindFieldValueToStatement(*inputStatement, parameterCount+1, inputRequest.subqueries(i).real_update_rate_condition(a).value());
 SOM_CATCH("Error binding statement\n")
 parameterCount++;
 }
@@ -2834,7 +2811,7 @@ parameterCount++;
 for(int a=0; a<inputRequest.subqueries(i).expected_update_rate_condition_size(); a++)
 { //Handle expected_update_rate conditions
 SOM_TRY
-basestationToSQLInterface->bindFieldToStatement(inputStatement.get(), parameterCount+1, fieldValue(inputRequest.subqueries(i).expected_update_rate_condition(a).value()));
+bindFieldValueToStatement(*inputStatement, parameterCount+1, inputRequest.subqueries(i).expected_update_rate_condition(a).value());
 SOM_CATCH("Error binding statement\n")
 parameterCount++;
 }
@@ -2843,7 +2820,7 @@ if(inputRequest.subqueries(i).has_informal_name_condition())
 { //Add informal name condition
 
 SOM_TRY
-basestationToSQLInterface->bindFieldToStatement(inputStatement.get(), parameterCount+1, fieldValue(inputRequest.subqueries(i).informal_name_condition().value()));
+bindFieldValueToStatement(*inputStatement, parameterCount+1, inputRequest.subqueries(i).informal_name_condition().value());
 SOM_CATCH("Error binding statement\n")
 parameterCount++;
 }
@@ -2851,7 +2828,7 @@ parameterCount++;
 for(int a=0; a<inputRequest.subqueries(i).base_station_id_condition_size(); a++)
 { //Handle base_station_id conditions
 SOM_TRY
-basestationToSQLInterface->bindFieldToStatement(inputStatement.get(), parameterCount+1, fieldValue((::google::protobuf::int64) inputRequest.subqueries(i).base_station_id_condition(a).value()));
+bindFieldValueToStatement(*inputStatement, parameterCount+1, (int64_t)  inputRequest.subqueries(i).base_station_id_condition(a).value());
 SOM_CATCH("Error binding statement\n")
 parameterCount++;
 }
@@ -2859,7 +2836,7 @@ parameterCount++;
 for(int a=0; a<inputRequest.subqueries(i).source_public_keys_size(); a++)
 { //Handle source public key conditions
 SOM_TRY
-basestationToSQLInterface->bindFieldToStatement(inputStatement.get(), parameterCount+1, fieldValue(inputRequest.subqueries(i).source_public_keys(a)));
+bindFieldValueToStatement(*inputStatement, parameterCount+1, inputRequest.subqueries(i).source_public_keys(a));
 SOM_CATCH("Error binding statement\n")
 parameterCount++;
 }
@@ -2869,22 +2846,22 @@ if(inputRequest.subqueries(i).has_circular_search_region())
 //subQueryString += "(base_station_id IN (SELECT base_station_id FROM (SELECT base_station_id, (6371000*acos(cos(?)*cos(latitude)*cos(longitude-?) + sin(?)*sin(latitude))) AS distance FROM " + basestationToSQLInterface->primaryTableName + " GROUP BY distance HAVING distance <= ?)))";
 //params Qlatitude, Qlongitude, Qlatitude, distance constraint value
 SOM_TRY
-basestationToSQLInterface->bindFieldToStatement(inputStatement.get(), parameterCount+1, fieldValue(inputRequest.subqueries(i).circular_search_region().latitude()));
+bindFieldValueToStatement(*inputStatement, parameterCount+1, inputRequest.subqueries(i).circular_search_region().latitude());
 SOM_CATCH("Error binding statement\n")
 parameterCount++;
 
 SOM_TRY
-basestationToSQLInterface->bindFieldToStatement(inputStatement.get(), parameterCount+1, fieldValue(inputRequest.subqueries(i).circular_search_region().longitude()));
+bindFieldValueToStatement(*inputStatement, parameterCount+1, inputRequest.subqueries(i).circular_search_region().longitude());
 SOM_CATCH("Error binding statement\n")
 parameterCount++;
 
 SOM_TRY
-basestationToSQLInterface->bindFieldToStatement(inputStatement.get(), parameterCount+1, fieldValue(inputRequest.subqueries(i).circular_search_region().latitude()));
+bindFieldValueToStatement(*inputStatement, parameterCount+1, inputRequest.subqueries(i).circular_search_region().latitude());
 SOM_CATCH("Error binding statement\n")
 parameterCount++;
 
 SOM_TRY
-basestationToSQLInterface->bindFieldToStatement(inputStatement.get(), parameterCount+1, fieldValue(inputRequest.subqueries(i).circular_search_region().radius()));
+bindFieldValueToStatement(*inputStatement, parameterCount+1, inputRequest.subqueries(i).circular_search_region().radius());
 SOM_CATCH("Error binding statement\n")
 parameterCount++;
 }
