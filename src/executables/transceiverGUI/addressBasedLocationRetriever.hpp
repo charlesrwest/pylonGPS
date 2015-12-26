@@ -10,17 +10,25 @@
 #include "utilityFunctions.hpp"
 #include<json.h>
 #include "SOMScopeGuard.hpp"
+#include<algorithm>
 
 namespace pylongps
 {
 
 /**
-This class retrieves the latitude/longitude associated with the current host's IP (if any) and emits it as a Qt signal.  It is meant to be run in a seperate Qt thread, as it makes network calls which can take some time to complete.
+This class retrieves the latitude/longitude associated with the address it was constructed with (if any) and emits it as a Qt signal.  It is meant to be run in a seperate Qt thread, as it makes network calls which can take some time to complete.
 */
-class IPBasedLocationRetriever : public QObject
+class addressBasedLocationRetriever : public QObject
 {
 Q_OBJECT
 public:
+/**
+This function sets the address string to search for.
+@param inputAddressToSearchFor: The address to search for
+*/
+addressBasedLocationRetriever(const std::string &inputAddressToSearchFor);
+
+std::string addressString;
 
 public slots:
 /**

@@ -10,9 +10,16 @@
 #include<map>
 #include "Poco/ByteOrder.h"
 #include "sqlite3.h"
+#include<json.h>
+#include<Poco/Net/StreamSocket.h>
+#include<Poco/Net/DNS.h>
+#include<Poco/Net/HTTPRequest.h>
+#include<Poco/URI.h>
+#include<Poco/Timestamp.h>
 
 namespace pylongps
 {
+extern const double PI;
 
 //Includes null terminating character, which is left out when it is written to a file
 const int z85PublicKeySize = (((crypto_sign_PUBLICKEYBYTES*5)/4)+1)+(((crypto_sign_PUBLICKEYBYTES*5)/4))%4;
@@ -176,6 +183,14 @@ This function converts a string to an integer without having bad defaults or nee
 */
 bool convertStringToInteger(const std::string &inputString, int &inputIntegerBuffer);
 
+/**
+This function converts a string to an double without having bad defaults or needing to throw exceptions.
+@param inputString: The string to convert
+@param inputDoubleBuffer: The double variable to store the result in
+@return: True if the conversion was successful and false otherwise
+*/
+bool convertStringToDouble(const std::string &inputString, double &inputDoubleBuffer);
+
 
 /**
 This function creates a sqlite statement, binds it with the given statement string and assigns it to the given unique_ptr.
@@ -297,6 +312,15 @@ This function gets the (assumed to be set) integer field's value from the messag
 @throw: This function can throw exceptions
 */
 int64_t getIntegerFieldValue(const google::protobuf::Message &inputMessage, const google::protobuf::FieldDescriptor *inputField);
+
+/**
+This function attempts to retrieve a Json value from a URL via an http request.  If the request/parsing is successful, the retrieved Json value is stored in the given buffer.  This function is not particularly efficient, so it might be worth considering streamlining the application if that is a concern.
+@param inputURL: The URL to retrieve the Json object from
+@param inputValueBuffer: The object to store the retrieved value in
+@param inputTimeoutDurationInMicroseconds: How long to wait for the value to be return in microseconds
+@return: True if successful and false otherwise
+*/
+bool getJsonValueFromURL(const std::string &inputURL, Json::Value &inputValueBuffer, int64_t inputTimeoutDurationInMicroseconds = 1000000);
 
 }
 

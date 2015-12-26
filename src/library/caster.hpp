@@ -539,7 +539,6 @@ This function generates a sql query subpart of the form (fieldName IN (?, ?, etc
 std::string generateRelationalSubquery(bool inputPreappendAND, const std::string &inputFieldName, sql_relational_operator inputRelationalOperator);
 
 //SQLITE functions to add for support of great circle calculations
-const double PI = 3.14159265359;
 const double DEGREES_TO_RADIANS_CONSTANT = PI/180.0;
 
 /**

@@ -9,8 +9,8 @@ message base_station_stream_information
 optional int64 base_station_id = 10; //The 64 bit id assigned by the caster for this stream
 
 //Fields that are expected in registration
-optional double latitude = 20; //The latitude of the information source
-optional double longitude = 30;  //The longitude of the information source
+optional double latitude = 20; //The latitude of the information source (degrees)
+optional double longitude = 30;  //The longitude of the information source (degrees)
 optional double expected_update_rate = 40; //Expected number of complete protocol messages (RTCM/etc) per second 
 optional corrections_message_format message_format = 50; //The base station stream's message protocol/format 
 optional bytes informal_name = 60; //The name the basestation suggests be used for it in graphical displays/user interfaces.

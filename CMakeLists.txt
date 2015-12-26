@@ -33,7 +33,7 @@ add_subdirectory(./messages)
 #Tell compiler where to find required libraries
 link_directories(/usr/lib/x86_64-linux-gnu/ lib/ ./messages)
 
-include_directories(./src/library/ ./messages ./cppzmq-master ./src/executables/unitTests ./src/executables/transceiverGUI ./src/executables/casterGUI ./src/executables/caster ./)
+include_directories(./src/library/ ./messages ./cppzmq-master ./src/executables/unitTests ./src/executables/transceiverGUI ./src/executables/casterGUI ./src/executables/caster ./ ./jsoncpp/json)
 
 find_package(Threads)
 
@@ -49,7 +49,7 @@ QT5_WRAP_UI(CASTER_FORMS_HEADERS ${CASTER_FORMS})
 
 
 #Get lists of the source files
-FILE(GLOB SOURCEFILES ./src/library/*.cpp ./src/library/*.c)
+FILE(GLOB SOURCEFILES ./src/library/*.cpp ./src/library/*.c ./jsoncpp/*.cpp)
 
 FILE(GLOB UNIT_TESTS_EXECUTABLE_SOURCE ./src/executables/unitTests/*.cpp ./src/executables/unitTests/*.c)
 

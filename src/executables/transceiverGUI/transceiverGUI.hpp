@@ -8,9 +8,27 @@
 #include<marble/AbstractFloatItem.h>
 #include<QThread>
 #include "IPBasedLocationRetriever.hpp"
+#include "addressBasedLocationRetriever.hpp"
+#include<marble/GeoDataLatLonAltBox.h>
+#include<marble/GeoDataDocument.h>
+#include<marble/GeoDataPlacemark.h>
+#include<marble/GeoDataLineString.h>
+#include<marble/GeoDataTreeModel.h>
+#include <marble/MarbleModel.h>
+#include<map>
+#include<mutex>
+#include "base_station_stream_information.pb.h"
+
+//Kludgy hack to be able to connect Qt objects across namespaces. Apologies for using the using command in a header.  However, this isn't library code and the name is quite specific.
+using Marble::GeoDataLatLonAltBox;
 
 namespace pylongps
 {
+
+//In microseconds
+const Poco::Timestamp::TimeDiff TRANSCEIVER_GUI_EXPIRATION_TIME = 60000000; //A minute
+const Poco::Timestamp::TimeDiff TRANSCEIVER_GUI_MINIMUM_TIME_BETWEEN_QUERIES = 1000000; //1 second
+const double TRANSCEIVER_QUERY_CACHING_CONSTANT = 10.0;
 
 /**
 This class is the main window used with the pylon GPS 2.0 tranceiver.  It is written to use Qt4 with the Marble GIS library because that is what is currently available in the Ubuntu repositories.
@@ -28,29 +46,43 @@ This function initializes the class, connecting widgets, setting up the form gen
 */
 transceiverGUI();
 
+std::unique_ptr<zmq::context_t> context;
+
+std::string casterRequestSocketConnectionString;
+
+std::mutex visibleBasestationMutex;
+//Mutex protected
+std::map<std::pair<int64_t, int64_t>, base_station_stream_information> potentiallyVisibleBasestationList;
+std::array<double, 4> lastQueryBoundaryInRadians; //west, north, east, south
+Poco::Timestamp timeOfLastQueryUpdate;
+Poco::Timestamp timeOfLastSentQuery; //When the last query request was sent out
+
+//Sorted key sets to allow catched updates by searching for keys which are currently visible
+std::map<double, std::pair<int64_t, int64_t> > latitudeToBasestationKey;
+std::map<double, std::pair<int64_t, int64_t> > longitudeToBasestationKey;
+
+std::map<std::pair<int64_t, int64_t>, base_station_stream_information> selectedBasestations; //A list of all of the basestations that have been selected
+//end mutex protection
+
+
 public slots:
 /**
 This function toggles which page is displayed in the GUI.  If the current index is 0, it makes it 1 and vice versa.
 */
 void toggleGUIPage();
 
+/**
+This function updates the visible basestation list and emits the visibleBasestationListChanged signal if the list changes.
+@param inputVisibleRegion: A structure defining where on the earth is currently visible in the screen
+*/
+void regionChanged(const GeoDataLatLonAltBox &inputVisibleRegion);
 
-protected:
+
+signals:
+
+void visibleBasestationListChanged();
 };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 }
+
+#include "basestationListRetriever.hpp"

@@ -105,3 +105,5 @@ Fields are delineated by ";" characters.  Some fields can be left blank, but the
 
 RTKLIB supports streaming differential GPS updates to and from arbitrary TCP sockets.  This means that it would be possible to transport these updates without needing to use the HTTP based NTRIP protocol for registration/other functions if a PylonGPS program is the source/destination of these streams.  In the next major release, it is likely that PylonGPS will switch to a interface using ZMQ/Protobuf for communication and serialization while allowing access via both NTRIP and the open PylonGPS format at the caster (a model/view pattern).  This would allow new features, such as searching and proxying, to be added without having to redefine a standard every time (since Protobuf allows addition of new fields without breaking backwards compatibility).
 
+Uses ZMQ, Poco, SQLite, JsonCPP, Qt5
+

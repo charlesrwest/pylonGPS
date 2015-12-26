@@ -2,6 +2,8 @@
 
 using namespace pylongps;
 
+const double pylongps::PI = 3.14159265358979323846;
+
 /**
 This function compactly allows binding a ZMQ socket to inproc address without needing to specify an exact address.  The function will try binding to addresses in the format: inproc://inputBaseString.inputExtensionNumberAsString and will try repeatedly while incrementing inputExtensionNumber until it succeeds or the maximum number of tries has been exceeded.
 @param inputSocket: The ZMQ socket to bind
@@ -510,6 +512,25 @@ return true;
 }
 
 /**
+This function converts a string to an double without having bad defaults or needing to throw exceptions.
+@param inputString: The string to convert
+@param inputDoubleBuffer: The double variable to store the result in
+@return: True if the conversion was successful and false otherwise
+*/
+bool pylongps::convertStringToDouble(const std::string &inputString, double &inputDoubleBuffer)
+{
+char *stringEnd = nullptr;
+inputDoubleBuffer = strtod(inputString.c_str(), &stringEnd);
+
+if(((const char *) stringEnd) == inputString.c_str())
+{ //Couldn't convert correctly
+return false;
+}
+
+return true;
+}
+
+/**
 This function creates a sqlite statement, binds it with the given statement string and assigns it to the given unique_ptr.
 @param inputStatement: The unique_ptr to assign statement ownership to
 @param inputStatementString: The SQL string to construct the statement from
@@ -951,5 +972,90 @@ break;
 }
 
 return value;
+}
+
+/**
+This function attempts to retrieve a Json value from a URL via an http request.  If the request/parsing is successful, the retrieved Json value is stored in the given buffer.  This function is not particularly efficient, so it might be worth considering streamlining the application if that is a concern.
+@param inputURL: The URL to retrieve the Json object from
+@param inputValueBuffer: The object to store the retrieved value in
+@param inputTimeoutDurationInMicroseconds: How long to wait for the value to be return in microseconds
+@return: True if successful and false otherwise
+*/
+bool pylongps::getJsonValueFromURL(const std::string &inputURL, Json::Value &inputValueBuffer, int64_t inputTimeoutDurationInMicroseconds)
+{
+
+try
+{
+Poco::Timestamp startTime;
+Poco::Timestamp timeoutTimepoint = startTime+((Poco::Timestamp::TimeDiff) inputTimeoutDurationInMicroseconds);
+
+//Parse URI
+Poco::URI url(inputURL);
+
+Poco::Net::HostEntry host;
+host = Poco::Net::DNS::hostByName(url.getHost());
+
+if(host.addresses().size() == 0)
+{//No IP address for host, so exit silently
+return false;
+}
+
+
+Poco::Net::StreamSocket connectionSocket;
+
+connectionSocket.connect(Poco::Net::SocketAddress(host.addresses()[0], 80));
+
+connectionSocket.setReceiveTimeout(timeoutTimepoint-Poco::Timestamp());
+
+Poco::Net::HTTPRequest getRequest("GET", url.getPathAndQuery(), "HTTP/1.1");
+getRequest.setHost(url.getHost());
+
+std::stringstream serializedHeader;
+getRequest.write(serializedHeader);
+
+connectionSocket.sendBytes(serializedHeader.str().c_str(), serializedHeader.str().size());
+
+std::array<char, 1024> receiveBuffer;
+int amountOfDataReceived = 0;
+std::string receivedData;
+while(Poco::Timestamp() < timeoutTimepoint)
+{
+amountOfDataReceived = connectionSocket.receiveBytes(receiveBuffer.data(), receiveBuffer.size());
+
+if(amountOfDataReceived == 0)
+{
+break;
+}
+
+receivedData += std::string(receiveBuffer.data(), amountOfDataReceived);
+
+if(receivedData.find("}") != std::string::npos)
+{
+break;
+}
+}
+
+if(receivedData.find("{") == std::string::npos)
+{
+return false;
+}
+
+receivedData = receivedData.substr(receivedData.find("{"));
+
+Json::Reader reader;
+
+if(reader.parse(receivedData, inputValueBuffer) != true)
+{
+return false; //Couldn't parse JSON
+}
+
+return true;
+}
+catch(const std::exception &inputException)
+{
+return false;
+}
+
+
 }
 

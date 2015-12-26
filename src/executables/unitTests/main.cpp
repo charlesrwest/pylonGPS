@@ -18,6 +18,7 @@
 #include "tcpDataReceiver.hpp"
 #include "transceiver.hpp"
 //#include "ntripV1DataReceiver.hpp"
+#include<json.h>
 
 using namespace pylongps; //Use pylongps classes without alteration for now
 using namespace pylongps_protobuf_sql_converter; //Use protobuf/sql converter test message
@@ -131,6 +132,27 @@ fwrite(messageBuffer.data(), sizeof(char), messageBuffer.size(), stdout);
 }
 
 */
+
+TEST_CASE("Test Json reader", "JSON")
+{
+SECTION("Play with Json", "JSON")
+{
+std::string jsonString = "{\"id\": 2,  \"name\": \"blue door\", \"price\": 1.50, \"tagSet\": [\"home\", \"green\"]}";
+
+Json::Reader reader;
+
+Json::Value value;
+REQUIRE(reader.parse(jsonString, value));
+
+REQUIRE(value["id"].asInt() == 2);
+REQUIRE(value["name"].asString() == "blue door");
+REQUIRE(value["price"].asDouble() == Approx(1.5));
+REQUIRE(value["tagSet"][0].asString() == "home");
+REQUIRE(value["tagSet"][1].asString() == "green");
+
+
+}
+}
 
 TEST_CASE("Test argument parser", "[argument parser]")
 {
