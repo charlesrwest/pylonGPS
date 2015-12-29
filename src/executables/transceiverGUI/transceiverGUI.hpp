@@ -29,6 +29,7 @@ namespace pylongps
 const Poco::Timestamp::TimeDiff TRANSCEIVER_GUI_EXPIRATION_TIME = 60000000; //A minute
 const Poco::Timestamp::TimeDiff TRANSCEIVER_GUI_MINIMUM_TIME_BETWEEN_QUERIES = 1000000; //1 second
 const double TRANSCEIVER_QUERY_CACHING_CONSTANT = 10.0;
+//const double VISIBLE_BASESTATION_FUDGE_FACTOR = 1.5; //How far our of the visible range is rendered
 
 /**
 This class is the main window used with the pylon GPS 2.0 tranceiver.  It is written to use Qt4 with the Marble GIS library because that is what is currently available in the Ubuntu repositories.
@@ -50,8 +51,17 @@ std::unique_ptr<zmq::context_t> context;
 
 std::string casterRequestSocketConnectionString;
 
+Marble::MarbleWidget *mapWidget; //Pointer to map display
+
+std::array<double, 4> currentMapBoundaries;
+std::set<std::pair<int64_t, int64_t> > lastSetOfVisibleBasestations;
+
+std::map<std::pair<int64_t, int64_t>, base_station_stream_information> selectedBasestations; //A list of all of the basestations that have been selected
+
+std::map<std::pair<int64_t, int64_t>, std::unique_ptr<Marble::GeoDataPlacemark> > basestationIDToMapPlacemark; 
+
+//Mutex protected BASE STATION DATA MODEL////////////////////
 std::mutex visibleBasestationMutex;
-//Mutex protected
 std::map<std::pair<int64_t, int64_t>, base_station_stream_information> potentiallyVisibleBasestationList;
 std::array<double, 4> lastQueryBoundaryInRadians; //west, north, east, south
 Poco::Timestamp timeOfLastQueryUpdate;
@@ -60,12 +70,15 @@ Poco::Timestamp timeOfLastSentQuery; //When the last query request was sent out
 //Sorted key sets to allow catched updates by searching for keys which are currently visible
 std::map<double, std::pair<int64_t, int64_t> > latitudeToBasestationKey;
 std::map<double, std::pair<int64_t, int64_t> > longitudeToBasestationKey;
-
-std::map<std::pair<int64_t, int64_t>, base_station_stream_information> selectedBasestations; //A list of all of the basestations that have been selected
-//end mutex protection
+//end mutex protected BASE STATION DATA MODEL////////////////////
 
 
 public slots:
+/**
+This function makes/destroys/updates points of interest on the map to ensure that they reflect what is stored in the base station data model.
+*/
+void updateMapViewAccordingToBasestationModel();
+
 /**
 This function toggles which page is displayed in the GUI.  If the current index is 0, it makes it 1 and vice versa.
 */

@@ -21,7 +21,7 @@ connect(toggleGUIPagePushButtonP1, SIGNAL(clicked(bool)), this, SLOT(toggleGUIPa
 connect(toggleGUIPagePushButtonP2, SIGNAL(clicked(bool)), this, SLOT(toggleGUIPage()));
 
 //Add a scrolly map without any other features
-Marble::MarbleWidget *mapWidget = new Marble::MarbleWidget();
+mapWidget = new Marble::MarbleWidget();
 mapWidget->setProjection(Marble::Mercator);
 mapWidget->setMapThemeId("earth/openstreetmap/openstreetmap.dgml");
 mapWidget->setShowOverviewMap(false);
@@ -37,16 +37,6 @@ for(int i=0; i<floatItems.size(); i++)
 {
 floatItems.at(i)->hide();
 }
-
- 
-GeoDataPlacemark *place = new GeoDataPlacemark( "Bucharest" );
-place->setCoordinate( 25.97, 44.43, 0.0, GeoDataCoordinates::Degree );
-place->setPopulation( 1877155 );
-place->setCountryCode ( "Romania" );
-  
-GeoDataDocument *document = new GeoDataDocument;
-document->append( place );
-mapWidget->model()->treeModel()->addDocument( document );
 
 
 baseStationMapLayout->addWidget(mapWidget);
@@ -66,6 +56,7 @@ thread->start();
 
 connect(mapWidget, SIGNAL(visibleLatLonAltBoxChanged(const GeoDataLatLonAltBox &)), this, SLOT(regionChanged(const GeoDataLatLonAltBox &)));
 
+connect(mapWidget, SIGNAL(visibleLatLonAltBoxChanged(const GeoDataLatLonAltBox &)), this, SLOT(updateMapViewAccordingToBasestationModel()));
 /*
 //Create thread to redirect map/update basestations based on the lat/lon retrieved for the given address
 QThread *thread = new QThread;
@@ -98,7 +89,7 @@ This function updates the visible basestation list and emits the visibleBasestat
 void transceiverGUI::regionChanged(const GeoDataLatLonAltBox &inputVisibleRegion)
 {
 printf("Region changed: %lf %lf %lf %lf\n", inputVisibleRegion.west()*180.0/pylongps::PI, inputVisibleRegion.north()*180.0/pylongps::PI, inputVisibleRegion.east()*180.0/pylongps::PI, inputVisibleRegion.south()*180.0/pylongps::PI);
-
+currentMapBoundaries = std::array<double, 4>{inputVisibleRegion.west(), inputVisibleRegion.north(), inputVisibleRegion.east(), inputVisibleRegion.south()};
 
 std::array<double, 4> boundaries;
 bool cacheExpired = false;
@@ -116,7 +107,8 @@ fmin(inputVisibleRegion.north(), inputVisibleRegion.south()) > fmin(lastQueryBou
 {
 printf("Time of last sent query: %ld %ld %d\n", (timeOfLastQueryUpdate + TRANSCEIVER_GUI_EXPIRATION_TIME).elapsed(), Poco::Timestamp().elapsed(), (timeOfLastSentQuery + TRANSCEIVER_GUI_MINIMUM_TIME_BETWEEN_QUERIES) < Poco::Timestamp());
 cacheExpired = true;
-std::array<double, 4> boundaries = {inputVisibleRegion.west()*TRANSCEIVER_QUERY_CACHING_CONSTANT, inputVisibleRegion.north()*TRANSCEIVER_QUERY_CACHING_CONSTANT, inputVisibleRegion.east()*TRANSCEIVER_QUERY_CACHING_CONSTANT, inputVisibleRegion.south()*TRANSCEIVER_QUERY_CACHING_CONSTANT};
+boundaries = {inputVisibleRegion.west()*TRANSCEIVER_QUERY_CACHING_CONSTANT, inputVisibleRegion.north()*TRANSCEIVER_QUERY_CACHING_CONSTANT, inputVisibleRegion.east()*TRANSCEIVER_QUERY_CACHING_CONSTANT, inputVisibleRegion.south()*TRANSCEIVER_QUERY_CACHING_CONSTANT};
+printf("Yowsers\n");
 }
 else
 {
@@ -141,6 +133,82 @@ return;
 }
 
 basestationListRetriever *retriever = new basestationListRetriever(*this, boundaries, "tcp://" + host.addresses()[0].toString() + ":10002");
+connect(retriever, SIGNAL(updatedBasestationLists()), this, SLOT(updateMapViewAccordingToBasestationModel())); //Bit of a race condition
 }
 
+}
+
+/**
+This function makes/destroys/updates points of interest on the map to ensure that they reflect what is stored in the base station data model.
+*/
+void transceiverGUI::updateMapViewAccordingToBasestationModel()
+{
+GeoDataTreeModel &mapTreeModel = *mapWidget->model()->treeModel();
+
+//Lock mutex
+std::lock_guard<std::mutex> lockGuard(visibleBasestationMutex);
+
+//Construct a set of the IDs of all basestations in the visible region
+
+//Find set basestations with acceptable latitudes, then the set with acceptable longitudes and then intersect the two sets
+auto acceptableLatitudesStart = latitudeToBasestationKey.lower_bound(fmin(currentMapBoundaries[1], currentMapBoundaries[3]));
+auto acceptableLatitudesEnd = latitudeToBasestationKey.upper_bound(fmax(currentMapBoundaries[1], currentMapBoundaries[3]));
+std::vector<std::pair<int64_t, int64_t> > acceptableLatitudes;
+for(auto iter = acceptableLatitudesStart; iter != acceptableLatitudesEnd; iter++)
+{
+acceptableLatitudes.push_back(iter->second);
+}
+
+auto acceptableLongitudesStart = longitudeToBasestationKey.lower_bound(fmin(currentMapBoundaries[0], currentMapBoundaries[2]));
+auto acceptableLongitudesEnd = longitudeToBasestationKey.upper_bound(fmax(currentMapBoundaries[0], currentMapBoundaries[2]));
+
+std::vector<std::pair<int64_t, int64_t> > acceptableLongitudes;
+for(auto iter = acceptableLongitudesStart; iter != acceptableLongitudesEnd; iter++)
+{
+acceptableLongitudes.push_back(iter->second);
+}
+
+lastSetOfVisibleBasestations.clear();
+std::set_intersection(acceptableLatitudes.begin(), acceptableLatitudes.end(), acceptableLongitudes.begin(), acceptableLongitudes.end(), std::inserter(lastSetOfVisibleBasestations, lastSetOfVisibleBasestations.begin()));
+
+printf("Results size: %ld\n", lastSetOfVisibleBasestations.size());
+
+//Remove any not visible basestations
+for(auto iter = basestationIDToMapPlacemark.begin(); iter !=  basestationIDToMapPlacemark.end();)
+{
+if(lastSetOfVisibleBasestations.count(iter->first) == 0)
+{
+auto iterToErase = iter;
+iter++;
+mapTreeModel.removeFeature(iterToErase->second.get());
+basestationIDToMapPlacemark.erase(iterToErase->first);
+printf("Erasing basestation\n");
+}
+else
+{
+iter++;
+}
+}
+
+for(auto instance : lastSetOfVisibleBasestations)
+{
+base_station_stream_information &basestation = potentiallyVisibleBasestationList.at(instance);
+
+if(basestationIDToMapPlacemark.count(instance) == 1)
+{//Update basestation
+basestationIDToMapPlacemark.at(instance)->setCoordinate(basestation.latitude()*pylongps::PI/180.0, basestation.longitude()*pylongps::PI/180.0);
+basestationIDToMapPlacemark.at(instance)->setName(QString(basestation.informal_name().c_str()));
+printf("Updating basestation\n");
+}
+else
+{//Add basestation
+basestationIDToMapPlacemark.emplace(instance, std::move(std::unique_ptr<Marble::GeoDataPlacemark>(new GeoDataPlacemark(QString(basestation.informal_name().c_str())))));
+basestationIDToMapPlacemark.at(instance)->setCoordinate(basestation.latitude()*pylongps::PI/180.0, basestation.longitude()*pylongps::PI/180.0);
+mapTreeModel.addFeature(mapTreeModel.rootDocument(), basestationIDToMapPlacemark.at(instance).get());
+printf("Adding basestation (Total: %ld)\n", basestationIDToMapPlacemark.size());
+}
+
+}
+
+mapWidget->update(); //Trigger redraw
 }

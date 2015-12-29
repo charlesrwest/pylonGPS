@@ -34,7 +34,7 @@ This function initializes the object and gives it the GUI for it to update.
 
 throw: This function can throw exceptions
 */
-basestationListRetriever(pylongps::transceiverGUI &inputGUI, std::array<double, 4> inputBoundArray, const std::string &inputConnectionString);
+basestationListRetriever(pylongps::transceiverGUI &inputGUI, std::array<double, 4> &inputBoundArray, const std::string &inputConnectionString);
 
 transceiverGUI &guiReference;
 std::array<double, 4> boundArray;

@@ -10,7 +10,7 @@ This function initializes the object and gives it the GUI for it to update.
 
 throw: This function can throw exceptions
 */
-basestationListRetriever::basestationListRetriever(pylongps::transceiverGUI &inputGUI, std::array<double, 4> inputBoundArray, const std::string &inputConnectionString) : guiReference(inputGUI)
+basestationListRetriever::basestationListRetriever(pylongps::transceiverGUI &inputGUI, std::array<double, 4> &inputBoundArray, const std::string &inputConnectionString) : guiReference(inputGUI)
 {
 
 //Make a ZMQ socket to send request to caster
@@ -45,6 +45,11 @@ printf("Called\n");
 client_query_request request;
 client_subquery requestSubquery;
 
+for(int i=0; i<boundArray.size(); i++)
+{
+printf("Bound array: %lf\n", boundArray[i]);
+}
+
 sql_double_condition westCondition;
 westCondition.set_relation(GREATER_THAN_EQUAL_TO);
 westCondition.set_value(fmin(boundArray[0],boundArray[2])*180.0/pylongps::PI);
@@ -61,21 +66,11 @@ sql_double_condition southCondition;
 southCondition.set_relation(GREATER_THAN_EQUAL_TO); 
 southCondition.set_value(fmin(boundArray[1],boundArray[3])*180.0/pylongps::PI);
 
+(*requestSubquery.add_latitude_condition()) = northCondition;
+(*requestSubquery.add_latitude_condition()) = southCondition;
 
-sql_double_condition *doubleConditionBuffer = nullptr;
-
-doubleConditionBuffer = requestSubquery.add_latitude_condition(); 
-(*doubleConditionBuffer) = northCondition;
-
-doubleConditionBuffer = requestSubquery.add_latitude_condition(); 
-(*doubleConditionBuffer) = southCondition;
-
-doubleConditionBuffer = requestSubquery.add_longitude_condition(); 
-(*doubleConditionBuffer) = westCondition;
-
-doubleConditionBuffer = requestSubquery.add_longitude_condition(); 
-(*doubleConditionBuffer) = eastCondition;
-
+(*requestSubquery.add_longitude_condition()) = westCondition;
+(*requestSubquery.add_longitude_condition()) = eastCondition;
 
 (*request.add_subqueries()) = requestSubquery;
 

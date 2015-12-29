@@ -1768,6 +1768,8 @@ basestationToSQLInterface->retrieve(resultPrimaryKeys[i], results.back());
 SOM_CATCH("Error retrieving object associated with a query primary key\n")
 }
 
+printf("Query returned %ld results\n", results.size());
+
 Poco::Timestamp currentTime;
 auto timeValue = currentTime.epochMicroseconds();
 for(int i=0; i<results.size(); i++)
