@@ -2567,33 +2567,34 @@ parameterCount += inputRequest.subqueries(i).acceptable_formats_size();
 for(int a=0; a<inputRequest.subqueries(i).latitude_condition_size(); a++)
 { //Handle latitude conditions
 subQueryString += generateRelationalSubquery(parameterCount > 0, "latitude", inputRequest.subqueries(i).latitude_condition(a).relation());
+parameterCount++;
 }
-parameterCount += inputRequest.subqueries(i).latitude_condition_size();
 
 for(int a=0; a<inputRequest.subqueries(i).longitude_condition_size(); a++)
 { //Handle longitude conditions
 subQueryString += generateRelationalSubquery(parameterCount > 0, "longitude", inputRequest.subqueries(i).longitude_condition(a).relation());
+parameterCount++;
 }
-parameterCount += inputRequest.subqueries(i).longitude_condition_size();
 
 for(int a=0; a<inputRequest.subqueries(i).uptime_condition_size(); a++)
 { //Handle uptime conditions
 //Have to flip relation due to startTime < requirement being related to uptime > requirement
 subQueryString += generateRelationalSubquery(parameterCount > 0, "start_time", flipOperator(inputRequest.subqueries(i).uptime_condition(a).relation()));
+parameterCount++;
 }
-parameterCount += inputRequest.subqueries(i).uptime_condition_size();
 
 for(int a=0; a<inputRequest.subqueries(i).real_update_rate_condition_size(); a++)
 { //Handle real update rate conditions
 subQueryString += generateRelationalSubquery(parameterCount > 0, "real_update_rate", inputRequest.subqueries(i).real_update_rate_condition(a).relation());
+parameterCount++;
 }
-parameterCount += inputRequest.subqueries(i).real_update_rate_condition_size();
 
 for(int a=0; a<inputRequest.subqueries(i).expected_update_rate_condition_size(); a++)
 { //Handle real update rate conditions
 subQueryString += generateRelationalSubquery(parameterCount > 0, "expected_update_rate", inputRequest.subqueries(i).expected_update_rate_condition(a).relation());
+parameterCount++;
 }
-parameterCount += inputRequest.subqueries(i).expected_update_rate_condition_size();
+
 
 if(inputRequest.subqueries(i).has_informal_name_condition())
 { //Add informal name condition
@@ -2609,8 +2610,8 @@ parameterCount++;
 for(int a=0; a<inputRequest.subqueries(i).base_station_id_condition_size(); a++)
 { //Handle base station id conditions
 subQueryString += generateRelationalSubquery(parameterCount > 0, "base_station_id", inputRequest.subqueries(i).base_station_id_condition(a).relation());
+parameterCount++;
 }
-parameterCount += inputRequest.subqueries(i).base_station_id_condition_size();
 
 for(int a=0; a<inputRequest.subqueries(i).source_public_keys_size(); a++)
 { //Handle source public keys restrictions
@@ -2620,8 +2621,8 @@ subQueryString += " AND ";
 }
 
 subQueryString += "(source_public_key == ?)";
+parameterCount++;
 }
-parameterCount += inputRequest.subqueries(i).source_public_keys_size();
 
 if(inputRequest.subqueries(i).has_circular_search_region())
 { //Handle requests for basestations within a radius of a particular location 35.779411, -78.648033

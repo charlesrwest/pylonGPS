@@ -93,6 +93,7 @@ SOM_CATCH("Error, unable to do RPC\n")
 
 if(!messageReceived || !messageDeserialized)
 {
+printf("Didn't get a proper response\n");
 return;
 }
 

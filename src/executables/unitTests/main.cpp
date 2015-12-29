@@ -721,6 +721,8 @@ REQUIRE(replyBaseStationInfo.has_base_station_id());
 auto baseStationID = replyBaseStationInfo.base_station_id();
 
 //Do it again with a more complex query
+printf("Yowsers!\n");
+
 
 //Let the base station entry age a bit, so we can check uptime
 std::this_thread::sleep_for(std::chrono::milliseconds(100));
