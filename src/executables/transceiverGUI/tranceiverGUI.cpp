@@ -140,11 +140,7 @@ if(host.addresses().size() == 0)
 return;
 }
 
-//printf("Connection string: %s\n", ("tcp://" + host.addresses()[0].toString() + ":10002").c_str());
-
-//basestationListRetriever *retriever = new basestationListRetriever(*this, boundaries, "tcp://" + host.addresses()[0].toString() + ":10002");
-
-basestationListRetriever *retriever = new basestationListRetriever(*this, boundaries, "tcp://127.0.0.1:10002");
+basestationListRetriever *retriever = new basestationListRetriever(*this, boundaries, "tcp://" + host.addresses()[0].toString() + ":10002");
 }
 
 }

@@ -294,6 +294,8 @@ if(messageReceived == false || messageDeserialized == false)
 throw SOMException("Invalid response from caster\n", INCORRECT_SERVER_RESPONSE, __FILE__, __LINE__);
 }
 
+printf("Got this far!\n");
+
 return reply;
 }
 

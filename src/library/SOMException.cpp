@@ -116,7 +116,7 @@ This function overrides the virtual function that was defined in std::exception 
 */
 const char *SOMException::what() const throw()
 {
-//printf("String: %s\n", toString().c_str());
+printf("String: %s\n", toString().c_str());
 return toString().c_str();
 }
 

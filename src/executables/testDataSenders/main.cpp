@@ -16,9 +16,12 @@ const int CASTER_ID = 0;
 //host.addresses()[0].toString()
 
 
-void REQUIRE(bool inputCondition)
+void REQUIRE(bool inputCondition, const char *inputSourceFileName, int inputSourceLineNumber)
 {
-throw SOMException("Required condition not met\n", INVALID_FUNCTION_INPUT, __FILE__, __LINE__);
+if(!inputCondition)
+{
+throw SOMException("Required condition not met\n", AN_ASSUMPTION_WAS_VIOLATED_ERROR, inputSourceFileName, inputSourceLineNumber);
+}
 }
 
 int main(int argc, char** argv)
@@ -79,7 +82,7 @@ SOM_CATCH("Error, unable to create data receiver\n")
 //Caster data sender
 std::string senderURI;
 SOM_TRY 
-senderURI = com->createPylonGPSV2DataSender(pubDataReceiverAddress, "127.0.0.1:" +std::to_string(REGISTRATION_PORT), 1.0, 2.0, RTCM_V3_1, "testBasestation", 3.0);
+senderURI = com->createPylonGPSV2DataSender(pubDataReceiverAddress,  host.addresses()[0].toString()+":" +std::to_string(REGISTRATION_PORT), 1.0, 2.0, RTCM_V3_1, "testBasestation", 3.0);
 SOM_CATCH("Error making caster sender\n")
 
 std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -90,27 +93,30 @@ client_query_request queryRequest; //Empty request should return all
 client_query_reply queryReply;
 
 SOM_TRY
-queryReply = transceiver::queryPylonGPSV2Caster(queryRequest, "127.0.0.1:" + std::to_string(CLIENT_REQUEST_PORT), 5000, *context);
+queryReply = transceiver::queryPylonGPSV2Caster(queryRequest, host.addresses()[0].toString()+":" + std::to_string(CLIENT_REQUEST_PORT), 5000, *context);
 SOM_CATCH("Error querying caster\n")
 
 
-REQUIRE(queryReply.IsInitialized() == true);
-REQUIRE(queryReply.has_caster_id() == true);
-REQUIRE(queryReply.has_failure_reason() == false);
-REQUIRE(queryReply.base_stations_size() == 1);
+
+REQUIRE(queryReply.IsInitialized() == true, __FILE__, __LINE__);
+REQUIRE(queryReply.has_caster_id() == true, __FILE__, __LINE__);
+REQUIRE(queryReply.has_failure_reason() == false, __FILE__, __LINE__);
+REQUIRE(queryReply.base_stations_size() == 1, __FILE__, __LINE__);
+
 
 auto replyBaseStationInfo = queryReply.base_stations(0);
-REQUIRE(replyBaseStationInfo.has_latitude());
-REQUIRE(fabs(replyBaseStationInfo.latitude() - 1.0) < .001);
-REQUIRE(replyBaseStationInfo.has_longitude());
-REQUIRE(fabs(replyBaseStationInfo.longitude() - 2.0) < .001);
-REQUIRE(replyBaseStationInfo.has_expected_update_rate());
-REQUIRE(fabs(replyBaseStationInfo.expected_update_rate() - 3.0) < .001);
-REQUIRE(replyBaseStationInfo.has_message_format());
-REQUIRE(replyBaseStationInfo.message_format() == RTCM_V3_1);
-REQUIRE(replyBaseStationInfo.has_informal_name());
-REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation");
-REQUIRE(replyBaseStationInfo.has_base_station_id());
+REQUIRE(replyBaseStationInfo.has_latitude(), __FILE__, __LINE__);
+REQUIRE(fabs(replyBaseStationInfo.latitude() - 1.0) < .001, __FILE__, __LINE__);
+REQUIRE(replyBaseStationInfo.has_longitude(), __FILE__, __LINE__);
+REQUIRE(fabs(replyBaseStationInfo.longitude() - 2.0) < .001, __FILE__, __LINE__);
+REQUIRE(replyBaseStationInfo.has_expected_update_rate(), __FILE__, __LINE__);
+REQUIRE(fabs(replyBaseStationInfo.expected_update_rate() - 3.0) < .001, __FILE__, __LINE__);
+REQUIRE(replyBaseStationInfo.has_message_format(), __FILE__, __LINE__);
+REQUIRE(replyBaseStationInfo.message_format() == RTCM_V3_1, __FILE__, __LINE__);
+REQUIRE(replyBaseStationInfo.has_informal_name(), __FILE__, __LINE__);
+REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation", __FILE__, __LINE__);
+REQUIRE(replyBaseStationInfo.has_base_station_id(), __FILE__, __LINE__);
+
 
 //Store station ID so it can be used for later checks
 auto baseStationID = replyBaseStationInfo.base_station_id();
@@ -187,26 +193,26 @@ circleSubQueryPart.set_radius(10);
 (*clientRequest0.add_subqueries()) = subQuery1;
 
 SOM_TRY
-clientReply0 = transceiver::queryPylonGPSV2Caster(clientRequest0, "127.0.0.1:" + std::to_string(CLIENT_REQUEST_PORT), 5000, *context);
+clientReply0 = transceiver::queryPylonGPSV2Caster(clientRequest0, host.addresses()[0].toString()+":" + std::to_string(CLIENT_REQUEST_PORT), 5000, *context);
 SOM_CATCH("Error querying caster\n")
 
 
-REQUIRE(queryReply.IsInitialized() == true);
-REQUIRE(queryReply.has_caster_id() == true);
-REQUIRE(queryReply.has_failure_reason() == false);
-REQUIRE(queryReply.base_stations_size() == 1);
+REQUIRE(queryReply.IsInitialized() == true, __FILE__, __LINE__);
+REQUIRE(queryReply.has_caster_id() == true, __FILE__, __LINE__);
+REQUIRE(queryReply.has_failure_reason() == false, __FILE__, __LINE__);
+REQUIRE(queryReply.base_stations_size() == 1, __FILE__, __LINE__);
 
 replyBaseStationInfo = queryReply.base_stations(0);
-REQUIRE(replyBaseStationInfo.has_latitude());
-REQUIRE(fabs(replyBaseStationInfo.latitude() - 1.0) < .001);
-REQUIRE(replyBaseStationInfo.has_longitude());
-REQUIRE(fabs(replyBaseStationInfo.longitude() - 2.0) < .001);
-REQUIRE(replyBaseStationInfo.has_expected_update_rate());
-REQUIRE(fabs(replyBaseStationInfo.expected_update_rate() - 3.0) < .001);
-REQUIRE(replyBaseStationInfo.has_message_format());
-REQUIRE(replyBaseStationInfo.message_format() == RTCM_V3_1);
-REQUIRE(replyBaseStationInfo.has_informal_name());
-REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation");
+REQUIRE(replyBaseStationInfo.has_latitude(), __FILE__, __LINE__);
+REQUIRE(fabs(replyBaseStationInfo.latitude() - 1.0) < .001, __FILE__, __LINE__);
+REQUIRE(replyBaseStationInfo.has_longitude(), __FILE__, __LINE__);
+REQUIRE(fabs(replyBaseStationInfo.longitude() - 2.0) < .001, __FILE__, __LINE__);
+REQUIRE(replyBaseStationInfo.has_expected_update_rate(), __FILE__, __LINE__);
+REQUIRE(fabs(replyBaseStationInfo.expected_update_rate() - 3.0) < .001, __FILE__, __LINE__);
+REQUIRE(replyBaseStationInfo.has_message_format(), __FILE__, __LINE__);
+REQUIRE(replyBaseStationInfo.message_format() == RTCM_V3_1, __FILE__, __LINE__);
+REQUIRE(replyBaseStationInfo.has_informal_name(), __FILE__, __LINE__);
+REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation", __FILE__, __LINE__);
 
 //Base station registered, so subscribe and see if we get the next message send
 
@@ -214,7 +220,7 @@ REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation");
 std::string receiverConnectionString;
 
 SOM_TRY
-receiverConnectionString = com->createPylonGPSV2DataReceiver("127.0.0.1:"+std::to_string(CLIENT_PUBLISHING_PORT), CASTER_ID, baseStationID); 
+receiverConnectionString = com->createPylonGPSV2DataReceiver(host.addresses()[0].toString()+":"+std::to_string(CLIENT_PUBLISHING_PORT), CASTER_ID, baseStationID); 
 SOM_CATCH("Error, unable to make receiver\n")
 
 std::string zmqSenderID;
@@ -246,7 +252,7 @@ subscriberSocket->setsockopt(ZMQ_SUBSCRIBE, nullptr, 0);
 SOM_CATCH("Error setting subscription for socket\n")
 
 //Sleep for a few milliseconds to allow connection to stabilize so no messages are missed
-std::this_thread::sleep_for(std::chrono::milliseconds(10));
+std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
 //Send message to caster and see if we get it back with the subscriber
 std::string testString = "This is a test string\n";
@@ -260,18 +266,21 @@ SOM_TRY
 messageBuffer.reset(new zmq::message_t);
 SOM_CATCH("Error initializing ZMQ message")
 
-REQUIRE(subscriberSocket->recv(messageBuffer.get()) == true);
+REQUIRE(subscriberSocket->recv(messageBuffer.get()) == true, __FILE__, __LINE__);
 
 //Check message format
-REQUIRE(messageBuffer->size() == testString.size());
+REQUIRE(messageBuffer->size() == testString.size(), __FILE__, __LINE__);
 
-REQUIRE(std::string((const char *) messageBuffer->data(), messageBuffer->size()) == testString);
+REQUIRE(std::string((const char *) messageBuffer->data(), messageBuffer->size()) == testString, __FILE__, __LINE__);
 
 printf("Tests completed successfully\n");
 
 //Sleep forever while caster operates
 while(true)
 {
+SOM_TRY
+testMessagePublisher->send(testString.c_str(), testString.size());
+SOM_CATCH("Error sending message to caster\n")
 std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 }
 

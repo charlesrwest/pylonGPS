@@ -61,6 +61,7 @@ sql_double_condition southCondition;
 southCondition.set_relation(GREATER_THAN_EQUAL_TO); 
 southCondition.set_value(fmin(boundArray[1],boundArray[3])*180.0/pylongps::PI);
 
+
 sql_double_condition *doubleConditionBuffer = nullptr;
 
 doubleConditionBuffer = requestSubquery.add_latitude_condition(); 
@@ -74,6 +75,7 @@ doubleConditionBuffer = requestSubquery.add_longitude_condition();
 
 doubleConditionBuffer = requestSubquery.add_longitude_condition(); 
 (*doubleConditionBuffer) = eastCondition;
+
 
 (*request.add_subqueries()) = requestSubquery;
 
@@ -104,6 +106,8 @@ return;
 
 //Lock mutex
 std::lock_guard<std::mutex> lockGuard(guiReference.visibleBasestationMutex);
+
+printf("Got %d basestations\n", reply.base_stations_size());
 
 //Update cache
 guiReference.potentiallyVisibleBasestationList.clear();

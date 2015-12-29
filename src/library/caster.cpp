@@ -1,6 +1,7 @@
 #include "caster.hpp"
 
 using namespace pylongps;
+//TODO: Fix problem with empty subquery and add associated test
 
 /**
 This function initializes the class, creates the associated database, and starts the two threads associated with it.
@@ -1703,6 +1704,7 @@ return false;
 SOM_CATCH("Error sending reply");
 }
 
+printf("Query string: %s\n", sqlQueryString.c_str());
 
 std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> clientQueryStatement(nullptr, &sqlite3_finalize);
 
