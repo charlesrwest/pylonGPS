@@ -1,4 +1,4 @@
-#include<qt4/QtGui/QApplication>
+#include<QApplication>
 #include "transceiverGUI.hpp"
 #include "IPBasedLocationRetriever.hpp"
 
