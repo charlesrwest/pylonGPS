@@ -2779,6 +2779,7 @@ parameterCount++;
 
 for(int a=0; a<inputRequest.subqueries(i).latitude_condition_size(); a++)
 { //Handle latitude conditions
+printf("Lat value: %lf\n", inputRequest.subqueries(i).latitude_condition(a).value());
 SOM_TRY
 bindFieldValueToStatement(*inputStatement, parameterCount+1, inputRequest.subqueries(i).latitude_condition(a).value());
 SOM_CATCH("Error binding statement\n")
@@ -2787,6 +2788,7 @@ parameterCount++;
 
 for(int a=0; a<inputRequest.subqueries(i).longitude_condition_size(); a++)
 { //Handle longitude conditions
+printf("Long value: %lf\n", inputRequest.subqueries(i).longitude_condition(a).value());
 SOM_TRY
 bindFieldValueToStatement(*inputStatement, parameterCount+1, inputRequest.subqueries(i).longitude_condition(a).value());
 SOM_CATCH("Error binding statement\n")
