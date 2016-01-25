@@ -250,6 +250,43 @@ SOM_CATCH("Error, unable to initialize fileDataSender\n")
 return addDataSender(inputSourceConnectionString, sender);
 }
 
+/**
+This function shuts down and removes the data receiver associated with the given connection string.  It also shuts down and removes all data senders in the transceiver that are listening to that data receiver.
+@param inputDataReceiverConnectionString: The connection string associated with the data receiver
+*/
+void transceiver::removeDataReceiver(const std::string &inputDataReceiverConnectionID)
+{
+if(dataReceiverConnectionStringToListeningDataSenderIDs.count(inputDataReceiverConnectionID) > 0)
+{//Remove all affiliated data senders
+std::set<std::string> &associatedSenderIDs = dataReceiverConnectionStringToListeningDataSenderIDs.at(inputDataReceiverConnectionID);
+
+for(const std::string &senderID : associatedSenderIDs)
+{
+dataSenderIDToDataSender.erase(senderID);
+}
+}
+
+dataReceiverConnectionStringToListeningDataSenderIDs.erase(inputDataReceiverConnectionID);
+dataReceiverConnectionStringToDataReceiver.erase(inputDataReceiverConnectionID);
+}
+
+/**
+This function shuts down and removes the data sender associated with the given connection string.
+@param inputDataSenderIDString: The ID string associated with the data sender
+*/
+void transceiver::removeDataSender(const std::string &inputDataSenderIDString)
+{
+dataSenderIDToDataSender.erase(inputDataSenderIDString);
+
+for(auto instance : dataReceiverConnectionStringToListeningDataSenderIDs)
+{
+if(instance.second.count(inputDataSenderIDString) > 0)
+{
+instance.second.erase(inputDataSenderIDString);
+break;
+}
+}
+}
 
 /**
 This function can be used to send a query to a caster to get a list of all basestations that meet the query's requirements.  If an empty request is sent, the metadata for all basestations in the caster is returned.
@@ -293,8 +330,6 @@ if(messageReceived == false || messageDeserialized == false)
 {
 throw SOMException("Invalid response from caster\n", INCORRECT_SERVER_RESPONSE, __FILE__, __LINE__);
 }
-
-printf("Got this far!\n");
 
 return reply;
 }

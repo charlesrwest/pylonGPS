@@ -59,6 +59,7 @@ This function is required to return a ZMQ inproc address which can be used with 
 */
 virtual std::string notificationAddress();
 
+
 zmq::context_t &context;
 std::unique_ptr<zmq::socket_t> publishingSocket;
 std::unique_ptr<zmq::socket_t> notificationPublishingSocket;

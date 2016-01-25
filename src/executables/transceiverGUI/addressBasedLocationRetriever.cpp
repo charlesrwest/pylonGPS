@@ -13,12 +13,15 @@ std::replace(addressString.begin(), addressString.end(), ' ', '+');
 std::replace(addressString.begin(), addressString.end(), '	', '+');
 std::replace(addressString.begin(), addressString.end(), '\n', '+');
 std::replace(addressString.begin(), addressString.end(), '\r', '+');
+
+connect(this, SIGNAL(finished()), this, SLOT(deleteLater()));
+start();
 }
 
 /**
 This function performs the retrieval operation the object was created for.
 */
-void addressBasedLocationRetriever::operate()
+void addressBasedLocationRetriever::run()
 {
 try
 {
@@ -28,19 +31,16 @@ std::string queryString =  "http://nominatim.openstreetmap.org/search?q=" + addr
 Json::Value receivedJson;
 if(getJsonValueFromURL(queryString, receivedJson) != true)
 {
-emit finished();
 return;
 }
 
 if(receivedJson.isMember("lat") != true || receivedJson.isMember("lon") != true)
 {
-emit finished();
 return;
 }
 
 if(!receivedJson["lat"].isString() || !receivedJson["lon"].isString())
 {
-emit finished();
 return;
 }
 
@@ -48,18 +48,14 @@ double lat = 0.0;
 double lon = 0.0;
 if(!convertStringToDouble(receivedJson["lat"].asString(), lat) || !convertStringToDouble(receivedJson["lon"].asString(), lon))
 {
-emit finished();
 return;
 }
 
 
 emit retrievedLongitudeLatitude(lon, lat);
-
-emit finished();
 }
 catch(const std::exception &inputException)
 {
-emit finished();
 return;
 }
 }

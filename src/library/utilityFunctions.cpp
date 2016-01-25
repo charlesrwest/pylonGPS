@@ -1056,6 +1056,21 @@ catch(const std::exception &inputException)
 return false;
 }
 
-
 }
+
+/**
+This function calculates the land based distance between two points on earth using the great circle model.
+@param inputPoint1Latitude: The latitude of the first point
+@param inputPoint1Longitude: The longitude of the first point
+@param inputPoint2Latitude: The latitude of the second point
+@param inputPoint2Longitude: The longitude of the second point
+@return: The estimated distance between the two points
+*/
+double pylongps::calculateGreatCircleDistance(double inputPoint1Latitude, double inputPoint1Longitude, double inputPoint2Latitude, double inputPoint2Longitude)
+{
+double arc1 = pow(sin(.5*(inputPoint1Latitude-inputPoint2Latitude)), 2.0);
+double arc2 = pow(sin(.5*(inputPoint1Longitude-inputPoint2Longitude)), 2.0);
+return 2.0*6372797.560856*asin(sqrt(arc1+cos(inputPoint1Latitude)*cos(inputPoint2Latitude)*arc2));
+}
+
 

@@ -17,6 +17,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} /usr/share/kde4/apps/cmake/modules/)
 #QT stuff
 #Access QT5 packages
 find_package(Qt5Widgets)
+find_package(Qt5Svg)
 
 #Make moc called as nessisary
 set(CMAKE_AUTOMOC ON)
@@ -104,7 +105,7 @@ target_link_libraries(pylongps dl PocoFoundation PocoNet PocoUtil sqlite3 pylonG
 #link libraries to executable
 target_link_libraries(unitTests pylongps )
 
-target_link_libraries(transceiverGUI pylongps Qt5::Widgets marblewidget-qt5)
+target_link_libraries(transceiverGUI pylongps Qt5::Widgets marblewidget-qt5 Qt5::Svg)
 
 target_link_libraries(casterGUI pylongps Qt5::Widgets)
 

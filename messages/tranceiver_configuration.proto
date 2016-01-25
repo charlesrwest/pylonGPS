@@ -1,0 +1,81 @@
+package pylongps; //Put in pylongps namespace
+
+import "base_station_stream_information.proto";
+import "credentials.proto";
+import "common_enums.proto";
+
+message basestation_data_receiver_configuration
+{
+required int64 receiver_id = 10; //Key to allow senders to find this receiver on loading, required to be unique across all receivers stored
+required int64 caster_id = 20; //ID of caster to retrieve from
+required int64 stream_id = 30; //ID of stream to retrieve from
+
+optional base_station_stream_information basestation_details = 40; //Used with GUI
+}
+
+message file_data_receiver_configuration
+{
+required int64 receiver_id = 10; //Key to allow senders to find this receiver on loading, required to be unique across all receivers stored
+required bytes file_path = 20; //File path to get data from
+}
+
+message tcp_data_receiver_configuration
+{
+required int64 receiver_id = 10; //Key to allow senders to find this receiver on loading, required to be unique across all receivers stored 
+required bytes server_ip_address = 20;
+required int64 server_port = 30; 
+}
+
+message zmq_data_receiver_configuration
+{
+required int64 receiver_id = 10; //Key to allow senders to find this receiver on loading, required to be unique across all receivers stored 
+required bytes server_ip_address = 20;
+required int64 server_port = 30; 
+}
+
+message basestation_data_sender_configuration
+{
+required int64 receiver_id = 10; //Data receiver this sender forwards from
+required bytes caster_ip_address = 20;
+required int64 caster_registration_port = 30;
+required double latitude = 40;
+required double longitude = 50;
+required corrections_message_format message_format = 60;
+required bytes informal_basestation_name = 70;
+required double expected_update_rate = 80; //messages/sec
+
+optional bytes secret_key = 90;
+optional credentials registration_credentials = 100;
+}
+
+message file_data_sender_configuration
+{
+required int64 receiver_id = 10; //Data receiver this sender forwards from
+required bytes file_path_to_write_to = 20;
+}
+
+message tcp_data_sender_configuration
+{
+required int64 receiver_id = 10; //Data receiver this sender forwards from
+required int64 server_port = 20;
+}
+
+message zmq_data_sender_configuration
+{
+required int64 receiver_id = 10; //Data receiver this sender forwards from
+required int64 server_port = 20;
+}
+
+//This message is used to store the current state of a PylonGPS 2.0 transceiver so that it can be restarted in the same state.
+message transceiver_configuration
+{
+repeated basestation_data_receiver_configuration basestation_receivers = 10;
+repeated file_data_receiver_configuration file_receivers = 20;
+repeated tcp_data_receiver_configuration tcp_receivers = 30;
+repeated zmq_data_receiver_configuration zmq_receivers = 40;
+
+repeated basestation_data_sender_configuration basestation_senders = 50;
+repeated file_data_sender_configuration file_senders = 60;
+repeated tcp_data_sender_configuration tcp_senders = 70;
+repeated zmq_data_sender_configuration zmq_senders = 80;
+} 

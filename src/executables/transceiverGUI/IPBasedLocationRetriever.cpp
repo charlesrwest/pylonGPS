@@ -3,39 +3,41 @@
 using namespace pylongps;
 
 /**
+This function sets up the object to delete itself when it has finished its task.
+*/
+IPBasedLocationRetriever::IPBasedLocationRetriever()
+{
+connect(this, SIGNAL(finished()), this, SLOT(deleteLater()));
+}
+
+/**
 This function performs the retrieval operation the object was created for.
 */
-void IPBasedLocationRetriever::operate()
+void IPBasedLocationRetriever::run()
 {
 try
 {
 Json::Value receivedJson;
 if(getJsonValueFromURL("http://ip-api.com/json", receivedJson) != true)
 {
-emit finished();
 return;
 }
 
 if(receivedJson.isMember("lat") != true || receivedJson.isMember("lon") != true)
 {
-emit finished();
 return;
 }
 
 if(!receivedJson["lat"].isDouble() || !receivedJson["lon"].isDouble())
 {
-emit finished();
 return;
 }
 
 
 emit retrievedLongitudeLatitude(receivedJson["lon"].asDouble(), receivedJson["lat"].asDouble());
-
-emit finished();
 }
 catch(const std::exception &inputException)
 {
-emit finished();
 return;
 }
 }

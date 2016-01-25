@@ -322,5 +322,15 @@ This function attempts to retrieve a Json value from a URL via an http request. 
 */
 bool getJsonValueFromURL(const std::string &inputURL, Json::Value &inputValueBuffer, int64_t inputTimeoutDurationInMicroseconds = 1000000);
 
+/**
+This function calculates the land based distance between two points on earth using the great circle model.
+@param inputPoint1Latitude: The latitude of the first point
+@param inputPoint1Longitude: The longitude of the first point
+@param inputPoint2Latitude: The latitude of the second point
+@param inputPoint2Longitude: The longitude of the second point
+@return: The estimated distance between the two points
+*/
+double calculateGreatCircleDistance(double inputPoint1Latitude, double inputPoint1Longitude, double inputPoint2Latitude, double inputPoint2Longitude);
+
 }
 

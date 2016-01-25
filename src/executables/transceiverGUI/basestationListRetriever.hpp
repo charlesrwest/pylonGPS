@@ -46,8 +46,6 @@ This function performs the retrieval operation the object was created for.
 */
 void run();
 
-~basestationListRetriever() { printf("Destroyed\n");} 
-
 signals:
 void updatedBasestationLists();
 void error(std::string inputError); //A signal emitted if a error was encountered

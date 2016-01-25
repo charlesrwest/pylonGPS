@@ -29,7 +29,6 @@ SOM_CATCH("Error connecting casterRequestSocket\n")
 boundArray = inputBoundArray;
 
 connect(this, SIGNAL(finished()), this, SLOT(deleteLater()));
-start();
 }
 
 /**
@@ -39,16 +38,9 @@ void basestationListRetriever::run()
 {
 try
 {
-printf("Called\n");
-
 //Compose query
 client_query_request request;
 client_subquery requestSubquery;
-
-for(int i=0; i<boundArray.size(); i++)
-{
-printf("Bound array: %lf\n", boundArray[i]);
-}
 
 sql_double_condition westCondition;
 westCondition.set_relation(GREATER_THAN_EQUAL_TO);
@@ -90,7 +82,6 @@ SOM_CATCH("Error, unable to do RPC\n")
 
 if(!messageReceived || !messageDeserialized)
 {
-printf("Didn't get a proper response\n");
 return;
 }
 
@@ -101,8 +92,6 @@ return;
 
 //Lock mutex
 std::lock_guard<std::mutex> lockGuard(guiReference.visibleBasestationMutex);
-
-printf("Got %d basestations\n", reply.base_stations_size());
 
 //Update cache
 guiReference.potentiallyVisibleBasestationList.clear();

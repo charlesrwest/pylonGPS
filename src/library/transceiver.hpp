@@ -153,6 +153,18 @@ std::string createFileDataSender(const std::string &inputSourceConnectionString,
 
 
 /**
+This function shuts down and removes the data receiver associated with the given connection string.  It also shuts down and removes all data senders in the transceiver that are listening to that data receiver.
+@param inputDataReceiverConnectionString: The connection string associated with the data receiver
+*/
+void removeDataReceiver(const std::string &inputDataReceiverConnectionID);
+
+/**
+This function shuts down and removes the data sender associated with the given connection string.
+@param inputDataSenderIDString: The ID string associated with the data sender
+*/
+void removeDataSender(const std::string &inputDataSenderIDString);
+
+/**
 This function can be used to send a query to a caster to get a list of all basestations that meet the query's requirements.  If an empty request is sent, the metadata for all basestations in the caster is returned.
 @param inputRequest: The request to send to the caster
 @param inputClientRequestIPAddressAndPort: The IP address/port to use for querying the caster in the form "IPAddress:Port"

@@ -77,6 +77,7 @@ SOM_TRY //Bind to an dynamically generated address
 std::tie(publisherConnectionString, extensionStringNumber) = bindZMQSocketWithAutomaticAddressGeneration(*publishingSocket, "zmqDataReceiverSocketAddress");
 SOM_CATCH("Error binding publishingSocket\n")
 
+
 //Create socket for notification publishing
 SOM_TRY
 notificationPublishingSocket.reset(new zmq::socket_t(context, ZMQ_PUB));
