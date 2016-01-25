@@ -1704,8 +1704,6 @@ return false;
 SOM_CATCH("Error sending reply");
 }
 
-printf("Query string: %s\n", sqlQueryString.c_str());
-
 std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> clientQueryStatement(nullptr, &sqlite3_finalize);
 
 SOM_TRY
@@ -1767,8 +1765,6 @@ SOM_TRY
 basestationToSQLInterface->retrieve(resultPrimaryKeys[i], results.back());
 SOM_CATCH("Error retrieving object associated with a query primary key\n")
 }
-
-printf("Query returned %ld results\n", results.size());
 
 Poco::Timestamp currentTime;
 auto timeValue = currentTime.epochMicroseconds();
@@ -2651,13 +2647,14 @@ subQueryStrings.push_back(subQueryString);
 
 std::string queryString = "SELECT " + primaryKeyFieldName + " FROM " + basestationToSQLInterface->messageTableName;
 
-if(subQueryStrings.size() > 0)
+if(parameterCount > 0)
 {
 queryString +=" WHERE ";
-}
+
 for(int i=0; i<subQueryStrings.size(); i++)
 {
 queryString += subQueryStrings[i];
+}
 }
 queryString += ";";
 
@@ -2760,6 +2757,7 @@ int caster::bindClientQueryRequestFields(std::unique_ptr<sqlite3_stmt, decltype(
 int parameterCount = 0;
 for(int i=0; i<inputRequest.subqueries_size(); i++)
 {
+
 //Handle acceptable classes subquery
 for(int a=0; a<inputRequest.subqueries(i).acceptable_classes_size(); a++)
 {
@@ -2781,7 +2779,6 @@ parameterCount++;
 
 for(int a=0; a<inputRequest.subqueries(i).latitude_condition_size(); a++)
 { //Handle latitude conditions
-printf("Lat value: %lf\n", inputRequest.subqueries(i).latitude_condition(a).value());
 SOM_TRY
 bindFieldValueToStatement(*inputStatement, parameterCount+1, inputRequest.subqueries(i).latitude_condition(a).value());
 SOM_CATCH("Error binding statement\n")
@@ -2790,7 +2787,6 @@ parameterCount++;
 
 for(int a=0; a<inputRequest.subqueries(i).longitude_condition_size(); a++)
 { //Handle longitude conditions
-printf("Long value: %lf\n", inputRequest.subqueries(i).longitude_condition(a).value());
 SOM_TRY
 bindFieldValueToStatement(*inputStatement, parameterCount+1, inputRequest.subqueries(i).longitude_condition(a).value());
 SOM_CATCH("Error binding statement\n")

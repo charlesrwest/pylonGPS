@@ -721,7 +721,6 @@ REQUIRE(replyBaseStationInfo.has_base_station_id());
 auto baseStationID = replyBaseStationInfo.base_station_id();
 
 //Do it again with a more complex query
-printf("Yowsers!\n");
 
 
 //Let the base station entry age a bit, so we can check uptime
@@ -798,13 +797,13 @@ clientReply0 = transceiver::queryPylonGPSV2Caster(clientRequest0, "127.0.0.1:" +
 SOM_CATCH("Error querying caster\n")
 
 
-REQUIRE(queryReply.IsInitialized() == true);
-REQUIRE(queryReply.has_caster_id() == true);
-REQUIRE(queryReply.caster_id() == casterID);
-REQUIRE(queryReply.has_failure_reason() == false);
-REQUIRE(queryReply.base_stations_size() == 1);
+REQUIRE(clientReply0.IsInitialized() == true);
+REQUIRE(clientReply0.has_caster_id() == true);
+REQUIRE(clientReply0.caster_id() == casterID);
+REQUIRE(clientReply0.has_failure_reason() == false);
+REQUIRE(clientReply0.base_stations_size() == 1);
 
-replyBaseStationInfo = queryReply.base_stations(0);
+replyBaseStationInfo = clientReply0.base_stations(0);
 REQUIRE(replyBaseStationInfo.has_latitude());
 REQUIRE(replyBaseStationInfo.latitude() == Approx(1.0));
 REQUIRE(replyBaseStationInfo.has_longitude());
@@ -815,6 +814,41 @@ REQUIRE(replyBaseStationInfo.has_message_format());
 REQUIRE(replyBaseStationInfo.message_format() == RTCM_V3_1);
 REQUIRE(replyBaseStationInfo.has_informal_name());
 REQUIRE(replyBaseStationInfo.informal_name() == "testBasestation");
+
+//Do a bunch more queries to ensure robustness (ignore results, just make sure we get a response and the caster doesn't crash)
+
+
+{
+client_query_request clientRequest;
+client_query_reply clientReply;
+
+SOM_TRY
+clientReply = transceiver::queryPylonGPSV2Caster(clientRequest, "127.0.0.1:" + std::to_string(clientRequestPort), 5000, *context);
+SOM_CATCH("Error querying caster\n")
+
+REQUIRE(clientReply.IsInitialized() == true);
+REQUIRE(clientReply.has_caster_id() == true);
+REQUIRE(clientReply.caster_id() == casterID);
+REQUIRE(clientReply.has_failure_reason() == false);
+}
+
+{ //Add empty subquery
+client_query_request clientRequest;
+client_query_reply clientReply;
+
+clientRequest.add_subqueries();
+
+SOM_TRY
+clientReply = transceiver::queryPylonGPSV2Caster(clientRequest, "127.0.0.1:" + std::to_string(clientRequestPort), 5000, *context);
+SOM_CATCH("Error querying caster\n")
+
+REQUIRE(clientReply.IsInitialized() == true);
+REQUIRE(clientReply.has_caster_id() == true);
+REQUIRE(clientReply.caster_id() == casterID);
+REQUIRE(clientReply.has_failure_reason() == false);
+}
+
+
 
 //Base station registered, so subscribe and see if we get the next message send
 
