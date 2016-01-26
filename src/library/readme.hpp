@@ -4,157 +4,167 @@ Introduction
 ---------------------
 _______________
 
+Hello and welcome.
+
 We are just starting to see the deployment of robots in a commercial setting and most of the pieces are in place for Robotics as a Service. This project is dedicated to making it even easier to do interesting and useful robotics applications using inexpensive differential GPS.
 
 Differential GPS gives enhanced accuracy (<10 cm radius vs the normal 3000 cm radius) which can enable applications such as landing a quadcopter on a small platform or keeping a mobile robot on the sidewalk. It works by having a nearby GPS basestation with a known location that can tell the mobile unit how to compensate for the errors that the basestation has observed in the GPS signal.
 
-Pylon GPS makes it easy to share GPS updates from your basestation and allows mobile units to get updates from any nearby basestations. This means that when a basestation with Pylon GPS is deployed, everyone within 10 km of the basestation can get updates and create applications using differential GPS. It works by maintaining a central server with a list of basestations and relaying laying updates using the NTRIP protocol. Future versions of the software will make it easier to search and host your own update sharing servers using Protobuf and ZeroMQ for serialization and network transport. 
+Pylon GPS makes it easy to share GPS updates from your basestation and allows mobile units to get updates from any nearby basestations. This means that when a basestation with Pylon GPS is deployed, everyone within 10 km of the basestation can get updates and create applications using differential GPS.  The PylonGPS library allows anyone to setup a basestation, caster or read from a basestation, as well as setup proxy casters and search for good basestations with SQL like queries.
 
-The first draft of this code focused on providing an NTRIP 1.0 (http://www.wsrn3.org/CONTENT/Reference/Reference_NTRIP-V1-Tech-paper.pdf) compatible caster and server that can be used with RTKLIB.  During development of the first draft, it was discovered that the NTRIP 1.0 protocol doesn't support automatic registration of basestation sources (information about the sources are assumed to be entered manually by the owners of the NTRIP Caster server).  To enable easy sharing, a second interface was added to the PylonGPS caster which enable automatic addition of the basestation source "metadata" that was expected to be manually added.  As the software is currently implemented, this interface will be bound to a port number one higher than the one assigned to the PylonGPS NTRIP caster.  If the PylonGPS server software is used to forward basestation data, this registration will be carried out automatically.
+By default, the transceiver GUI points to the caster at pylongps.com.  PylonGPS allows a caster to be scaled to an arbitrary size, which means that everyone can use one caster and have all basestations available to everyone.  Adding support in the transceiver GUI for different casters is possible with some work, so please contact the author (crwest@ncsu.edu) if your use case is incompatible with everyone having access via pylongps.com.
+
 
 Compilation
---------------------
-_____________
+---------------------
+_______________
 
-The next few minor releases will focus on making it easier to install the software by providing Debian packages and Windows installers.  For now, the preferred method is building from source.  So far, building and running has been tested on Ubuntu Linux and the instructions focus on that accordingly.
 
-The PylonGPS source can be downloaded via: 
+The next few minor releases will focus on making it easier to install the software by providing Debian packages and Windows installers.  For now, the preferred method is building from source.  So far, building and running has been tested on Ubuntu Linux (15.10) and the instructions focus on that accordingly.
 
+The PylonGPS source can be downloaded via: <br>
 https://github.com/charlesrwest/pylonGPS/archive/master.zip
 
-Alternatively, it can be cloned from GitHub using the following git command:
+Alternatively, it can be cloned from GitHub using the following git command:<br>
+git clone https://github.com/charlesrwest/pylonGPS.git
 
-    git clone https://github.com/charlesrwest/pylonGPS.git
+<b>Required libraries/utilities:</b><br>
+<ul>
+<li> G++ with support for C++11 (most systems support this)
+<li> CMake (http://www.cmake.org/)
+<li> Protobuf (https://developers.google.com/protocol-buffers/)
+<li> ZeroMQ (http://zeromq.org/)
+<li> POCO (http://pocoproject.org/)
+<li> SQLITE3 (https://www.sqlite.org/)
+<li> Sodium (https://download.libsodium.org/doc/)
+</ul>
 
+<b>Required if documentation is desired:</b>
+<ul>
+<li> Doxygen (http://www.stack.nl/~dimitri/doxygen/)
+</ul>
 
-Required libraries/utilities:
+<b>Required if GUIs are desired:</b>
+<ul>
+<li> Qt5 (Widgets, Svg modules: http://www.qt.io/developers/)
+<li> Marble (library, compiled for Qt5: https://marble.kde.org/dev-intro.php)
+</ul>
 
-1. G++ with support for C++11 (most systems support this)
-2. CMake (http://www.cmake.org/)
-3. Doxygen (http://www.stack.nl/~dimitri/doxygen/ if documentation is desired)
-4. Protobuf (https://developers.google.com/protocol-buffers/)
-5. ZeroMQ (http://zeromq.org/)
-6. POCO (http://pocoproject.org/)
-
-Embedded Libraries:
-
-1. ZeroMQ's header only C++ extension (https://github.com/zeromq/cppzmq)
-2. Catch, a header only unit test framework (https://github.com/philsquared/Catch)
+<b>Embedded Libraries:</b>
+<ul>
+<li> ZeroMQ's header only C++ extension (https://github.com/zeromq/cppzmq)
+<li> Catch, a header only unit test framework (https://github.com/philsquared/Catch)
+<li> JsonCPP, a Json serialization/deserialization library (https://github.com/open-source-parsers/jsoncpp)
+</ul>
 
 On Ubuntu Linux, it should be possible to install all required dependencies with the following command:
 
-    sudo apt-get install build-essential cmake doxygen protobuf-compiler libprotobuf-dev libzmq3-dev libpoco-dev
+<b>#REQUIRED</b>
+<br>
+sudo apt-get install build-essential cmake protobuf-compiler libprotobuf-dev libzmq3-dev libpoco-dev libsodium-dev libsqlite3-dev
 
-Compilation can be carried out via the following commands performed in the downloaded PylonGPS directory:  
+<b>#FOR DOCUMENTATION COMPILATION</b>
+<br>
+sudo apt-get install doxygen
 
-    cmake ./
-    make
-    make doc
+<b>#FOR GUIs</b>
+<br>
+sudo apt-get install libmarble-dev qtbase5-dev libqt5svg5-dev
 
-The "make doc" command is only nessesary if access to nice documentation is desired.  This step generates html files which allow browsing the code documentation in a web browser via the /pylonGPS/doc/html/index.html file (just double click on the file and it should open a browser).  The linkToGeneratedDocumentation.html file has been added to the top level directory to make it easier to get the the generated index file.
+Compilation can be carried out via the following commands performed in the downloaded PylonGPS directory:
+
+<b>#Compile just the library and the command line programs</b> <br>
+cmake ./ <br>
+make
+
+<b>#Compile the documentation</b> <br>
+cmake ./ -DBUILD_DOCS=ON <br>
+make doc
+
+<b>#Compile library, command line programs and GUIs</b> <br>
+cmake ./  -DBUILD_GUIS=ON <br>
+make
+
+If the documentation is compiled, it generates html files which allow browsing the code documentation in a web browser via the /pylonGPS/doc/html/index.html file (just double click on the file and it should open a browser).  The linkToGeneratedDocumentation.html file has been added to the top level directory to make it easier to get the the generated index file.
 
 The integrity of the code can be checked via running the ./bin/unitTests executable.  If some of the unit tests fail on your platform, please email crwest@ncsu.edu with a screenshot of your error and a description of your operating enviroment.
 
 Using PylonGPS
----------------------------
-_________________
+---------------------
+_______________
 
-PylonGPS currently generates 3 executables, one shared library and one static library.  One of the executables is meant to unit test the code and will probably not be used by most people.  The static library is integrated into the shared library and isn't really used outside of the build process.
+Without the GUIs enabled, PylonGPS currently generates 3 executables, one shared library and one static library. One of the executables is meant to unit test the code and will probably not be used by most people.  The static library is integrated into the shared library and isn't really used outside of the build process.
 
-./lib/libpylongps.so:
+Command line programs with options will display possible options if the "-help" option is used:
 
+./bin/program -help
+
+<b>./lib/libpylongps.so:</b><br>
 This shared library includes most of the functionality in the PylonGPS software and is linked to by all of the executables.
 
-./bin/ntripCaster:
+<b>./bin/caster:</b> <br>
+This is a command line version of the Pylon GPS caster.  Starting it without any arguments will create a caster that will share any community basestations with whoever connects to it.  Alternatively, it can be given a configuration file generated by the casterGUI which can allow different port numbers to be used and enable one or more trusted signers to be added.
 
-This is a full ntripCaster that also supports automatic source registration via a ZMQ/Protobuf socket.  Once it is running, other NTRIP 1.0 compatible sources and clients can connect to it to broadcast and receive differential GPS updates.  It doesn't currently offer a way to manually add metadata, so sources need to use the ./bin/ntripServer program to register sources for now.
+<b>./bin/testDataSender:</b> <br>
+This program makes two dummy basestations in Raleigh, NC which just repeat strings.  It will be removed soon, as it was only meant to assist with debugging.
 
-Usage:
+With the GUIs enabled, the following are also generated:
 
-    ./bin/ntripCaster portNumberToBind optionalMaximumNumberOfThreads optionalMaximumNumberOfConnectionsToQueue
+<b>./bin/casterGUI:</b> <br>
+This GUI allows a configuration file for a caster to generated, keys for basestations to be created/signed and signing keys to be added to/removed from a running caster.
 
-portNumberToBind:
+To setup a caster with custom settings (if you aren't using the pylongps.com one), do the following:
 
-What port the caster program should bind and make the NTRIP caster available on.  The current implementation will also bind (portNumberToBind+1) for the metadata registration port.
+1. Open the caster GUI
+2. Use the "Generate Key Pair" button twice to generate two pairs of key files (one pair for caster authentication, one for using the key management interface later)
+3. Select the keys that were generated in the "Configure Caster" tab.
+4. If you are happy with your caster settings, use the "Save Caster Configuration" button and save the generated file.
+5.  Open the caster program with the option "-C thePathToTheSavedConfigurationFile"
 
-optionalMaximumNumberOfThreads: 
+The casterGUI can be used to create a credentials file for an authenticated basestation as follows:
 
-This is the maximum number of threads that the server will run to accommodate client and server connections.  This could potentially be very large and is only really limited by OS limits on the per process number of threads and open file handles.  The default (if left empty) is 1000.
+1. Press the "Create Credentials" Button to go to the tab
+2. Select the basestation public key file (created by the "Generate Key Pair" interface) to create the credentials file for.
+3. Enter how many basestations the key can be used for at the same time and when the credentials should expire.
+4. Select any key pairs which will grant the permissions (private key, public key, alternating).
+5. Press "Create Credentials" and select where to save the credentials file.
 
-optionalMaximumNumberOfConnectionsToQueue: 
+The casterGUI can also be used to add or remove recognized signers from a running caster as follows:
 
-This is the maximum number of connections that can be waiting to be serviced before the server starts closing them immediately rather than queueing them.  The default (if left empty) is 1000.
+1. Press the "Add/Remove Keys" button to go to the tab.
+2. Enter the IP address and port used for key management with the caster to modify.
+3. Select the key management key pair that was used in originally setting up the caster. 
+4. Select a public key to add/remove in the correct frame depending on which category to place it in (registered_community, official or blacklisted).
+5. Select how long the change will be valid (when a signing key expires or after the key to get rid of expires).
+6. Press the button associated with the change type to make it take effect.
 
-./bin/ntripServer:
+<b>./bin/transceiverGUI:</b><br>
+This GUI allows for data sources from files, TCP servers, ZMQ publishers and PylonGPS casters to be forwarded to files, PylonGPS casters/hosted on a local TCP server or published by a ZMQ publisher.  It also allows the PylonGPS basestations to be view on a world map.
 
-The purpose of this program is to allow a basestation to be able to automatically register a source of GPS corrections with a PylonGPS NTRIP caster.  It was designed with RTKLIB in mind.  The normal process of use would be to start an ntripServer and then forward the updates from RTKLIB to the ntripServer, which would then send it to the NTRIP caster to be advertised and broadcasted.  The server will connect and register with the caster as soon as something connects to its TCP port.
+On startup, the map should zoom to the area you are in using your IP address to figure out the location.  If that doesn't work, you should be able to enter your address in the top left and hit "Find" to go to the right location.  You can also left click and drag to move on the map and use the mouse wheel to adjust zoom.  All available basestations should be shown below the "Find" frame, sorted from their distance from the center of the current view (which should by distance from the address of interest).
 
-Usage:
+Details associated with a basestation are displayed displayed if the mouse is hovered over them or the basestation is clicked on in the map.  The basestation can be selected as a data source by clicking the "+" button on it's details widget.  Upon selection, it will be copied to the right side of the window (where it will remain unless removed even if the associated basestation shuts down).
 
-    ./bin/ntripServer portNumberToBind casterURI ntripFormatSourceMetadata
+Alternate data sources can be selected by pressing the "Create New Source" button, which opens a dialog window.  Data can be received using the dialog from files, a TCP server or a ZMQ publisher.  Once created, the source will appear on the right side of the screeen.
 
-portNumberToBind: The TCP port to bind (will probably want to be higher than 1024).  This is the port that should be given to RTKLIB as the target to send the data to.
+Any data source can be removed by pressing the "-" button on the left side of the associated widget.  This will remove any associated data senders as well.
 
-casterURI: 
+Once the data sources have been selected, press the "Manage Senders" button on the bottom right to go to the menu to select where to forward the received data.  To go back, just press the "Manage Receivers" button on the bottom right part of the menu.
 
-This is the contact information for the PylonGPS caster to send to.  It is similar to a URL and should take the form of ntrip://urlOrIPAddress:portNumber
+Pressing the "+" button on the data sources will open a dialog menu to create a data sender.  You can forward the data source's updates to a file, create a TCP server which sends to everyone who connects to it, create a ZMQ publisher which publishes the data to all subscribers or forward the data to a PylonGPS caster.  Upon creation of a sender, it will appear on the right side of the menu with a black line connecting it to the associated data source.  Any number of data senders can be created, but each can only have one data source.
 
-ntripFormatSourceMetadata: 
+A community data sender can be made by entering it's location, message format and expected update rate.  A registered community or official basestation needs that information as well as a key pair and credentials file signed by a recognized authority. Once the basestation is created, it will appear on the map within seconds (might need to move the map to force an update). Likewise, a basestation will be removed from the map within seconds of being shutdown.
 
-This is the "metadata" about the source that will show up in the caster's NTRIP source table to represent the source.  It is given in the format below, which just so happens to be a very similar format to the one for NTRIP 1.0 source entries in the table.  Don't forget to use single quotes for this field or the terminal will try to run it as a command.
+The current set of data sources/senders can be saved as a configuration file and retrieved using the "Save Configuration" and "Load Configuration" buttons in the bottom left.
 
-Example:
-
-    ./bin/ntripServer 9001 ntrip://74.125.30.99:99 'STR;NCStateBasestation;CAND;ZERO;0;2;GPS;PBO;USA;35.939350;239.566310;0;0;TRIMBLE NETRS;none;B;N;5000;none' 
-
-ntripFormatSourceMetadata Format:
-
-Fields are delineated by ";" characters.  Some fields can be left blank, but the delimiters are required.
-
-1.   TYPE: 3 characters, always STR
-
-2.   MOUNTPOINT: ID of correction source, max 100 characters
-
-3.   IDENTIFIER: Some description, such as source city (arbitrary length)
-
-4.   FORMAT: What form the data is, such as 'RTCM 2.1' (arbitrary length)
-
-5.   FORMAT-DETAILS: Undefined extra details, such as update rate (arbitrary length)
-
-6.   CARRIER: Information about phase content.  '0' for no phase, '1' for L1, '2' for L1 and L2
-
-7.   NAVIGATION SYSTEMS: Descriptions about GPS, GPS+GLO, etc (arbitrary length)
-
-8.   NETWORK: Network this basestation is a part of (arbitrary length)
-
-9.   COUNTRY: ISO 3166 country code (3 characters)
-
-10. LATITUDE: Latitude of source
-
-11. LONGITUDE: Longitude of source
-
-12. NMEA: If client is required to send a NMEA string with their 
-approximate position when trying to get information from this source (currently not implemented).  '0' if NMEA should not be sent and '1' if it should.
-
-13. SOLUTION: Stream is generated by a network or a single station. '0' if single basestation and '1' otherwise.
-
-14. GENERATOR: Indication of generated method (hardware or software stream (arbitrary length)
-
-15. COMPRESSION: Compression algorithm used, if any (arbitrary length)
-
-16. AUTHENTICATION: Indication if access protection is in use for this source (not currently implemented). 'N' for none, 'B' for password, 'D' for digest based.
-
-17. FEE: Indication if user will be charged for using the network (not currently implemented). 'N' if there is no charge and 'Y' if there is.
-
-18. BITRATE: Bits per second expected from the source (arbitrary length integer, not enforced)
-
-19. MISC: Any other information to include (arbitrary length)
+Future Updates
+---------------------
+_______________
 
 
-Future Versions
----------------------------
-_________________
+It is likely that users will want a command line version of the transceiver GUI so that it can be run in the background or in enviroments which don't support QT5.  A minimumal version which can load from a configuration file would be simple to make.  A stand alone version would take longer (email the author if your use case requires it: crwest@ncsu.edu).
 
-RTKLIB supports streaming differential GPS updates to and from arbitrary TCP sockets.  This means that it would be possible to transport these updates without needing to use the HTTP based NTRIP protocol for registration/other functions if a PylonGPS program is the source/destination of these streams.  In the next major release, it is likely that PylonGPS will switch to a interface using ZMQ/Protobuf for communication and serialization while allowing access via both NTRIP and the open PylonGPS format at the caster (a model/view pattern).  This would allow new features, such as searching and proxying, to be added without having to redefine a standard every time (since Protobuf allows addition of new fields without breaking backwards compatibility).
+It may also be possible to add an NTRIP 1.0 option to the transceiver (email the author if your use case requires it: crwest@ncsu.edu).
 
-*/ 
+With some work, the transceiver GUI could also have the capability to connect to other PylonGPS casters or mutiple at the same time (email the author if your use case requires it: crwest@ncsu.edu).
+*/
