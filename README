@@ -98,7 +98,7 @@ Stream data from nearest basestation within 10 km to file
 ./bin/transceiver -near 0.0 0.0 -max_range 10000 -autoconnect -output_file myFile.updates
 
 Stream data from local serial device file to pylongps.com caster (making it show up on the transceiver GUI map)
-sudo ./bin/transceiver -read_file /dev/serial -output_basestation -output_basestation 0.0 0.0 RINEX testBasestation0 3.0
+sudo ./bin/transceiver -read_file /dev/serial -output_basestation 0.0 0.0 RINEX testBasestation0 3.0
 
 
 ./bin/testDataSender:
