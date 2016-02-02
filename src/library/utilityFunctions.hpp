@@ -24,6 +24,13 @@ extern const double PI;
 //Includes null terminating character, which is left out when it is written to a file
 const int z85PublicKeySize = (((crypto_sign_PUBLICKEYBYTES*5)/4)+1)+(((crypto_sign_PUBLICKEYBYTES*5)/4))%4;
 const int z85SecretKeySize = (((crypto_sign_SECRETKEYBYTES*5)/4)+1)+(((crypto_sign_SECRETKEYBYTES*5)/4))%4;
+const int64_t DEFAULT_CASTER_ID = 0;
+const int64_t DEFAULT_CASTER_REGISTRATION_PORT_NUMBER = 10001;
+const int64_t DEFAULT_CASTER_CLIENT_REQUEST_PORT_NUMBER = 10002;
+const int64_t DEFAULT_CASTER_PROXY_STREAM_PORT_NUMBER = 10003;
+const int64_t DEFAULT_CASTER_CLIENT_STREAM_PORT_NUMBER = 10004;
+const int64_t DEFAULT_CASTER_STREAM_STATUS_PORT_NUMBER = 10005;
+const int64_t DEFAULT_CASTER_KEY_MANAGEMENT_PORT_NUMBER = 10006;
 
 /**
 This function compactly allows binding a ZMQ socket to inproc address without needing to specify an exact address.  The function will try binding to addresses in the format: inproc://inputBaseString.inputExtensionNumberAsString and will try repeatedly while incrementing inputExtensionNumber until it succeeds or the maximum number of tries has been exceeded.
@@ -328,9 +335,18 @@ This function calculates the land based distance between two points on earth usi
 @param inputPoint1Longitude: The longitude of the first point
 @param inputPoint2Latitude: The latitude of the second point
 @param inputPoint2Longitude: The longitude of the second point
-@return: The estimated distance between the two points
+@return: The estimated distance between the two points (centimeters)
 */
 double calculateGreatCircleDistance(double inputPoint1Latitude, double inputPoint1Longitude, double inputPoint2Latitude, double inputPoint2Longitude);
+
+/**
+This function returns the first IP address it can find for a given URL.
+@param inputURL: The URL to resolve
+@return: The found IP address
+
+@throws: This function can throw exceptions
+*/
+std::string getURLIPAddress(const std::string &inputURL);
 
 }
 

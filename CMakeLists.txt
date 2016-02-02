@@ -46,7 +46,7 @@ endif(BUILD_GUIS)
 #Tell compiler where to find required libraries
 link_directories(/usr/lib/x86_64-linux-gnu/ lib/ ./messages)
 
-include_directories(./src/library/ ./messages ./cppzmq-master ./src/executables/unitTests ./src/executables/transceiverGUI ./src/executables/casterGUI ./src/executables/caster ./ ./jsoncpp/json)
+include_directories(./src/library/ ./messages ./cppzmq-master ./src/executables/unitTests ./src/executables/transceiverGUI ./src/executables/casterGUI ./src/executables/caster ./ ./jsoncpp/json ./src/executables/transceiver)
 
 if(BUILD_GUIS)
 #Convert Qt .ui forms to sources
@@ -85,6 +85,8 @@ FILE(GLOB UNIT_TESTS_EXECUTABLE_SOURCE ./src/executables/unitTests/*.cpp ./src/e
 
 FILE(GLOB CASTER_SOURCE_FILES ./src/executables/caster/*.cpp ./src/executables/caster/*.c)
 
+FILE(GLOB TRANSCEIVER_SOURCE_FILES ./src/executables/transceiver/*.cpp ./src/executables/transceiver/*.c)
+
 FILE(GLOB TEST_DATA_SENDERS_SOURCE_FILES ./src/executables/testDataSenders/*.cpp ./src/executables/testDataSenders/*.c)
 
 #Set the binaries to be placed in the ./bin/ directory
@@ -106,6 +108,8 @@ endif(BUILD_GUIS)
 
 ADD_EXECUTABLE(caster ${CASTER_SOURCE_FILES} ${CMAKE_CURRENT_BINARY_DIR})
 
+ADD_EXECUTABLE(transceiver ${TRANSCEIVER_SOURCE_FILES} ${CMAKE_CURRENT_BINARY_DIR})
+
 ADD_EXECUTABLE(testDataSender ${TEST_DATA_SENDERS_SOURCE_FILES} ${CMAKE_CURRENT_BINARY_DIR})
 
 target_link_libraries(pylongps dl PocoFoundation PocoNet PocoUtil sqlite3 pylonGPSMessages zmq ${PROTOBUF_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} sodium)
@@ -120,6 +124,8 @@ target_link_libraries(casterGUI pylongps Qt5::Widgets)
 endif(BUILD_GUIS)
 
 target_link_libraries(caster pylongps)
+
+target_link_libraries(transceiver pylongps)
 
 target_link_libraries(testDataSender pylongps)
 

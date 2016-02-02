@@ -19,9 +19,137 @@
 #include "transceiver.hpp"
 //#include "ntripV1DataReceiver.hpp"
 #include<json.h>
+#include "commandLineArgumentParser.hpp"
 
 using namespace pylongps; //Use pylongps classes without alteration for now
 using namespace pylongps_protobuf_sql_converter; //Use protobuf/sql converter test message
+
+TEST_CASE("CommandLineArgumentParser", "[CommandLineArgumentParser]")
+{
+SECTION("Zero arguments", "[CommandLineArgumentParser]")
+{
+commandLineParser(nullptr, 0);
+}
+
+//parser.printRetrievedOptionArgumentPairs();
+SECTION("single argument options arguments", "[CommandLineArgumentParser]")
+{
+const char *arguments[]{"transceiver","-pubkey","file", "-read_file", "otherFile"};
+int numberOfArguments = 5;
+commandLineParser parser(arguments, numberOfArguments);
+
+REQUIRE(parser.optionToAssociatedArguments.count(pylongps::PROGRAM_STRING) == 1);
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).size() == 1);
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).at(0) == "transceiver");
+REQUIRE(parser.optionToAssociatedArguments.count("pubkey") == 1);
+REQUIRE(parser.optionToAssociatedArguments.at("pubkey").size() == 1);
+REQUIRE(parser.optionToAssociatedArguments.at("pubkey").at(0) == "file");
+REQUIRE(parser.optionToAssociatedArguments.count("read_file") == 1);
+REQUIRE(parser.optionToAssociatedArguments.at("read_file").size() == 1);
+REQUIRE(parser.optionToAssociatedArguments.at("read_file").at(0) == "otherFile");
+}
+
+SECTION("multiple argument options", "[CommandLineArgumentParser]")
+{
+const char *arguments[]{"transceiver","-near","lat", "long"};
+int numberOfArguments = 4;
+commandLineParser parser(arguments, numberOfArguments);
+
+REQUIRE(parser.optionToAssociatedArguments.count(pylongps::PROGRAM_STRING) == 1);
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).size() == 1);
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).at(0) == "transceiver");
+REQUIRE(parser.optionToAssociatedArguments.count("near") == 1);
+REQUIRE(parser.optionToAssociatedArguments.at("near").size() == 2);
+REQUIRE(parser.optionToAssociatedArguments.at("near").at(0) == "lat");
+REQUIRE(parser.optionToAssociatedArguments.at("near").at(1) == "long");
+}
+
+SECTION("multiple occurances of a single option", "[CommandLineArgumentParser]")
+{
+const char *arguments[]{"transceiver","-near","lat", "long", "-official", "-near", "otherLat", "otherLon"};
+int numberOfArguments = 8;
+commandLineParser parser(arguments, numberOfArguments);
+
+REQUIRE(parser.optionToAssociatedArguments.count(pylongps::PROGRAM_STRING) == 1);
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).size() == 1);
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).at(0) == "transceiver");
+REQUIRE(parser.optionToAssociatedArguments.count("near") == 1);
+REQUIRE(parser.optionToAssociatedArguments.at("near").size() == 4);
+REQUIRE(parser.optionToAssociatedArguments.at("near").at(0) == "lat");
+REQUIRE(parser.optionToAssociatedArguments.at("near").at(1) == "long");
+REQUIRE(parser.optionToAssociatedArguments.at("near").at(2) == "otherLat");
+REQUIRE(parser.optionToAssociatedArguments.at("near").at(3) == "otherLon");
+REQUIRE(parser.optionToAssociatedArguments.count("official") == 1);
+REQUIRE(parser.optionToAssociatedArguments.at("official").size() == 0);
+}
+
+SECTION("clamping an option's number of arguments", "[CommandLineArgumentParser]")
+{
+const char *arguments[]{"transceiver","-near","lat", "long", "-official", "-near", "otherLat", "otherLon"};
+int numberOfArguments = 8;
+commandLineParser parser;
+parser.clampOptionNumberOfOptionArguments("near", 1);
+parser.parse(arguments, numberOfArguments);
+
+REQUIRE(parser.optionToAssociatedArguments.count(pylongps::PROGRAM_STRING) == 1);
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).size() == 3);
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).at(0) == "transceiver");
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).at(1) == "long");
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).at(2) == "otherLon");
+REQUIRE(parser.optionToAssociatedArguments.count("near") == 1);
+REQUIRE(parser.optionToAssociatedArguments.at("near").size() == 2);
+REQUIRE(parser.optionToAssociatedArguments.at("near").at(0) == "lat");
+REQUIRE(parser.optionToAssociatedArguments.at("near").at(1) == "otherLat");
+REQUIRE(parser.optionToAssociatedArguments.count("official") == 1);
+REQUIRE(parser.optionToAssociatedArguments.at("official").size() == 0);
+}
+
+SECTION("testing case sensitivity", "[CommandLineArgumentParser]")
+{
+const char *arguments[]{"transceiver","-near","lat", "long", "-official", "-NeAr", "otherLat", "otherLon"};
+int numberOfArguments = 8;
+commandLineParser parser;
+parser.clampOptionNumberOfOptionArguments("near", 1);
+parser.parse(arguments, numberOfArguments);
+
+REQUIRE(parser.optionToAssociatedArguments.count(pylongps::PROGRAM_STRING) == 1);
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).size() == 2);
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).at(0) == "transceiver");
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).at(1) == "long");
+REQUIRE(parser.optionToAssociatedArguments.count("near") == 1);
+REQUIRE(parser.optionToAssociatedArguments.at("near").size() == 1);
+REQUIRE(parser.optionToAssociatedArguments.at("near").at(0) == "lat");
+REQUIRE(parser.optionToAssociatedArguments.count("NeAr") == 1);
+REQUIRE(parser.optionToAssociatedArguments.at("NeAr").size() == 2);
+REQUIRE(parser.optionToAssociatedArguments.at("NeAr").at(0) == "otherLat");
+REQUIRE(parser.optionToAssociatedArguments.at("NeAr").at(1) == "otherLon");
+REQUIRE(parser.optionToAssociatedArguments.count("official") == 1);
+REQUIRE(parser.optionToAssociatedArguments.at("official").size() == 0);
+}
+
+SECTION("testing case insensitivity", "[CommandLineArgumentParser]")
+{
+const char *arguments[]{"transceiver","-near","lat", "long", "-official", "-NeAr", "otherLat", "otherLon"};
+int numberOfArguments = 8;
+commandLineParser parser;
+parser.clampOptionNumberOfOptionArguments("near", 1);
+parser.ignoreOptionCase(true);
+parser.parse(arguments, numberOfArguments);
+
+REQUIRE(parser.optionToAssociatedArguments.count(pylongps::PROGRAM_STRING) == 1);
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).size() == 3);
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).at(0) == "transceiver");
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).at(1) == "long");
+REQUIRE(parser.optionToAssociatedArguments.at(pylongps::PROGRAM_STRING).at(2) == "otherLon");
+REQUIRE(parser.optionToAssociatedArguments.count("near") == 1);
+REQUIRE(parser.optionToAssociatedArguments.at("near").size() == 2);
+REQUIRE(parser.optionToAssociatedArguments.at("near").at(0) == "lat");
+REQUIRE(parser.optionToAssociatedArguments.at("near").at(1) == "otherLat");
+REQUIRE(parser.optionToAssociatedArguments.count("official") == 1);
+REQUIRE(parser.optionToAssociatedArguments.at("official").size() == 0);
+}
+
+}
 
 /*
 TEST_CASE("ZMQ stream socket", "[talker]")

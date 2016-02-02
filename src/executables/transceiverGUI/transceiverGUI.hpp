@@ -33,7 +33,7 @@
 #include "tcpDataSenderWidget.hpp"
 #include "zmqDataSenderWidget.hpp"
 #include "basestationDataSenderWidget.hpp"
-#include "tranceiver_configuration.pb.h"
+#include "transceiver_configuration.pb.h"
 
 //Kludgy hack to be able to connect Qt objects across namespaces. Apologies for using the using command in a header.  However, this isn't library code and the name is quite specific.
 using Marble::GeoDataLatLonAltBox;

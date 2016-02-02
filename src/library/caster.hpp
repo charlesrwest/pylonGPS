@@ -226,7 +226,7 @@ std::string internalNotificationPublisherConnectionString; //The connection stri
 std::unique_ptr<zmq::socket_t> internalNotificationPublisher; //A ZMQ PUB socket which is used to publish stream_status_update about the basestations that the caster is currently proxying (but might not have the metadata for)
 
 //Ensure reactors are destroyed before publishing sockets
-std::unique_ptr<reactor<caster> > clientRequestHandlingReactor; //Handles client requests and requests by the stream registration and statistics threads to make changes to the database
+std::unique_ptr<reactor<caster> > clientAndDatabaseRequestHandlingReactor; //Handles client requests and requests by the stream registration and statistics threads to make changes to the database
 std::unique_ptr<reactor<caster> > streamRegistrationAndPublishingReactor;
 std::unique_ptr<reactor<caster> > statisticsGatheringReactor; //This reactor analyzes the statistics of the stream messages that are published and periodically updates the associated entries in the database.
 

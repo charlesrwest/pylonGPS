@@ -11,6 +11,192 @@ transceiver::transceiver(zmq::context_t &inputContext) : context(inputContext)
 }
 
 /**
+This function removes all data receivers and data senders from the transceiver.
+*/
+void transceiver::clear()
+{
+while(dataReceiverConnectionStringToDataReceiver.size() > 0)
+{
+for(const auto &instance : dataReceiverConnectionStringToDataReceiver)
+{
+SOM_TRY
+removeDataReceiver(instance.first);
+SOM_CATCH("Error removing data receiver\n")
+break;
+}
+}
+}
+
+/**
+This function loads a configuration and attempts to set this transceiver's receivers/senders accordingly
+@param inputConfiguration: The configuration to load
+
+@throws: This function can throw exceptions
+*/
+void transceiver::load(const transceiver_configuration &inputConfiguration)
+{
+clear(); //Clear the current configuration
+std::string casterIPAddress;
+if(inputConfiguration.basestation_receivers_size() > 0 || inputConfiguration.basestation_senders_size() > 0)
+{
+SOM_TRY
+casterIPAddress = getURLIPAddress("pylongps.com");
+SOM_CATCH("Error, unable to resolve pylongps.com")
+}
+
+std::map<int64_t, std::string> receiverIDToConnectionString;
+
+for(int i=0; i<inputConfiguration.basestation_receivers_size(); i++)
+{ //Load basestation receiver
+const basestation_data_receiver_configuration &dataReceiverConfiguration = inputConfiguration.basestation_receivers(i);
+
+if(receiverIDToConnectionString.count(dataReceiverConfiguration.receiver_id()) != 0 || !dataReceiverConfiguration.has_basestation_details())
+{ //Skip receiver if one with the same ID has already been loaded or we don't have details to display
+continue;
+}
+
+std::string connectionString;
+SOM_TRY
+connectionString = createPylonGPSV2DataReceiver(casterIPAddress + ":" + std::to_string(DEFAULT_CASTER_CLIENT_STREAM_PORT_NUMBER),dataReceiverConfiguration.caster_id(), dataReceiverConfiguration.stream_id());
+SOM_CATCH("Error, unable to create basestation data receiver\n")
+
+receiverIDToConnectionString[dataReceiverConfiguration.receiver_id()] = connectionString;
+}
+
+for(int i=0; i<inputConfiguration.file_receivers_size(); i++)
+{ //Load file receiver
+const file_data_receiver_configuration &dataReceiverConfiguration = inputConfiguration.file_receivers(i);
+
+if(receiverIDToConnectionString.count(dataReceiverConfiguration.receiver_id()) != 0)
+{ //Skip receiver if one with the same ID has already been loaded
+continue;
+}
+
+std::string connectionString;
+SOM_TRY
+connectionString = createFileDataReceiver(dataReceiverConfiguration.file_path());
+SOM_CATCH("Error, unable to create file data receiver\n")
+
+receiverIDToConnectionString[dataReceiverConfiguration.receiver_id()] = connectionString;
+}
+
+for(int i=0; i<inputConfiguration.tcp_receivers_size(); i++)
+{ //Load tcp receiver
+const tcp_data_receiver_configuration &dataReceiverConfiguration = inputConfiguration.tcp_receivers(i);
+
+if(receiverIDToConnectionString.count(dataReceiverConfiguration.receiver_id()) != 0)
+{ //Skip receiver if one with the same ID has already been loaded
+continue;
+}
+
+std::string connectionString;
+SOM_TRY
+connectionString = createTCPDataReceiver(dataReceiverConfiguration.server_ip_address() + ":" + std::to_string(dataReceiverConfiguration.server_port()));
+SOM_CATCH("Error creating tcp data receiver\n")
+
+receiverIDToConnectionString[dataReceiverConfiguration.receiver_id()] = connectionString;
+}
+
+for(int i=0; i<inputConfiguration.zmq_receivers_size(); i++)
+{ //Load zmq receiver
+const zmq_data_receiver_configuration &dataReceiverConfiguration = inputConfiguration.zmq_receivers(i);
+
+if(receiverIDToConnectionString.count(dataReceiverConfiguration.receiver_id()) != 0)
+{ //Skip receiver if one with the same ID has already been loaded
+continue;
+}
+
+std::string connectionString;
+SOM_TRY
+connectionString = createZMQPubDataReceiver(dataReceiverConfiguration.server_ip_address() + ":" + std::to_string(dataReceiverConfiguration.server_port()));
+SOM_CATCH("Error, unable to make ZMQ data receiver\n")
+if(connectionString.size() == 0)
+{
+continue;
+}
+
+receiverIDToConnectionString[dataReceiverConfiguration.receiver_id()] = connectionString;
+}
+
+
+//Add data senders
+for(int i=0; i<inputConfiguration.basestation_senders_size(); i++)
+{ //Load basestation sender
+const basestation_data_sender_configuration &dataSenderConfiguration = inputConfiguration.basestation_senders(i);
+
+if(receiverIDToConnectionString.count(dataSenderConfiguration.receiver_id()) == 0)
+{ //Skip sender if the associated receiver hasn't been loaded
+continue;
+}
+
+const std::string &receiverConnectionString = receiverIDToConnectionString.at(dataSenderConfiguration.receiver_id());
+const std::string casterConnectionString = casterIPAddress + ":" + std::to_string(DEFAULT_CASTER_REGISTRATION_PORT_NUMBER);
+
+if(dataSenderConfiguration.has_registration_credentials())
+{
+SOM_TRY
+createPylonGPSV2DataSender(receiverConnectionString, dataSenderConfiguration.secret_key(), dataSenderConfiguration.registration_credentials(), casterConnectionString, dataSenderConfiguration.latitude(), dataSenderConfiguration.longitude(), dataSenderConfiguration.message_format(), dataSenderConfiguration.informal_basestation_name(), dataSenderConfiguration.expected_update_rate());
+SOM_CATCH("Error creating basestation sender\n")
+}
+else
+{
+SOM_TRY
+createPylonGPSV2DataSender(receiverConnectionString, casterConnectionString, dataSenderConfiguration.latitude(), dataSenderConfiguration.longitude(), dataSenderConfiguration.message_format(), dataSenderConfiguration.informal_basestation_name(), dataSenderConfiguration.expected_update_rate());
+SOM_CATCH("Error creating basestation sender\n")
+}
+}
+
+for(int i=0; i<inputConfiguration.file_senders_size(); i++)
+{ //Load file sender
+const file_data_sender_configuration &dataSenderConfiguration = inputConfiguration.file_senders(i);
+
+if(receiverIDToConnectionString.count(dataSenderConfiguration.receiver_id()) == 0)
+{ //Skip sender if the associated receiver hasn't been loaded
+continue;
+}
+
+const std::string &receiverConnectionString = receiverIDToConnectionString.at(dataSenderConfiguration.receiver_id());
+
+SOM_TRY
+createFileDataSender(receiverConnectionString, dataSenderConfiguration.file_path_to_write_to());
+SOM_CATCH("Error, unable to make file data sender\n")
+}
+
+for(int i=0; i<inputConfiguration.tcp_senders_size(); i++)
+{ //Load tcp sender
+const tcp_data_sender_configuration &dataSenderConfiguration = inputConfiguration.tcp_senders(i);
+
+if(receiverIDToConnectionString.count(dataSenderConfiguration.receiver_id()) == 0)
+{ //Skip sender if the associated receiver hasn't been loaded
+continue;
+}
+
+const std::string &receiverConnectionString = receiverIDToConnectionString.at(dataSenderConfiguration.receiver_id());
+
+SOM_TRY
+createTCPDataSender(receiverConnectionString, dataSenderConfiguration.server_port());
+SOM_CATCH("Error, unable to create data sender\n")
+}
+
+for(int i=0; i<inputConfiguration.zmq_senders_size(); i++)
+{ //Load zmq sender
+const zmq_data_sender_configuration &dataSenderConfiguration = inputConfiguration.zmq_senders(i);
+
+if(receiverIDToConnectionString.count(dataSenderConfiguration.receiver_id()) == 0)
+{ //Skip sender if the associated receiver hasn't been loaded
+continue;
+}
+
+const std::string &receiverConnectionString = receiverIDToConnectionString.at(dataSenderConfiguration.receiver_id());
+
+SOM_TRY
+createZMQDataSender(receiverConnectionString, dataSenderConfiguration.server_port());
+SOM_CATCH("Error, unable to create ZMQ data sender\n")
+}
+
+}
+
+/**
 This function creates a zmqDataReceiver which can listen to a data stream from a Pylon GPS 2.0 caster.
 @param inputIPAddressAndPort: A string with the IP address/port in format "IPAddress:portNumber"
 @param inputCasterID: The ID of the caster to listen to (host format)

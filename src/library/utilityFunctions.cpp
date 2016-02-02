@@ -388,7 +388,7 @@ Poco::Int64 objectSize = Poco::ByteOrder::fromNetwork(objectSizeNetworkOrder);
 
 //Read size+object
 std::string sizeAndObjectString;
-if(readStringFromFile(sizeAndObjectString, sizeof(Poco::Int64)+objectSize, inputPath) == false || objectSize == 0) 
+if(readStringFromFile(sizeAndObjectString, sizeof(Poco::Int64)+objectSize, inputPath) == false) 
 {
 return false;
 }
@@ -401,6 +401,7 @@ inputMessageBuffer.ParseFromString(objectString);
 
 if(!inputMessageBuffer.IsInitialized())
 {
+printf("Message not initialized\n");
 return false;
 }
 
@@ -1064,7 +1065,7 @@ This function calculates the land based distance between two points on earth usi
 @param inputPoint1Longitude: The longitude of the first point
 @param inputPoint2Latitude: The latitude of the second point
 @param inputPoint2Longitude: The longitude of the second point
-@return: The estimated distance between the two points
+@return: The estimated distance between the two points (centimeters)
 */
 double pylongps::calculateGreatCircleDistance(double inputPoint1Latitude, double inputPoint1Longitude, double inputPoint2Latitude, double inputPoint2Longitude)
 {
@@ -1073,4 +1074,25 @@ double arc2 = pow(sin(.5*(inputPoint1Longitude-inputPoint2Longitude)), 2.0);
 return 2.0*6372797.560856*asin(sqrt(arc1+cos(inputPoint1Latitude)*cos(inputPoint2Latitude)*arc2));
 }
 
+/**
+This function returns the first IP address it can find for a given URL.
+@param inputURL: The URL to resolve
+@return: The found IP address
+
+@throws: This function can throw exceptions
+*/
+std::string pylongps::getURLIPAddress(const std::string &inputURL)
+{
+Poco::Net::HostEntry host;
+
+SOM_TRY
+host = Poco::Net::DNS::hostByName(inputURL);
+SOM_CATCH("Error, unable to resolve URL\n")
+
+if(host.addresses().size() == 0)
+{
+throw SOMException("Error resolving URL", UNKNOWN, __FILE__, __LINE__);
+}
+return host.addresses()[0].toString();
+}
 

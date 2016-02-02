@@ -13,7 +13,7 @@
 #include "zmqDataSender.hpp"
 #include "client_query_request.pb.h"
 #include "client_query_reply.pb.h"
-
+#include "transceiver_configuration.pb.h"
 
 namespace pylongps
 {
@@ -31,6 +31,19 @@ This function initializes the transceiver to use the given ZMQ context.
 @param inputContext: The ZMQ context for the transceiver to use
 */
 transceiver(zmq::context_t &inputContext);
+
+/**
+This function removes all data receivers and data senders from the transceiver.
+*/
+void clear();
+
+/**
+This function loads a configuration and attempts to set this transceiver's receivers/senders accordingly
+@param inputConfiguration: The configuration to load
+
+@throws: This function can throw exceptions
+*/
+void load(const transceiver_configuration &inputConfiguration);
 
 /**
 This function creates a zmqDataReceiver which can listen to a data stream from a Pylon GPS 2.0 caster.
@@ -170,7 +183,6 @@ This function can be used to send a query to a caster to get a list of all bases
 @param inputClientRequestIPAddressAndPort: The IP address/port to use for querying the caster in the form "IPAddress:Port"
 @param inputTimeoutDuration: How many milliseconds to wait for a response (-1 for infinite wait)
 @param inputContext: The ZMQ context to use for this request
-
 @throw: This function can throw exceptions
 */
 static client_query_reply queryPylonGPSV2Caster(const client_query_request &inputRequest, const std::string &inputClientRequestIPAddressAndPort, int inputTimeoutDuration, zmq::context_t &inputContext);

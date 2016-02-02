@@ -204,7 +204,7 @@ SOM_CATCH("Error binding shutdownPublishingSocket\n")
 
 
 //Initialize and bind database access socket
- //A inproc REP socket that handles requests to make changes to the database.  Used by clientRequestHandlingReactor.
+ //A inproc REP socket that handles requests to make changes to the database.  Used by clientAndDatabaseRequestHandlingReactor.
 std::unique_ptr<zmq::socket_t> databaseAccessSocket;
 SOM_TRY
 databaseAccessSocket.reset(new zmq::socket_t(*(context), ZMQ_REP));
@@ -421,19 +421,19 @@ SOM_CATCH("Error starting reactor\n")
 //Create reactor to handle client requests
 //Responsible for databaseAccessSocket, clientRequestInterface
 SOM_TRY
-clientRequestHandlingReactor.reset(new reactor<caster>(context, this, &caster::handleReactorEvents));
+clientAndDatabaseRequestHandlingReactor.reset(new reactor<caster>(context, this, &caster::handleReactorEvents));
 SOM_CATCH("Error creating reactor\n")
 
 SOM_TRY
-clientRequestHandlingReactor->addInterface(databaseAccessSocket, &caster::processDatabaseRequest, "databaseAccessSocket"); //Reactor takes ownership
+clientAndDatabaseRequestHandlingReactor->addInterface(databaseAccessSocket, &caster::processDatabaseRequest, "databaseAccessSocket"); //Reactor takes ownership
 SOM_CATCH("Error adding interface to reactor\n")
 
 SOM_TRY
-clientRequestHandlingReactor->addInterface(clientRequestInterface, &caster::processClientQueryRequest, "clientRequestInterface"); //Reactor takes ownership
+clientAndDatabaseRequestHandlingReactor->addInterface(clientRequestInterface, &caster::processClientQueryRequest, "clientRequestInterface"); //Reactor takes ownership
 SOM_CATCH("Error adding interface to reactor\n")
 
 SOM_TRY
-clientRequestHandlingReactor->start();
+clientAndDatabaseRequestHandlingReactor->start();
 SOM_CATCH("Error starting reactor\n")
 
 //Create reactor to handle registrations, key addition/deletion, and update publishing
