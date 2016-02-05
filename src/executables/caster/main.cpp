@@ -25,7 +25,7 @@ int main(int argc, char** argv)
 std::map<std::string, std::string> processedArguments = parseStringArguments(argv+1, argc-1); //Skip program name
 
 caster_configuration currentConfiguration;
-long int buffer;
+int64_t buffer;
 
 // -help list of possible options
 if(processedArguments.count("help") > 0)
