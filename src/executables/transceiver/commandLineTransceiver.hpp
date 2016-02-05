@@ -8,6 +8,7 @@
 #include "commandLineArgumentParser.hpp"
 #include<array>
 #include "zmq.hpp"
+#include<iostream>
 
 namespace pylongps
 {

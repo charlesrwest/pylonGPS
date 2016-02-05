@@ -311,7 +311,7 @@ if(inputCenterPointIsValid)
 printf("%.2lf km ", distanceFromCenter/100000.0);
 }
 
-printf("%ld %ld %s %s %s %lf %lf %lf\n", casterID, basestation.base_station_id(), basestation.informal_name().c_str(), corrections_message_format_Name(basestation.message_format()).c_str(), base_station_class_Name(basestation.station_class()).c_str(), basestation.expected_update_rate(), basestation.latitude(), basestation.longitude());
+std::cout <<  casterID << " " << basestation.base_station_id() << " " << basestation.informal_name() << " " << corrections_message_format_Name(basestation.message_format()) << " " << base_station_class_Name(basestation.station_class()) << " " << basestation.expected_update_rate() << " " << basestation.latitude() << " " << basestation.longitude() << std::endl;
 }
 }
 
@@ -381,7 +381,7 @@ inputReplyBuffer = transceiver::queryPylonGPSV2Caster(query, clientPortConnectio
 } 
 catch(const std::exception &inputException)
 {
-fprintf(stderr, "Error, unable to query caster at %s:%ld\n", std::get<0>(inputCasterConnectionInfo).c_str(), std::get<1>(inputCasterConnectionInfo)[1]);
+fprintf(stderr, "Error, unable to query caster at %s:%lld\n", std::get<0>(inputCasterConnectionInfo).c_str(), (long long int) std::get<1>(inputCasterConnectionInfo)[1]);
 }
 
 if(inputReplyBuffer.has_failure_reason() || !inputReplyBuffer.has_caster_id())
