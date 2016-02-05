@@ -180,7 +180,7 @@ This function converts a string to an integer without having bad defaults or nee
 @param inputIntegerBuffer: The integer variable to store the result in
 @return: True if the conversion was successful and false otherwise
 */
-bool convertStringToInteger(const std::string &inputString, long int &inputIntegerBuffer);
+bool convertStringToInteger(const std::string &inputString, int64_t &inputIntegerBuffer);
 
 /**
 This function converts a string to an integer without having bad defaults or needing to throw exceptions.
@@ -188,7 +188,7 @@ This function converts a string to an integer without having bad defaults or nee
 @param inputIntegerBuffer: The integer variable to store the result in
 @return: True if the conversion was successful and false otherwise
 */
-bool convertStringToInteger(const std::string &inputString, int &inputIntegerBuffer);
+bool convertStringToInteger(const std::string &inputString, int32_t &inputIntegerBuffer);
 
 /**
 This function converts a string to an double without having bad defaults or needing to throw exceptions.

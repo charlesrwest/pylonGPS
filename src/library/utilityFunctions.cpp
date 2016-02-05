@@ -480,7 +480,7 @@ This function converts a string to an integer without having bad defaults or nee
 @param inputIntegerBuffer: The integer variable to store the result in
 @return: True if the conversion was successful and false otherwise
 */
-bool pylongps::convertStringToInteger(const std::string &inputString, long int &inputIntegerBuffer)
+bool pylongps::convertStringToInteger(const std::string &inputString, int64_t &inputIntegerBuffer)
 {
 char *stringEnd = nullptr;
 inputIntegerBuffer = strtol(inputString.c_str(), &stringEnd, 0);
@@ -499,7 +499,7 @@ This function converts a string to an integer without having bad defaults or nee
 @param inputIntegerBuffer: The integer variable to store the result in
 @return: True if the conversion was successful and false otherwise
 */
-bool pylongps::convertStringToInteger(const std::string &inputString, int &inputIntegerBuffer)
+bool pylongps::convertStringToInteger(const std::string &inputString, int32_t &inputIntegerBuffer)
 {
 char *stringEnd = nullptr;
 inputIntegerBuffer = strtol(inputString.c_str(), &stringEnd, 0);
