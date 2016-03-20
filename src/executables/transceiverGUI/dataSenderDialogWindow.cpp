@@ -1,4 +1,4 @@
- #include "dataSenderDialogWindow.hpp"
+#include "dataSenderDialogWindow.hpp"
 
 using namespace pylongps;
 

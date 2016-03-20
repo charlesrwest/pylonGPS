@@ -1,7 +1,6 @@
 #include "caster.hpp"
 
 using namespace pylongps;
-//TODO: Fix problem with empty subquery and add associated test
 
 /**
 This function initializes the class, creates the associated database, and starts the two threads associated with it.

@@ -87,6 +87,8 @@ FILE(GLOB CASTER_SOURCE_FILES ./src/executables/caster/*.cpp ./src/executables/c
 
 FILE(GLOB TRANSCEIVER_SOURCE_FILES ./src/executables/transceiver/*.cpp ./src/executables/transceiver/*.c)
 
+FILE(GLOB STRESS_TESTER ./src/executables/stressTester/*.cpp ./src/executables/stressTester/*.c)
+
 FILE(GLOB TEST_DATA_SENDERS_SOURCE_FILES ./src/executables/testDataSenders/*.cpp ./src/executables/testDataSenders/*.c)
 
 #Set the binaries to be placed in the ./bin/ directory
@@ -112,6 +114,9 @@ ADD_EXECUTABLE(transceiver ${TRANSCEIVER_SOURCE_FILES} ${CMAKE_CURRENT_BINARY_DI
 
 ADD_EXECUTABLE(testDataSender ${TEST_DATA_SENDERS_SOURCE_FILES} ${CMAKE_CURRENT_BINARY_DIR})
 
+ADD_EXECUTABLE(stressTester ${STRESS_TESTER} ${CMAKE_CURRENT_BINARY_DIR})
+
+
 target_link_libraries(pylongps dl PocoFoundation PocoNet PocoUtil sqlite3 pylonGPSMessages zmq ${PROTOBUF_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} sodium)
 
 #link libraries to executable
@@ -128,6 +133,8 @@ target_link_libraries(caster pylongps)
 target_link_libraries(transceiver pylongps)
 
 target_link_libraries(testDataSender pylongps)
+
+target_link_libraries(stressTester pylongps)
 
 
 

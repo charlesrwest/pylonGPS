@@ -22,7 +22,7 @@
 namespace pylongps
 {
 
-const int CASTER_DATA_SENDER_MAX_WAIT_TIME = 1000; //Milliseconds
+const int CASTER_DATA_SENDER_MAX_WAIT_TIME = 5000; //Milliseconds
 
 /**
 This class takes data published on an inproc ZMQ PUB socket and forwards it to PylonGPS caster.
