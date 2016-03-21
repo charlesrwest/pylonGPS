@@ -13,7 +13,7 @@ const int CLIENT_REQUEST_PORT = 10002;
 const int CLIENT_PUBLISHING_PORT = 10003;
 const int CASTER_ID = 0;
 
-const int NUMBER_OF_FAKE_BASESTATIONS_TO_MAKE = 1;
+const int NUMBER_OF_FAKE_BASESTATIONS_TO_MAKE = 20;
 
 std::string updateString = "LARS PORSENA of Clusium,	  By the Nine Gods he swore	That the great house of Tarquin	  Should suffer wrong no more.	By the Nine Gods he swore it,	         And named a trysting-day,	And bade his messengers ride forth,	East and west and south and north,	  To summon his array.	East and west and south and north	        10  The messengers ride fast,	And tower and town and cottage	  Have heard the trumpet’s blast.	Shame on the false Etruscan	  Who lingers in his home,	        When Porsena of Clusium	  Is on the march for Rome!	 The horsemen and the footmen	  Are pouring in amain	From many a stately market-place,	          From many a fruitful plain,	From many a lonely hamlet,	  Which, hid by beech and pine,	Like an eagle’s nest hangs on the crest	  Of purple Apennine:	         From lordly Volaterræ,	  Where scowls the far-famed hold	Piled by the hands of giants	  For godlike kings of old;	From sea-girt Populonia,	          Whose sentinels descry	Sardinia’s snowy mountain-tops	  Fringing the southern sky;	From the pisæ";
 
@@ -96,7 +96,7 @@ try
 SOM_TRY 
 com->createPylonGPSV2DataSender(pubDataReceiverAddress,  host.addresses()[0].toString()+":" +std::to_string(REGISTRATION_PORT), latitudeGenerator(generator), longitudeGenerator(generator), RTCM_V3_1, "testBasestation" + std::to_string(portNumber) + std::to_string(i), 3.0);
 SOM_CATCH("Error making caster sender\n")
-std::this_thread::sleep_for(std::chrono::milliseconds(100));
+std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 SOM_TRY
 testMessagePublisher->send(updateString.c_str(), updateString.size());
 SOM_CATCH("Error sending message to caster\n")
