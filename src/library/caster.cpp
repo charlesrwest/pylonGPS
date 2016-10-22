@@ -2664,7 +2664,7 @@ return queryString;
 }
 
 /**
-This function makes it easier to process messages from a ZMQ router socket.  It retrieves the messages associated with a single router message (all parts of the multipart message) and stores them in the vector and returns true if the expected format was followed (3 part: addess, empty, message)
+This function makes it easier to process messages from a ZMQ router socket.  It retrieves the messages associated with a single router message (all parts of the multipart message) and stores them in the vector and returns true if the expected format was followed (3 part: address, empty, message)
 @param inputSocket: The socket to process messages from
 @param inputMessageBuffer: The buffer to store messages in
 @return: true if the message followed the expected format

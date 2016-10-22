@@ -46,7 +46,7 @@ endif(BUILD_GUIS)
 #Tell compiler where to find required libraries
 link_directories(/usr/lib/x86_64-linux-gnu/ lib/ ./messages)
 
-include_directories(./src/library/ ./messages ./cppzmq-master ./src/executables/unitTests ./src/executables/transceiverGUI ./src/executables/casterGUI ./src/executables/caster ./ ./jsoncpp/json ./src/executables/transceiver)
+include_directories(./src/library/ ./messages ./cppzmq ./src/executables/unitTests ./src/executables/transceiverGUI ./src/executables/casterGUI ./src/executables/caster ./ ./jsoncpp/json ./src/executables/transceiver)
 
 if(BUILD_GUIS)
 #Convert Qt .ui forms to sources

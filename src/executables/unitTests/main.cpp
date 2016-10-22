@@ -299,10 +299,10 @@ REQUIRE(results.at("o") == "");
 }
 }
 
-TEST_CASE( "Test protobuf reflection", "[test]")
+TEST_CASE( "Test messageDatabaseDefinition", "[test]")
 {
 
-SECTION( "Print out fields of protobuf object")
+SECTION( "Store and retrieve message object")
 {
 //Make message to test on
 protobuf_sql_converter_test_message testMessage;
